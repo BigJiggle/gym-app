@@ -112,7 +112,7 @@ export default function WeeklyMealView({ mealCount, meals }: Props) {
       {/* Day selector */}
       <div className="grid grid-cols-7 gap-1">
         {days.map((day, i) => {
-          const dateStr = day.toISOString().split('T')[0]
+          const dateStr = localDateStr(day)
           const isSelected = dateStr === selectedDate
           const isToday = dateStr === todayStr
           const isFutureDay = dateStr > todayStr

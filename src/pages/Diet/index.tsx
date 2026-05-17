@@ -612,7 +612,7 @@ export default function Diet() {
 
       {/* ─── GROCERY LIST TAB ─── */}
       {tab === 'grocery' && (
-        <GroceryList meals={dietPlan.meals ?? []} />
+        <GroceryList key={dietPlan.id} meals={dietPlan.meals ?? []} />
       )}
 
       {/* Exclude confirmation modal */}

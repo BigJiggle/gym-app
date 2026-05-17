@@ -13,24 +13,28 @@ import type { ProgressEntry } from '../../types'
 interface Props {
   entries: ProgressEntry[]
   startWeight?: number
+  units?: 'metric' | 'imperial'
 }
 
-const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: { value: number }[]; label?: string }) => {
+const CustomTooltip = ({ active, payload, label, units }: { active?: boolean; payload?: { value: number }[]; label?: string; units?: string }) => {
   if (active && payload?.length) {
     return (
       <div className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
         <p className="text-gray-400">{label}</p>
-        <p className="text-brand-400 font-bold">{payload[0].value} kg</p>
+        <p className="text-brand-400 font-bold">{payload[0].value} {units === 'imperial' ? 'lbs' : 'kg'}</p>
       </div>
     )
   }
   return null
 }
 
-export default function WeightChart({ entries, startWeight }: Props) {
+export default function WeightChart({ entries, startWeight, units = 'metric' }: Props) {
+  const toDisplay = (kg: number) =>
+    units === 'imperial' ? Math.round(kg * 2.20462 * 10) / 10 : kg
+
   const data = entries.map((e) => ({
     week: `Wk ${e.week_number}`,
-    weight: e.weight_kg,
+    weight: toDisplay(e.weight_kg),
     date: e.check_in_date
   }))
 
@@ -58,10 +62,10 @@ export default function WeightChart({ entries, startWeight }: Props) {
           tickLine={false}
           domain={['auto', 'auto']}
         />
-        <Tooltip content={<CustomTooltip />} />
+        <Tooltip content={<CustomTooltip units={units} />} />
         {startWeight && (
           <ReferenceLine
-            y={startWeight}
+            y={toDisplay(startWeight)}
             stroke="#4b5563"
             strokeDasharray="4 2"
             label={{ value: 'Start', fill: '#4b5563', fontSize: 10 }}

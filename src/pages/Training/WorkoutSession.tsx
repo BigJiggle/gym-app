@@ -351,7 +351,7 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
   return (
     <div className="fixed inset-0 bg-gray-950 z-50 flex flex-col">
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-gray-900">
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-200 text-sm">
+        <button onClick={handleEndEarly} className="text-gray-400 hover:text-gray-200 text-sm">
           ← Back
         </button>
         <div className="text-center">
