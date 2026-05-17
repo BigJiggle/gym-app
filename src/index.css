@@ -1,0 +1,204 @@
+@import '@fontsource/nunito/400.css';
+@import '@fontsource/nunito/600.css';
+@import '@fontsource/nunito/700.css';
+@import '@fontsource/nunito/800.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  :root {
+    accent-color: #f97316;
+  }
+
+  body {
+    @apply bg-gray-950 text-gray-100;
+    font-family: 'Nunito', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  input[type="date"] {
+    color-scheme: dark;
+  }
+
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(1) brightness(0.85) sepia(1) saturate(4) hue-rotate(310deg);
+    cursor: pointer;
+    border-radius: 4px;
+    padding: 2px;
+  }
+
+  input[type="date"]::-webkit-calendar-picker-indicator:hover {
+    background-color: rgba(249, 115, 22, 0.15);
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-gray-900;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gray-700 rounded;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-600;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-gray-900 border border-gray-800 rounded-xl p-4;
+  }
+
+  .stat-card {
+    @apply card flex flex-col gap-1;
+  }
+
+  .input-base {
+    @apply bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 placeholder-gray-500
+           focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent
+           transition-colors w-full;
+  }
+
+  .label {
+    @apply text-sm font-medium text-gray-300 mb-1 block;
+  }
+
+  .btn-primary {
+    @apply bg-brand-600 hover:bg-brand-500 text-white font-semibold px-4 py-2 rounded-lg
+           transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium px-4 py-2 rounded-lg
+           border border-gray-700 transition-colors;
+  }
+
+  .btn-ghost {
+    @apply text-gray-400 hover:text-gray-100 hover:bg-gray-800 px-3 py-2 rounded-lg transition-colors;
+  }
+
+  .section-title {
+    @apply text-xl font-bold text-gray-100 mb-4;
+  }
+
+  .page-container {
+    @apply p-6 max-w-5xl mx-auto;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   THEME SYSTEM — CSS class overrides for non-default themes
+   Applied to html element via settingsStore.applyThemeName()
+   ═══════════════════════════════════════════════════════ */
+
+/* ── MONOTONE THEME: Dark base + gray brand (no orange) ── */
+html.theme-monotone .text-brand-300,
+html.theme-monotone .text-brand-300\/90 { color: #d1d5db !important; }
+html.theme-monotone .text-brand-400 { color: #9ca3af !important; }
+html.theme-monotone .text-brand-500 { color: #6b7280 !important; }
+html.theme-monotone .text-brand-600 { color: #4b5563 !important; }
+html.theme-monotone .bg-brand-500 { background-color: #6b7280 !important; }
+html.theme-monotone .bg-brand-600 { background-color: #4b5563 !important; }
+html.theme-monotone .bg-brand-600\/20,
+html.theme-monotone .bg-brand-600\/30 { background-color: rgba(75,85,99,0.2) !important; }
+html.theme-monotone .bg-brand-900\/10,
+html.theme-monotone .bg-brand-900\/20,
+html.theme-monotone .bg-brand-900\/30,
+html.theme-monotone .bg-brand-900\/40 { background-color: rgba(17,24,39,0.4) !important; }
+html.theme-monotone .bg-brand-950\/20 { background-color: rgba(3,7,18,0.2) !important; }
+html.theme-monotone .border-brand-500 { border-color: #6b7280 !important; }
+html.theme-monotone .border-brand-500\/50 { border-color: rgba(107,114,128,0.5) !important; }
+html.theme-monotone .border-brand-700,
+html.theme-monotone .border-brand-700\/50,
+html.theme-monotone .border-brand-700\/60 { border-color: rgba(55,65,81,0.6) !important; }
+html.theme-monotone .border-brand-800,
+html.theme-monotone .border-brand-800\/30,
+html.theme-monotone .border-brand-800\/40 { border-color: rgba(31,41,55,0.6) !important; }
+html.theme-monotone .accent-brand-500 { accent-color: #6b7280 !important; }
+html.theme-monotone [class*="bg-brand-"] { filter: saturate(0); }
+
+/* ── LIGHT THEME: Light backgrounds with dark text ── */
+html.theme-light { color-scheme: light; }
+html.theme-light body { background-color: #f3f4f6; color: #111827; }
+html.theme-light .bg-gray-950 { background-color: #f3f4f6 !important; }
+html.theme-light .bg-gray-900 { background-color: #ffffff !important; }
+html.theme-light .bg-gray-800 { background-color: #f9fafb !important; }
+html.theme-light .bg-gray-800\/20 { background-color: rgba(249,250,251,0.8) !important; }
+html.theme-light .bg-gray-800\/30 { background-color: rgba(249,250,251,0.9) !important; }
+html.theme-light .bg-gray-800\/40 { background-color: rgba(243,244,246,0.95) !important; }
+html.theme-light .bg-gray-950\/20 { background-color: rgba(243,244,246,0.5) !important; }
+html.theme-light .text-gray-100 { color: #111827 !important; }
+html.theme-light .text-gray-200 { color: #1f2937 !important; }
+html.theme-light .text-gray-300 { color: #374151 !important; }
+html.theme-light .text-gray-400 { color: #4b5563 !important; }
+html.theme-light .text-gray-500 { color: #6b7280 !important; }
+html.theme-light .text-gray-600 { color: #9ca3af !important; }
+html.theme-light .text-gray-700 { color: #d1d5db !important; }
+html.theme-light .border-gray-800 { border-color: #e5e7eb !important; }
+html.theme-light .border-gray-800\/40,
+html.theme-light .border-gray-800\/50 { border-color: rgba(229,231,235,0.8) !important; }
+html.theme-light .border-gray-700 { border-color: #d1d5db !important; }
+html.theme-light input:not([type="range"]):not([type="checkbox"]),
+html.theme-light select,
+html.theme-light textarea {
+  background-color: #ffffff !important;
+  color: #111827 !important;
+  border-color: #d1d5db !important;
+}
+html.theme-light input[type="date"] { color-scheme: light; }
+html.theme-light .bg-amber-900\/10 { background-color: rgba(255,251,235,0.9) !important; }
+html.theme-light .border-amber-800\/30 { border-color: rgba(217,119,6,0.3) !important; }
+
+/* ── LIGHT MONOTONE THEME: Light backgrounds + gray brand (no orange) ── */
+html.theme-light-monotone { color-scheme: light; }
+html.theme-light-monotone body { background-color: #f3f4f6; color: #111827; }
+html.theme-light-monotone .bg-gray-950 { background-color: #f3f4f6 !important; }
+html.theme-light-monotone .bg-gray-900 { background-color: #ffffff !important; }
+html.theme-light-monotone .bg-gray-800 { background-color: #f9fafb !important; }
+html.theme-light-monotone .bg-gray-800\/20 { background-color: rgba(249,250,251,0.8) !important; }
+html.theme-light-monotone .bg-gray-800\/30 { background-color: rgba(249,250,251,0.9) !important; }
+html.theme-light-monotone .bg-gray-800\/40 { background-color: rgba(243,244,246,0.95) !important; }
+html.theme-light-monotone .bg-gray-950\/20 { background-color: rgba(243,244,246,0.5) !important; }
+html.theme-light-monotone .text-gray-100 { color: #111827 !important; }
+html.theme-light-monotone .text-gray-200 { color: #1f2937 !important; }
+html.theme-light-monotone .text-gray-300 { color: #374151 !important; }
+html.theme-light-monotone .text-gray-400 { color: #4b5563 !important; }
+html.theme-light-monotone .text-gray-500 { color: #6b7280 !important; }
+html.theme-light-monotone .text-gray-600 { color: #9ca3af !important; }
+html.theme-light-monotone .text-gray-700 { color: #d1d5db !important; }
+html.theme-light-monotone .border-gray-800 { border-color: #e5e7eb !important; }
+html.theme-light-monotone .border-gray-800\/40,
+html.theme-light-monotone .border-gray-800\/50 { border-color: rgba(229,231,235,0.8) !important; }
+html.theme-light-monotone .border-gray-700 { border-color: #d1d5db !important; }
+html.theme-light-monotone .text-brand-300 { color: #6b7280 !important; }
+html.theme-light-monotone .text-brand-400 { color: #4b5563 !important; }
+html.theme-light-monotone .text-brand-500 { color: #374151 !important; }
+html.theme-light-monotone .bg-brand-500 { background-color: #6b7280 !important; }
+html.theme-light-monotone .bg-brand-600 { background-color: #374151 !important; }
+html.theme-light-monotone .bg-brand-600\/20 { background-color: rgba(55,65,81,0.15) !important; }
+html.theme-light-monotone .bg-brand-600\/30 { background-color: rgba(55,65,81,0.2) !important; }
+html.theme-light-monotone .border-brand-500 { border-color: #6b7280 !important; }
+html.theme-light-monotone .border-brand-500\/50 { border-color: rgba(107,114,128,0.5) !important; }
+html.theme-light-monotone .border-brand-700,
+html.theme-light-monotone .border-brand-700\/50,
+html.theme-light-monotone .border-brand-800\/50 { border-color: rgba(107,114,128,0.4) !important; }
+html.theme-light-monotone .accent-brand-500 { accent-color: #6b7280 !important; }
+html.theme-light-monotone [class*="bg-brand-"] { filter: saturate(0); }
+html.theme-light-monotone input:not([type="range"]):not([type="checkbox"]),
+html.theme-light-monotone select,
+html.theme-light-monotone textarea {
+  background-color: #ffffff !important;
+  color: #111827 !important;
+  border-color: #d1d5db !important;
+}
+html.theme-light-monotone input[type="date"] { color-scheme: light; }
+html.theme-light-monotone .bg-amber-900\/10 { background-color: rgba(255,251,235,0.9) !important; }
+html.theme-light-monotone .border-amber-800\/30 { border-color: rgba(217,119,6,0.3) !important; }

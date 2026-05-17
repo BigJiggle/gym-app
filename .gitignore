@@ -1,0 +1,9 @@
+node_modules/
+out/
+dist/
+dist-electron/
+*.db
+*.db-journal
+.env
+.DS_Store
+Thumbs.db

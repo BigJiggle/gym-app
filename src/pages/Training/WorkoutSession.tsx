@@ -1,0 +1,432 @@
+import { useEffect, useState, useCallback } from 'react'
+import type { TrainingSession, WorkoutLog, Exercise } from '../../types'
+import { useSettingsStore } from '../../store/settingsStore'
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+function formatTime(seconds: number): string {
+  const m = Math.floor(seconds / 60).toString().padStart(2, '0')
+  const s = (seconds % 60).toString().padStart(2, '0')
+  return `${m}:${s}`
+}
+
+function parseRepMidpoint(repRange: string): number {
+  const parts = repRange.split('-')
+  if (parts.length === 2) return Math.round((parseInt(parts[0]) + parseInt(parts[1])) / 2)
+  return parseInt(repRange) || 10
+}
+
+// ── types ─────────────────────────────────────────────────────────────────────
+
+interface SetEntry {
+  reps: number
+  weight: number
+  rir: number
+  done: boolean
+  skipped: boolean
+}
+
+interface ExerciseState {
+  sets: SetEntry[]
+  allSkipped: boolean
+}
+
+// ── ExerciseCard ─────────────────────────────────────────────────────────────
+
+interface ExerciseCardProps {
+  exercise: Exercise
+  state: ExerciseState
+  isImperial: boolean
+  onSetUpdate: (setIdx: number, field: keyof Pick<SetEntry, 'reps' | 'weight' | 'rir'>, value: number) => void
+  onSetDone: (setIdx: number) => void
+  onRemoveSet: (setIdx: number) => void
+  onSkipExercise: () => void
+  onAddSet: () => void
+}
+
+function ExerciseCard({ exercise, state, isImperial, onSetUpdate, onSetDone, onRemoveSet, onSkipExercise, onAddSet }: ExerciseCardProps) {
+  const weightUnit = isImperial ? 'lbs' : 'kg'
+  const weightStep = isImperial ? 5 : 2.5
+  return (
+    <div className={`bg-gray-900 border rounded-xl p-4 ${state.allSkipped ? 'border-gray-700 opacity-50' : 'border-gray-800'}`}>
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <p className="font-semibold text-gray-100 text-sm">{exercise.name}</p>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                window.api.openExternal(
+                  'https://www.youtube.com/results?search_query=' +
+                    encodeURIComponent(exercise.name + ' proper form tutorial')
+                )
+              }}
+              className="text-xs text-red-400 hover:text-red-300 opacity-50 hover:opacity-100 transition-opacity flex-shrink-0"
+              title="Watch tutorial on YouTube"
+            >
+              ▶
+            </button>
+          </div>
+          <p className="text-xs text-gray-500">{exercise.sets} sets × {exercise.reps} @ RIR {exercise.rir}</p>
+        </div>
+        {!state.allSkipped && (
+          <button
+            onClick={onSkipExercise}
+            className="text-xs text-gray-500 hover:text-red-400 border border-gray-700 hover:border-red-800 rounded-lg px-2 py-1 transition-colors"
+          >
+            Skip
+          </button>
+        )}
+        {state.allSkipped && <span className="text-xs text-gray-600 italic">Skipped</span>}
+      </div>
+
+      {!state.allSkipped && (
+        <div className="space-y-2">
+          {state.sets.map((s, i) => (
+            <div key={i} className={`flex items-center gap-2 ${s.done ? 'opacity-60' : ''}`}>
+              <span className="text-xs text-gray-600 w-8">Set {i + 1}</span>
+              <input
+                type="number"
+                value={s.reps || ''}
+                onChange={(e) => onSetUpdate(i, 'reps', Number(e.target.value))}
+                placeholder="Reps"
+                disabled={s.done}
+                className="w-16 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-gray-200 text-center"
+              />
+              <span className="text-gray-600 text-xs">×</span>
+              <input
+                type="number"
+                step={weightStep}
+                value={s.weight || ''}
+                onChange={(e) => onSetUpdate(i, 'weight', Number(e.target.value))}
+                placeholder={weightUnit}
+                disabled={s.done}
+                className="w-16 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-gray-200 text-center"
+              />
+              <span className="text-gray-600 text-xs">{weightUnit}</span>
+              <button
+                onClick={() => onSetDone(i)}
+                disabled={s.done}
+                className={`ml-auto w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${
+                  s.done
+                    ? 'bg-green-600 text-white'
+                    : 'bg-gray-800 text-gray-400 hover:bg-green-900 hover:text-green-400 border border-gray-700'
+                }`}
+              >
+                ✓
+              </button>
+              {!s.done && state.sets.length > 1 && (
+                <button
+                  onClick={() => onRemoveSet(i)}
+                  className="w-6 h-6 rounded flex items-center justify-center text-gray-700 hover:text-red-400 hover:bg-red-900/20 transition-colors text-xs"
+                  title="Remove set"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            onClick={(e) => { e.stopPropagation(); onAddSet() }}
+            className="text-xs text-brand-400 hover:text-brand-300 border border-brand-800/50 hover:border-brand-700 rounded-lg px-3 py-1.5 mt-2 transition-colors w-full"
+          >
+            + Add Set
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── WorkoutSession ────────────────────────────────────────────────────────────
+
+interface WorkoutSessionProps {
+  session: TrainingSession
+  workoutLog: WorkoutLog
+  onComplete: () => void
+  onClose: () => void
+}
+
+type Phase = 'active' | 'summary'
+
+function buildInitialStates(session: TrainingSession): Map<string, ExerciseState> {
+  const map = new Map<string, ExerciseState>()
+  for (const ex of session.exercises) {
+    const count = typeof ex.sets === 'number' ? ex.sets : 1
+    const defaultReps = parseRepMidpoint(ex.reps)
+    const sets: SetEntry[] = Array.from({ length: count }, () => ({
+      reps: defaultReps,
+      weight: 0,
+      rir: ex.rir,
+      done: false,
+      skipped: false,
+    }))
+    map.set(ex.name, { sets, allSkipped: false })
+  }
+  return map
+}
+
+export default function WorkoutSession({ session, workoutLog, onComplete, onClose }: WorkoutSessionProps) {
+  const { settings } = useSettingsStore()
+  const isImperial = settings.units === 'imperial'
+
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
+  const [phase, setPhase] = useState<Phase>('active')
+  const [exerciseStates, setExerciseStates] = useState<Map<string, ExerciseState>>(
+    () => buildInitialStates(session)
+  )
+  const [summaryStats, setSummaryStats] = useState<{ sets: number; exercises: number } | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    const id = setInterval(() => setElapsedSeconds((s) => s + 1), 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  // ── state helpers — no DB writes during workout ────────────────────────────
+
+  const updateSet = useCallback(
+    (exerciseName: string, setIdx: number, field: keyof Pick<SetEntry, 'reps' | 'weight' | 'rir'>, value: number) => {
+      setExerciseStates((prev) => {
+        const next = new Map(prev)
+        const exState = next.get(exerciseName)
+        if (!exState) return prev
+        const updatedSets = exState.sets.map((s, i) => (i === setIdx ? { ...s, [field]: value } : s))
+        next.set(exerciseName, { ...exState, sets: updatedSets })
+        return next
+      })
+    },
+    []
+  )
+
+  const markSetDone = useCallback((exerciseName: string, setIdx: number) => {
+    setExerciseStates((prev) => {
+      const next = new Map(prev)
+      const exState = next.get(exerciseName)
+      if (!exState) return prev
+      const set = exState.sets[setIdx]
+      if (!set || set.done) return prev
+      const updatedSets = exState.sets.map((s, i) => (i === setIdx ? { ...s, done: true } : s))
+      next.set(exerciseName, { ...exState, sets: updatedSets })
+      return next
+    })
+  }, [])
+
+  const skipExercise = useCallback((exerciseName: string) => {
+    setExerciseStates((prev) => {
+      const next = new Map(prev)
+      const state = next.get(exerciseName)
+      if (!state) return prev
+      next.set(exerciseName, { ...state, allSkipped: true })
+      return next
+    })
+  }, [])
+
+  const addSet = useCallback((exerciseName: string) => {
+    setExerciseStates((prev) => {
+      const next = new Map(prev)
+      const exState = next.get(exerciseName)
+      if (!exState) return prev
+      const exercise = session.exercises.find((e) => e.name === exerciseName)
+      const lastSet = exState.sets[exState.sets.length - 1]
+      const newSet: SetEntry = {
+        reps: lastSet?.reps ?? parseRepMidpoint(exercise?.reps ?? '10'),
+        weight: lastSet?.weight ?? 0,
+        rir: lastSet?.rir ?? (exercise?.rir ?? 2),
+        done: false,
+        skipped: false,
+      }
+      next.set(exerciseName, { ...exState, sets: [...exState.sets, newSet] })
+      return next
+    })
+  }, [session.exercises])
+
+  const removeSet = useCallback((exerciseName: string, setIdx: number) => {
+    setExerciseStates((prev) => {
+      const next = new Map(prev)
+      const exState = next.get(exerciseName)
+      if (!exState || exState.sets.length <= 1) return prev
+      const updatedSets = exState.sets.filter((_, i) => i !== setIdx)
+      next.set(exerciseName, { ...exState, sets: updatedSets })
+      return next
+    })
+  }, [])
+
+  // ── complete: batch-save all sets then mark workout done ──────────────────
+
+  const handleComplete = useCallback(async () => {
+    const currentStates = Array.from(exerciseStates.entries())
+
+    // Snapshot summary stats before async work
+    const doneSets = currentStates.reduce((acc, [, s]) => acc + s.sets.filter((x) => x.done).length, 0)
+    const doneExercises = currentStates.filter(([, s]) => s.sets.some((x) => x.done)).length
+    setSummaryStats({ sets: doneSets, exercises: doneExercises })
+    setSaving(true)
+
+    // Build the full set list to persist
+    const setsToSave: Record<string, unknown>[] = []
+    for (const [exerciseName, exState] of currentStates) {
+      const exercise = session.exercises.find((e) => e.name === exerciseName)
+      if (exState.allSkipped) {
+        exState.sets.forEach((_, i) => {
+          setsToSave.push({
+            exercise_name: exerciseName,
+            set_number: i + 1,
+            reps_prescribed: exercise?.reps ?? null,
+            reps_actual: null,
+            weight_kg: null,
+            rir_actual: null,
+            skipped: true,
+            notes: null,
+          })
+        })
+      } else {
+        exState.sets.forEach((s, i) => {
+          if (s.done) {
+            // Convert entered weight to kg for DB storage
+            const rawWeight = s.weight === 0 ? null : s.weight
+            const weightKg = rawWeight === null ? null
+              : isImperial ? Math.round(rawWeight * 0.453592 * 100) / 100
+              : rawWeight
+            setsToSave.push({
+              exercise_name: exerciseName,
+              set_number: i + 1,
+              reps_prescribed: exercise?.reps ?? null,
+              reps_actual: s.reps,
+              weight_kg: weightKg,
+              rir_actual: s.rir,
+              skipped: false,
+              notes: null,
+            })
+          }
+        })
+      }
+    }
+
+    try {
+      await window.api.saveSetsBatch(workoutLog.id, setsToSave)
+      await window.api.completeWorkout(workoutLog.id)
+    } catch (err) {
+      console.error('Complete workout error:', err)
+    }
+    setSaving(false)
+    setPhase('summary')
+  }, [workoutLog.id, exerciseStates, session.exercises, isImperial])
+
+  // ── end early = cancel entirely, no history entry ─────────────────────────
+
+  const handleEndEarly = useCallback(() => {
+    const confirmed = window.confirm('Cancel this workout? No data will be saved.')
+    if (!confirmed) return
+    window.api.cancelWorkout(workoutLog.id)
+      .catch((err: unknown) => console.error('cancelWorkout error:', err))
+      .finally(() => onClose())
+  }, [workoutLog.id, onClose])
+
+  // ── derived ────────────────────────────────────────────────────────────────
+
+  const doneCount = session.exercises.filter((ex) => {
+    const state = exerciseStates.get(ex.name)
+    if (!state) return false
+    return state.allSkipped || state.sets.some((s) => s.done)
+  }).length
+
+  const canComplete = session.exercises.some((ex) => {
+    const state = exerciseStates.get(ex.name)
+    return state ? state.sets.some((s) => s.done) : false
+  })
+
+  const completedCount = session.exercises.filter((ex) => {
+    const state = exerciseStates.get(ex.name)
+    return state ? state.sets.some((s) => s.done) : false
+  }).length
+
+  const totalSetsLogged = Array.from(exerciseStates.values()).reduce(
+    (acc, state) => acc + state.sets.filter((s) => s.done).length,
+    0
+  )
+
+  // ── render ─────────────────────────────────────────────────────────────────
+
+  return (
+    <div className="fixed inset-0 bg-gray-950 z-50 flex flex-col">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-gray-900">
+        <button onClick={onClose} className="text-gray-400 hover:text-gray-200 text-sm">
+          ← Back
+        </button>
+        <div className="text-center">
+          <p className="font-semibold text-gray-100 text-sm">{session.session_name}</p>
+          <p className="text-xs text-brand-400 font-mono">{formatTime(elapsedSeconds)}</p>
+        </div>
+        <button onClick={handleEndEarly} className="text-red-400 hover:text-red-300 text-sm">
+          Cancel
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {session.exercises.map((ex) => (
+          <ExerciseCard
+            key={ex.name}
+            exercise={ex}
+            state={exerciseStates.get(ex.name)!}
+            isImperial={isImperial}
+            onSetUpdate={(setIdx, field, value) => updateSet(ex.name, setIdx, field, value)}
+            onSetDone={(setIdx) => markSetDone(ex.name, setIdx)}
+            onRemoveSet={(setIdx) => removeSet(ex.name, setIdx)}
+            onSkipExercise={() => skipExercise(ex.name)}
+            onAddSet={() => addSet(ex.name)}
+          />
+        ))}
+      </div>
+
+      <div className="border-t border-gray-800 bg-gray-900 px-4 py-3">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-sm text-gray-400">
+            {doneCount}/{session.exercises.length} exercises done
+          </p>
+          <div className="w-32 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-brand-500"
+              style={{ width: `${(doneCount / session.exercises.length) * 100}%` }}
+            />
+          </div>
+        </div>
+        <button
+          onClick={handleComplete}
+          disabled={!canComplete || saving}
+          className="w-full py-3 rounded-xl font-bold text-white bg-brand-600 hover:bg-brand-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          {saving ? 'Saving...' : 'Complete Workout ✓'}
+        </button>
+      </div>
+
+      {phase === 'summary' && (
+        <div className="absolute inset-0 bg-gray-950 flex flex-col items-center justify-center p-8">
+          <div className="text-6xl mb-4">🏆</div>
+          <h2 className="text-2xl font-black text-gray-100 mb-1">Workout Complete!</h2>
+          <p className="text-gray-400 mb-6">Great work today</p>
+          <div className="grid grid-cols-3 gap-4 w-full max-w-sm mb-8">
+            <div className="bg-gray-900 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-brand-400">{formatTime(elapsedSeconds)}</p>
+              <p className="text-xs text-gray-500 mt-1">Duration</p>
+            </div>
+            <div className="bg-gray-900 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-green-400">{summaryStats?.exercises ?? completedCount}</p>
+              <p className="text-xs text-gray-500 mt-1">Exercises</p>
+            </div>
+            <div className="bg-gray-900 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-gray-400">{summaryStats?.sets ?? totalSetsLogged}</p>
+              <p className="text-xs text-gray-500 mt-1">Sets logged</p>
+            </div>
+          </div>
+          <button
+            onClick={onComplete}
+            className="w-full max-w-sm py-3 rounded-xl font-bold text-white bg-brand-600 hover:bg-brand-500"
+          >
+            Back to Training
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}

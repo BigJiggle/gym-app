@@ -1,0 +1,33 @@
+appId: com.prepcoach.desktop
+productName: PrepCoach
+copyright: Copyright © 2025
+
+directories:
+  buildResources: build
+  output: dist
+
+files:
+  - out/**
+  - node_modules/**
+  - package.json
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: PrepCoach
+
+asar: true
+asarUnpack:
+  - node_modules/node-sqlite3-wasm/**
