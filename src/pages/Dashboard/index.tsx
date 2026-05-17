@@ -51,7 +51,9 @@ export default function Dashboard() {
     }
   }
 
-  const todayDow = new Date().getDay() + 1
+  // ISO weekday: Mon=1 … Sun=7 — matches day_of_week in training sessions
+  const jsDay = new Date().getDay()
+  const todayDow = jsDay === 0 ? 7 : jsDay
   const todaySession = trainingPlan?.sessions?.find((s) => s.day_of_week === todayDow)
   const showCountdown = user.show_date ? getShowCountdown(user.show_date) : null
 
@@ -137,7 +139,7 @@ export default function Dashboard() {
         {/* Today */}
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-gray-100">Today — {DAY_NAMES[todayDow - 1]}</h2>
+            <h2 className="font-semibold text-gray-100">Today — {DAY_NAMES[jsDay]}</h2>
             {todaySession ? (
               <Badge variant="brand">Training Day</Badge>
             ) : (

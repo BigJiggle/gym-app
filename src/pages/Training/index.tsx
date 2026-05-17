@@ -115,8 +115,12 @@ export default function Training() {
     const sessionDbId = trainingPlan.sessions?.find(
       (s) => s.day_of_week === session.day_of_week
     ) as unknown as { id?: number }
-    await startWorkout(user.id, (sessionDbId as any)?.id ?? null)
-    setSessionToStart(session)
+    try {
+      await startWorkout(user.id, (sessionDbId as any)?.id ?? null)
+      setSessionToStart(session)
+    } catch (e) {
+      setAiError(`Failed to start workout: ${String(e)}`)
+    }
   }
 
   if (!trainingPlan) {

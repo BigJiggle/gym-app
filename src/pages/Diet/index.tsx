@@ -645,7 +645,15 @@ export default function Diet() {
               {getSwapAlternatives(swapTarget.meal, user.dietary_preference).map((alt, i) => (
                 <div
                   key={i}
-                  onClick={() => setSwapTarget(null)}
+                  onClick={() => {
+                    if (dietPlan) {
+                      const updatedMeals = dietPlan.meals?.map((m, idx) =>
+                        idx === swapTarget.mealIndex ? { ...m, foods: alt } : m
+                      )
+                      usePlanStore.setState({ dietPlan: { ...dietPlan, meals: updatedMeals } })
+                    }
+                    setSwapTarget(null)
+                  }}
                   className="bg-gray-800 border border-gray-700 rounded-xl p-3 cursor-pointer hover:border-gray-600"
                 >
                   <div className="flex justify-between text-xs text-gray-500 mb-1">
