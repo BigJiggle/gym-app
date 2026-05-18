@@ -54,6 +54,16 @@ export default function Training() {
     loadWorkoutHistory(user.id)
   }, [user?.id])
 
+  // Auto-resume: if there's an active workout from a previous session, find its matching
+  // plan session and restore the WorkoutSession overlay so the user can continue or cancel.
+  useEffect(() => {
+    if (!activeWorkout || sessionToStart || !trainingPlan?.sessions) return
+    const matched = (trainingPlan.sessions as any[]).find(
+      (s: any) => s.id === activeWorkout.session_id
+    )
+    if (matched) setSessionToStart(matched as TrainingSession)
+  }, [activeWorkout?.id, trainingPlan?.id])
+
   if (!user) return null
 
   const todayDow = new Date().getDay() === 0 ? 7 : new Date().getDay()

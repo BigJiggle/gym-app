@@ -179,9 +179,10 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
+    if (phase === 'summary') return
     const id = setInterval(() => setElapsedSeconds((s) => s + 1), 1000)
     return () => clearInterval(id)
-  }, [])
+  }, [phase])
 
   // ── state helpers — no DB writes during workout ────────────────────────────
 
