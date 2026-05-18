@@ -7,6 +7,34 @@ import type { WorkoutLog } from '../../types'
 interface Props {
   history: WorkoutLog[]
   sessionsPerWeek: number
+  units?: 'metric' | 'imperial'
+}
+
+interface PR {
+  exerciseName: string
+  weightKg: number
+  reps: number
+  date: string
+}
+
+function computePRs(history: WorkoutLog[]): PR[] {
+  const bests = new Map<string, PR>()
+  for (const log of history) {
+    if (log.status !== 'completed') continue
+    for (const s of log.sets ?? []) {
+      if (s.skipped || s.weight_kg === null || s.weight_kg === 0 || s.reps_actual === null) continue
+      const existing = bests.get(s.exercise_name)
+      if (!existing || s.weight_kg > existing.weightKg) {
+        bests.set(s.exercise_name, {
+          exerciseName: s.exercise_name,
+          weightKg: s.weight_kg,
+          reps: s.reps_actual,
+          date: log.date,
+        })
+      }
+    }
+  }
+  return Array.from(bests.values()).sort((a, b) => a.exerciseName.localeCompare(b.exerciseName))
 }
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -54,7 +82,11 @@ function monthlyAdherenceData(history: WorkoutLog[], sessionsPerWeek: number) {
   return result
 }
 
-export default function WorkoutStats({ history, sessionsPerWeek }: Props) {
+export default function WorkoutStats({ history, sessionsPerWeek, units = 'metric' }: Props) {
+  const prs = computePRs(history)
+  const toDisplay = (kg: number) =>
+    units === 'imperial' ? Math.round(kg * 2.20462 * 10) / 10 : kg
+  const weightUnit = units === 'imperial' ? 'lbs' : 'kg'
   const now = new Date()
   const [viewYear, setViewYear] = useState(now.getFullYear())
   const [viewMonth, setViewMonth] = useState(now.getMonth())
@@ -235,6 +267,29 @@ export default function WorkoutStats({ history, sessionsPerWeek }: Props) {
         <span className="flex items-center gap-1"><span className="text-red-700">–</span> Skipped</span>
         <span className="flex items-center gap-1"><span className="text-gray-600">○</span> Rest day</span>
       </div>
+
+      {/* Personal Records */}
+      {prs.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Personal Records</p>
+          <div className="space-y-2">
+            {prs.map((pr) => (
+              <div key={pr.exerciseName} className="flex items-center justify-between py-1 border-b border-gray-800 last:border-0">
+                <p className="text-sm text-gray-300 truncate pr-3">{pr.exerciseName}</p>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className="text-sm font-bold text-brand-400">
+                    {toDisplay(pr.weightKg)}{weightUnit} × {pr.reps}
+                  </span>
+                  <span className="text-xs text-gray-600 hidden sm:inline">{pr.date}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          {prs.length === 0 && (
+            <p className="text-sm text-gray-600 text-center py-2">Log workouts with weights to see your records.</p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

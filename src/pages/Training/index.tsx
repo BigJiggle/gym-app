@@ -358,6 +358,7 @@ export default function Training() {
             <WorkoutStats
               history={workoutHistory}
               sessionsPerWeek={trainingPlan.sessions?.length ?? 3}
+              units={settings.units}
             />
           )}
 
