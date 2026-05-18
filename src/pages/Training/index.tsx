@@ -8,7 +8,7 @@ import WorkoutSession from './WorkoutSession'
 import SessionEditor from './SessionEditor'
 import WorkoutLogEditor from './WorkoutLogEditor'
 import WorkoutStats from './WorkoutStats'
-import type { TrainingSession } from '../../types'
+import type { TrainingSession, ExerciseLibraryItem } from '../../types'
 import { parseLocalDate } from '../../utils/dates'
 
 const DAY_NAMES = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -46,12 +46,14 @@ export default function Training() {
   const [editingSession, setEditingSession] = useState<{id: number; name: string; exercises: import('../../types').Exercise[]} | null>(null)
   const [editingLog, setEditingLog] = useState<import('../../types').WorkoutLog | null>(null)
   const [editingLogExercises, setEditingLogExercises] = useState<import('../../types').Exercise[] | null>(null)
+  const [exerciseLibrary, setExerciseLibrary] = useState<ExerciseLibraryItem[]>([])
 
   useEffect(() => {
     if (!user?.id) return
     loadTrainingPlan(user.id)
     loadActiveWorkout(user.id)
     loadWorkoutHistory(user.id)
+    window.api.getExerciseLibrary().then(setExerciseLibrary)
   }, [user?.id])
 
   // Auto-resume: if there's an active workout from a previous session, find its matching
@@ -67,6 +69,31 @@ export default function Training() {
   if (!user) return null
 
   const todayDow = new Date().getDay() === 0 ? 7 : new Date().getDay()
+
+  // Compute this-week muscle group coverage from completed workouts
+  const weeklyMuscleSets: Map<string, number> = (() => {
+    const today = new Date()
+    const jsDay = today.getDay() // 0=Sun
+    const daysFromMon = jsDay === 0 ? 6 : jsDay - 1
+    const monday = new Date(today)
+    monday.setDate(today.getDate() - daysFromMon)
+    const mondayStr = monday.toLocaleDateString('en-CA')
+    const todayStr = today.toLocaleDateString('en-CA')
+    const nameToGroup = new Map(exerciseLibrary.map((e) => [e.name, e.muscleGroup]))
+    const result = new Map<string, number>()
+    for (const log of workoutHistory) {
+      if (log.status !== 'completed' || log.date < mondayStr || log.date > todayStr) continue
+      for (const s of log.sets ?? []) {
+        if (s.skipped) continue
+        const group = nameToGroup.get(s.exercise_name)
+        if (group) result.set(group, (result.get(group) ?? 0) + 1)
+      }
+    }
+    return result
+  })()
+
+  // All muscle groups in a fixed display order
+  const ALL_MUSCLE_GROUPS = ['chest', 'back', 'shoulders', 'triceps', 'biceps', 'quads', 'hamstrings', 'glutes', 'calves', 'core']
 
   // If there is an active workout and a session to track, show the overlay
   if (activeWorkout && sessionToStart) {
@@ -218,6 +245,36 @@ export default function Training() {
               </div>
             </div>
           </div>
+
+          {/* This Week's Muscle Coverage */}
+          {exerciseLibrary.length > 0 && (
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">This Week's Volume</p>
+              <div className="flex flex-wrap gap-2">
+                {ALL_MUSCLE_GROUPS.map((group) => {
+                  const sets = weeklyMuscleSets.get(group) ?? 0
+                  const trained = sets > 0
+                  return (
+                    <div
+                      key={group}
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                        trained
+                          ? 'bg-brand-900/40 border border-brand-700/50 text-brand-300'
+                          : 'bg-gray-800 border border-gray-700 text-gray-600'
+                      }`}
+                    >
+                      {trained && <span className="text-green-400 text-xs">✓</span>}
+                      <span className="capitalize">{group}</span>
+                      {trained && <span className="font-bold text-brand-400">{sets}s</span>}
+                    </div>
+                  )
+                })}
+              </div>
+              {weeklyMuscleSets.size === 0 && (
+                <p className="text-xs text-gray-600 mt-1">No workouts logged yet this week.</p>
+              )}
+            </div>
+          )}
 
           {/* AI refine — only shown when Claude API key is set */}
           {(settings.claude_api_key ?? '') && (
