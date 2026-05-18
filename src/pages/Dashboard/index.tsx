@@ -256,20 +256,56 @@ export default function Dashboard() {
                   +{(dietPlan.meals?.length ?? 0) - 4} more meals in the plan
                 </p>
               )}
-              {/* Progress bar */}
-              {(dietPlan.meals?.length ?? 0) > 0 && (
-                <div className="mt-2">
-                  <div className="flex justify-between text-xs text-gray-500 mb-1">
-                    <span>{mealCompletions.filter(c => c.date === todayStr).length}/{dietPlan.meals?.length ?? 0} meals logged</span>
+              {/* Macro progress */}
+              {(dietPlan.meals?.length ?? 0) > 0 && (() => {
+                const eatenIndices = new Set(
+                  mealCompletions.filter(c => c.date === todayStr).map(c => c.meal_index)
+                )
+                const meals = dietPlan.meals ?? []
+                const eatenCals = meals.reduce((sum, m, i) => sum + (eatenIndices.has(i) ? m.calories : 0), 0)
+                const eatenProtein = meals.reduce((sum, m, i) => sum + (eatenIndices.has(i) ? m.protein_g : 0), 0)
+                const calPct = Math.min(100, Math.round((eatenCals / dietPlan.calories_target) * 100))
+                const proteinPct = Math.min(100, Math.round((eatenProtein / dietPlan.protein_g) * 100))
+                const remainingCals = dietPlan.calories_target - eatenCals
+                const remainingProtein = dietPlan.protein_g - eatenProtein
+                return (
+                  <div className="mt-3 pt-3 border-t border-gray-800 space-y-2">
+                    <div>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-gray-400">Calories</span>
+                        <span className="text-gray-300">
+                          <span className="text-brand-400 font-medium">{eatenCals}</span>
+                          <span className="text-gray-600"> / {dietPlan.calories_target} kcal</span>
+                          {remainingCals > 0 && <span className="text-gray-600"> · {remainingCals} left</span>}
+                        </span>
+                      </div>
+                      <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-brand-500 transition-all duration-300"
+                          style={{ width: `${calPct}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-gray-400">Protein</span>
+                        <span className="text-gray-300">
+                          <span className={`font-medium ${proteinPct >= 80 ? 'text-green-400' : proteinPct >= 40 ? 'text-yellow-400' : 'text-red-400'}`}>{eatenProtein}g</span>
+                          <span className="text-gray-600"> / {dietPlan.protein_g}g</span>
+                          {remainingProtein > 0 && <span className="text-gray-600"> · {remainingProtein}g left</span>}
+                        </span>
+                      </div>
+                      <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full transition-all duration-300 ${proteinPct >= 80 ? 'bg-green-500' : proteinPct >= 40 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                          style={{ width: `${proteinPct}%` }}
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-600 text-right">{eatenIndices.size}/{meals.length} meals logged</p>
                   </div>
-                  <div className="h-1 bg-gray-800 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-green-500 transition-all"
-                      style={{ width: `${Math.round((mealCompletions.filter(c => c.date === todayStr).length / (dietPlan.meals?.length ?? 1)) * 100)}%` }}
-                    />
-                  </div>
-                </div>
-              )}
+                )
+              })()}
             </div>
           )}
         </div>
