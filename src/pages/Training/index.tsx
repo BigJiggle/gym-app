@@ -272,15 +272,13 @@ export default function Training() {
                       <h3 className="text-sm font-semibold text-gray-200">{session.session_name}</h3>
                     </div>
                     <div className="flex items-center gap-2">
-                      {isToday && !isExpanded ? (
+                      {isToday && (
                         <button
                           onClick={(e) => { e.stopPropagation(); handleStartWorkout(session) }}
                           className="text-xs bg-brand-600 hover:bg-brand-500 text-white px-3 py-1 rounded-lg font-bold transition-colors"
                         >
                           ▶ Start
                         </button>
-                      ) : (
-                        isToday && <Badge variant="brand">Today</Badge>
                       )}
                       <span className="text-xs text-gray-500">{session.exercises.length} ex</span>
                     </div>

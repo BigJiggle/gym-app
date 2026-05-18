@@ -226,7 +226,7 @@ export default function Dashboard() {
             </div>
           ) : (
             <div className="space-y-1.5">
-              {(dietPlan.meals ?? []).slice(0, 4).map((meal, idx) => {
+              {(dietPlan.meals ?? []).map((meal, idx) => {
                 const done = isMealDone(idx)
                 return (
                   <div
@@ -251,11 +251,6 @@ export default function Dashboard() {
                   </div>
                 )
               })}
-              {(dietPlan.meals?.length ?? 0) > 4 && (
-                <p className="text-xs text-gray-600 text-center pt-1">
-                  +{(dietPlan.meals?.length ?? 0) - 4} more meals in the plan
-                </p>
-              )}
               {/* Macro progress */}
               {(dietPlan.meals?.length ?? 0) > 0 && (() => {
                 const eatenIndices = new Set(
