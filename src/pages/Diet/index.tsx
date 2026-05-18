@@ -640,7 +640,7 @@ export default function Diet() {
         <div className="fixed inset-0 bg-black/60 z-50 flex items-end justify-center">
           <div className="bg-gray-900 border border-gray-800 rounded-t-2xl p-6 w-full max-w-lg">
             <h3 className="font-bold text-gray-100 mb-1">Swap {swapTarget.meal.name}</h3>
-            <p className="text-xs text-gray-500 mb-4">Alternative options with similar macros:</p>
+            <p className="text-xs text-gray-500 mb-4">Tap an option to replace your current foods (~{swapTarget.meal.calories} kcal, {swapTarget.meal.protein_g}g protein):</p>
             <div className="space-y-2 mb-4">
               {getSwapAlternatives(swapTarget.meal, user.dietary_preference).map((alt, i) => (
                 <div
@@ -656,9 +656,8 @@ export default function Diet() {
                   }}
                   className="bg-gray-800 border border-gray-700 rounded-xl p-3 cursor-pointer hover:border-gray-600"
                 >
-                  <div className="flex justify-between text-xs text-gray-500 mb-1">
-                    <span className="text-gray-300 font-medium">Option {i + 1}</span>
-                    <span>{swapTarget.meal.calories} kcal</span>
+                  <div className="mb-1">
+                    <span className="text-xs text-gray-300 font-medium">Option {i + 1}</span>
                   </div>
                   <div className="flex flex-wrap gap-1">
                     {alt.map((food, fi) => (

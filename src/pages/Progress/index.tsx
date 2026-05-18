@@ -45,13 +45,15 @@ export default function Progress() {
               ? (parseFloat(totalChange) / 0.453592).toFixed(1)
               : totalChange
             : null
+          const isLoss = changeVal !== null && parseFloat(changeVal) < 0
+          const isGain = changeVal !== null && parseFloat(changeVal) > 0
           return (
             <StatCard
-              label="Total Change"
-              value={changeVal ? `${parseFloat(changeVal) > 0 ? '+' : ''}${changeVal}` : '—'}
-              unit={wUnit}
+              label={isLoss ? 'Lost' : isGain ? 'Gained' : 'Total Change'}
+              value={changeVal ? `${isLoss ? '↓ ' : isGain ? '↑ ' : ''}${Math.abs(parseFloat(changeVal)).toFixed(1)}` : '—'}
+              unit={changeVal ? wUnit : undefined}
               delta={weeksCompleted > 0 ? `over ${weeksCompleted} weeks` : 'no data yet'}
-              color={changeVal && parseFloat(changeVal) < 0 ? 'green' : 'brand'}
+              color={isLoss ? 'green' : isGain ? 'brand' : 'brand'}
             />
           )
         })()}
