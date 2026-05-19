@@ -508,7 +508,7 @@ export default function Education() {
       {tab === 'prep' && (
         <div className="space-y-4">
           <div>
-            <h2 className="font-bold text-gray-100 mb-1">First Timer Competition Checklist</h2>
+            <h2 className="font-bold text-gray-100 mb-1">Competition Prep Checklist</h2>
             <p className="text-sm text-gray-500 mb-3">Tap any time block to expand the checklist for that phase.</p>
             <div className="space-y-2">
               {Object.entries(FIRST_TIMER_CHECKLIST).map(([key, section]) => {

@@ -339,7 +339,7 @@ export default function Diet() {
                   {user.include_snacks ? ' · Snacks' : ''}
                 </p>
               </div>
-              <span className="text-gray-500 text-xs">{prefsOpen ? '▲ Close' : '▼ Edit'}</span>
+              <span className="text-gray-500 text-xs">{prefsOpen ? '▲ Close' : '▼ Customize'}</span>
             </button>
 
             {prefsOpen && (
