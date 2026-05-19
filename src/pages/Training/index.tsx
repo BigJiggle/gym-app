@@ -462,6 +462,7 @@ export default function Training() {
               history={workoutHistory}
               sessionsPerWeek={trainingPlan.sessions?.length ?? 3}
               units={settings.units}
+              exerciseLibrary={exerciseLibrary}
             />
           )}
 

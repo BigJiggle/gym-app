@@ -2,12 +2,13 @@ import { useState } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell
 } from 'recharts'
-import type { WorkoutLog } from '../../types'
+import type { WorkoutLog, ExerciseLibraryItem } from '../../types'
 
 interface Props {
   history: WorkoutLog[]
   sessionsPerWeek: number
   units?: 'metric' | 'imperial'
+  exerciseLibrary?: ExerciseLibraryItem[]
 }
 
 interface PR {
@@ -39,6 +40,7 @@ function computePRs(history: WorkoutLog[]): PR[] {
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const DAY_HEADERS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
+const ALL_MUSCLE_GROUPS = ['chest', 'back', 'shoulders', 'triceps', 'biceps', 'quads', 'hamstrings', 'glutes', 'calves', 'core']
 
 function todayStr() {
   return new Date().toLocaleDateString('en-CA')
@@ -82,7 +84,40 @@ function monthlyAdherenceData(history: WorkoutLog[], sessionsPerWeek: number) {
   return result
 }
 
-export default function WorkoutStats({ history, sessionsPerWeek, units = 'metric' }: Props) {
+// Returns the Monday of the week containing `date`, offset by `weekOffset` weeks back
+function getMondayOfWeek(weekOffset: number): Date {
+  const today = new Date()
+  const jsDay = today.getDay()
+  const daysFromMon = jsDay === 0 ? 6 : jsDay - 1
+  const monday = new Date(today)
+  monday.setDate(today.getDate() - daysFromMon - weekOffset * 7)
+  monday.setHours(0, 0, 0, 0)
+  return monday
+}
+
+function dateToStr(d: Date): string {
+  return d.toLocaleDateString('en-CA')
+}
+
+function computeWeekMuscleSets(
+  history: WorkoutLog[],
+  nameToGroup: Map<string, string>,
+  fromStr: string,
+  toStr: string
+): Map<string, number> {
+  const result = new Map<string, number>()
+  for (const log of history) {
+    if (log.status !== 'completed' || log.date < fromStr || log.date > toStr) continue
+    for (const s of log.sets ?? []) {
+      if (s.skipped) continue
+      const group = nameToGroup.get(s.exercise_name)
+      if (group) result.set(group, (result.get(group) ?? 0) + 1)
+    }
+  }
+  return result
+}
+
+export default function WorkoutStats({ history, sessionsPerWeek, units = 'metric', exerciseLibrary = [] }: Props) {
   const prs = computePRs(history)
   const toDisplay = (kg: number) =>
     units === 'imperial' ? Math.round(kg * 2.20462 * 10) / 10 : kg
@@ -135,6 +170,26 @@ export default function WorkoutStats({ history, sessionsPerWeek, units = 'metric
     .reduce((acc, l) => acc + (l.sets?.filter((s) => !s.skipped).length ?? 0), 0)
   const avgSets = completedLogs.length > 0 ? Math.round(totalSetsAllTime / completedLogs.length) : 0
 
+  // 4-week volume trend: requires exercise library to map exercise → muscle group
+  const nameToGroup = new Map(exerciseLibrary.map((e) => [e.name, e.muscleGroup]))
+  const weekBounds = Array.from({ length: 4 }, (_, i) => {
+    const offsetWeeks = 3 - i // 3, 2, 1, 0 (oldest → current)
+    const mon = getMondayOfWeek(offsetWeeks)
+    const sun = new Date(mon)
+    sun.setDate(mon.getDate() + 6)
+    const label = offsetWeeks === 0 ? 'This Wk'
+      : offsetWeeks === 1 ? 'Last Wk'
+      : `−${offsetWeeks}w`
+    return { label, from: dateToStr(mon), to: dateToStr(sun) }
+  })
+  const weekSets = weekBounds.map(({ from, to }) =>
+    computeWeekMuscleSets(history, nameToGroup, from, to)
+  )
+  // Only show muscle groups that appear in the exercise library AND have at least 1 set in any of the 4 weeks
+  const activeMuscleGroups = exerciseLibrary.length > 0
+    ? ALL_MUSCLE_GROUPS.filter((g) => weekSets.some((ws) => (ws.get(g) ?? 0) > 0))
+    : []
+
   return (
     <div className="space-y-4">
       {/* All-time summary */}
@@ -152,6 +207,62 @@ export default function WorkoutStats({ history, sessionsPerWeek, units = 'metric
           <p className="text-xs text-gray-500 mt-0.5">Plan Frequency</p>
         </div>
       </div>
+
+      {/* 4-week muscle volume trend */}
+      {activeMuscleGroups.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+            4-Week Muscle Volume (sets)
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr>
+                  <th className="text-left text-gray-600 pb-2 pr-3 font-medium w-24">Muscle</th>
+                  {weekBounds.map(({ label }) => (
+                    <th
+                      key={label}
+                      className={`text-center pb-2 px-1 font-medium w-14 ${
+                        label === 'This Wk' ? 'text-brand-400' : 'text-gray-500'
+                      }`}
+                    >
+                      {label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {activeMuscleGroups.map((group) => (
+                  <tr key={group} className="border-t border-gray-800/50">
+                    <td className="py-1.5 pr-3 text-gray-400 capitalize">{group}</td>
+                    {weekSets.map((ws, wi) => {
+                      const count = ws.get(group) ?? 0
+                      const isCurrentWeek = wi === 3
+                      const cellColor = count === 0
+                        ? 'text-red-500/60 bg-red-900/10'
+                        : count >= 6
+                          ? 'text-green-400 bg-green-900/20'
+                          : 'text-yellow-400 bg-yellow-900/10'
+                      return (
+                        <td key={wi} className="py-1.5 px-1 text-center">
+                          <span className={`inline-block rounded px-1.5 py-0.5 font-bold tabular-nums ${cellColor} ${isCurrentWeek ? 'ring-1 ring-brand-700' : ''}`}>
+                            {count}
+                          </span>
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-gray-700 mt-2">
+            <span className="text-green-400">6+</span> = strong &nbsp;
+            <span className="text-yellow-400">1–5</span> = moderate &nbsp;
+            <span className="text-red-500/70">0</span> = not trained
+          </p>
+        </div>
+      )}
 
       {/* Monthly adherence bar chart */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
