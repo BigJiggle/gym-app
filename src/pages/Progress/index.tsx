@@ -181,6 +181,51 @@ export default function Progress() {
         </div>
       )}
 
+      {/* Measurement changes — instant snapshot of first→latest delta for each tracked site */}
+      {checkinHistory.length >= 2 && (() => {
+        const oldest = checkinHistory[checkinHistory.length - 1]
+        const newest = checkinHistory[0]
+        type MeasurementKey = 'waist_cm' | 'chest_cm' | 'hip_cm' | 'arm_cm' | 'thigh_cm'
+        const fields: { label: string; key: MeasurementKey }[] = [
+          { label: 'Waist', key: 'waist_cm' },
+          { label: 'Chest', key: 'chest_cm' },
+          { label: 'Hip', key: 'hip_cm' },
+          { label: 'Arm', key: 'arm_cm' },
+          { label: 'Thigh', key: 'thigh_cm' },
+        ]
+        const tracked = fields.filter(f => oldest[f.key] != null && newest[f.key] != null)
+        if (tracked.length === 0) return null
+        const mUnit = isImperial ? 'in' : 'cm'
+        const toMDisplay = (cm: number) => isImperial ? Math.round(cm / 2.54 * 10) / 10 : Math.round(cm * 10) / 10
+        return (
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold text-gray-100">Measurement Changes</h2>
+              <span className="text-xs text-gray-500">Wk {oldest.week_number} → Wk {newest.week_number}</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+              {tracked.map(({ label, key }) => {
+                const oldVal = toMDisplay(oldest[key]!)
+                const newVal = toMDisplay(newest[key]!)
+                const delta = Math.round((newVal - oldVal) * 10) / 10
+                const color = delta < 0 ? 'text-green-400' : delta > 0 ? 'text-amber-400' : 'text-gray-500'
+                const arrow = delta < 0 ? '↓' : delta > 0 ? '↑' : '→'
+                return (
+                  <div key={label} className="bg-gray-800/50 rounded-xl p-3 text-center">
+                    <p className="text-xs text-gray-500 mb-1">{label}</p>
+                    <p className="text-base font-bold text-gray-100">{newVal}{mUnit}</p>
+                    <p className={`text-xs font-semibold mt-0.5 ${color}`}>
+                      {arrow} {Math.abs(delta).toFixed(1)}{mUnit}
+                    </p>
+                    <p className="text-xs text-gray-600 mt-0.5">{oldVal} → {newVal}</p>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Weight chart */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
         <h2 className="font-semibold text-gray-100 mb-4">Weight Over Time</h2>
