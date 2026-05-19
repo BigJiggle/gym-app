@@ -15,7 +15,9 @@ type Tab = 'posing' | 'prep' | 'peakweek' | 'firsttimer' | 'timeline'
 export default function Education() {
   const { user, shows } = useUserStore()
   const { settings } = useSettingsStore()
-  const [tab, setTab] = useState<Tab>('timeline')
+  const today2 = new Date().toLocaleDateString('en-CA')
+  const hasUpcomingShow = shows.some(s => s.show_date >= today2)
+  const [tab, setTab] = useState<Tab>(hasUpcomingShow ? 'timeline' : 'posing')
   const [selectedDivisionId, setSelectedDivisionId] = useState<string>(() => {
     if (user?.division) {
       const match = DIVISIONS.find((d) =>

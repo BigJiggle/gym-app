@@ -161,8 +161,8 @@ export default function Dashboard() {
                 )}
               </div>
               <Link to="/training">
-                <Button variant="secondary" size="sm" className="w-full mt-2">
-                  Start Today's Workout →
+                <Button size="sm" className="w-full mt-2">
+                  ▶ Start Today's Workout
                 </Button>
               </Link>
             </div>
