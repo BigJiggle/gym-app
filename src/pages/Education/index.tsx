@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useUserStore } from '../../store/userStore'
 import { useSettingsStore } from '../../store/settingsStore'
 import { DIVISIONS } from '../../data/posing'
@@ -65,9 +65,18 @@ export default function Education() {
   const timeline = nearestShow ? buildPrepTimeline(nearestShow.show_date) : null
   const showCountdown = nearestShow ? getShowCountdown(nearestShow.show_date) : null
 
-  const [expandedWeek, setExpandedWeek] = useState<number | null>(
-    timeline?.find(w => w.isCurrentWeek)?.weeksOut ?? null
-  )
+  const [expandedWeek, setExpandedWeek] = useState<number | null>(null)
+  const expandedWeekInitialized = useRef(false)
+
+  // Auto-expand the current week once the show data loads (shows load async from DB)
+  useEffect(() => {
+    if (expandedWeekInitialized.current || !timeline) return
+    const currentWeek = timeline.find(w => w.isCurrentWeek)
+    if (currentWeek) {
+      setExpandedWeek(currentWeek.weeksOut)
+      expandedWeekInitialized.current = true
+    }
+  }, [timeline])
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
