@@ -269,9 +269,9 @@ export default function WorkoutStats({ history, sessionsPerWeek, units = 'metric
       </div>
 
       {/* Personal Records */}
-      {prs.length > 0 && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Personal Records</p>
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+        <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Personal Records</p>
+        {prs.length > 0 ? (
           <div className="space-y-2">
             {prs.map((pr) => (
               <div key={pr.exerciseName} className="flex items-center justify-between py-1 border-b border-gray-800 last:border-0">
@@ -285,11 +285,10 @@ export default function WorkoutStats({ history, sessionsPerWeek, units = 'metric
               </div>
             ))}
           </div>
-          {prs.length === 0 && (
-            <p className="text-sm text-gray-600 text-center py-2">Log workouts with weights to see your records.</p>
-          )}
-        </div>
-      )}
+        ) : (
+          <p className="text-sm text-gray-600 text-center py-2">Log workouts with weights to see your records.</p>
+        )}
+      </div>
     </div>
   )
 }
