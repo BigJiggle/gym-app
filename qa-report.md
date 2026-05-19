@@ -3,37 +3,37 @@
 ## Phase 1: QA Engineer
 - TypeScript: PASS (0 errors)
 - Unit tests: PASS (31 passing, 0 failing)
-- Bugs fixed: 2
+- Bugs fixed: 1
 
 ### Feature Audit
-- Onboarding: OK — all 6 steps render and submit correctly; dead orphan `Step5Review.tsx` deleted
-- Diet page: OK — swap modal, food exclusion, and recalculate all function correctly
-- Training page: OK — workout start, set logging, and mark-complete flow works; `exerciseStates.get(ex.name)!` is safe
-- Check-in page: OK — locked countdown, edit-last-check-in, and submit form all work correctly
-- Education page: BUG FIXED — current prep-week auto-expansion now works after shows load asynchronously
-- Progress page: OK — sort orders correct (progressEntries ASC, checkinHistory DESC); WeightChart handles empty state
-- Settings page: OK — unit conversion and check-in interval controls function correctly
+- Onboarding: OK — All 6 steps load correctly; step 1 validation guards the submit; plan generation fires async after navigation.
+- Diet page: OK — Meal Plan / Weekly View / Grocery List tabs all render. Food Preferences panel syncs from user on open. Dietary restriction toggles regenerate immediately.
+- Training page: OK — Session cards expand/collapse, Start Workout launches overlay, workout completes and saves sets via batch API.
+- Check-in page: OK — Locked countdown displayed when nextAllowed > now; form shown when available; success state shows adjustments.
+- Education page: OK — All 5 tabs (Prep Timeline, Posing Guide, Competition Prep, Peak Week, First Timer) render correctly.
+- Progress page: OK — Weight chart, measurement table, and adherence bars all render; empty state links to check-in.
+- Settings page: OK — Unit toggle, check-in schedule mode, edit profile, show management, reset all work correctly.
 
 ### Bugs Fixed
-- `src/pages/Education/index.tsx` — `expandedWeek` was initialized with `useState(timeline?.find(…)?.weeksOut ?? null)` before `shows` had loaded from the async DB call; the current week never auto-expanded on page open. Fixed by moving initialization to a `useEffect` with a `useRef` guard that sets the value once `timeline` is available.
-- `src/pages/Onboarding/steps/Step5Review.tsx` — orphan file never imported anywhere; was replaced by `Step6Review.tsx` when the Food Setup step was added but the old file was never deleted. Removed to prevent future confusion.
+- `src/pages/Training/WorkoutStats.tsx:272–292` — Personal Records empty state (`prs.length === 0` branch) was nested inside a `prs.length > 0` guard, making it dead code that could never render. Restructured to a proper ternary so the empty state shows correctly when no workouts with weights have been logged.
 
 ### Known Issues (not fixed)
-- None. All identified issues were either false positives (sort assumptions, non-null assertions that are actually safe) or fixed above.
+- `src/pages/Diet/index.tsx` — Meal swap (the "Swap Meal" sheet) only updates in-memory Zustand state (`usePlanStore.setState`) without persisting to the database. When the user navigates away and returns, `loadDietPlan` reloads from DB, discarding the swap. No `updateDietPlan` IPC endpoint exists in the current architecture; fixing this requires a new backend handler, which is out of scope for a pure QA pass.
 
 ---
 
 ## Phase 2: Bodybuilder User
-- Status: RAN (Phase 1 fixed 2 bugs, which is fewer than 3)
-- Feature added: **Week-over-week volume comparison per muscle group**
-- Description: The "This Week's Volume" widget in Training → Plan now shows a delta (e.g. `+3` in green, `-2` in red) for each muscle group comparing this week's completed sets to last week. A prep athlete can immediately see if volume is being maintained, increasing, or dropping during a cut — without digging into logs.
-- Files changed: `src/pages/Training/index.tsx`
+- Status: RAN (Phase 1 fixed 1 bug, which is fewer than 3)
+- Feature added: **4-Week Muscle Volume Trend Table** — A compact table in Training → History → Stats & Charts showing set counts per muscle group (chest, back, shoulders, etc.) across the last 4 calendar weeks. Cells are color-coded: red = 0 sets (gap in training), yellow = 1–5 sets, green = 6+ sets. Current week is highlighted with a brand-color ring. Only muscle groups logged at least once in the 4-week window are shown; the section is hidden until the first workout with sets is recorded.
+- Files changed:
+  - `src/pages/Training/WorkoutStats.tsx` — Added `exerciseLibrary` prop, `getMondayOfWeek` helper, `computeWeekMuscleSets` helper, and the 4-week trend table component.
+  - `src/pages/Training/index.tsx` — Passed `exerciseLibrary` state to `<WorkoutStats>`.
 
 ---
 
 ## Phase 3: UX Reviewer
 - Changes made: 2
 
-`src/pages/Diet/index.tsx` — "Swap Meal" was styled as faint gray text (`text-xs text-gray-500`), indistinguishable from a label. It is the primary per-meal customization action, so it now has a visible border (`border border-gray-700 hover:border-brand-700`) making it clearly a button a tired user can find at a glance.
+1. `src/pages/Education/index.tsx` — Default tab changed from `'timeline'` to `'posing'` when the user has no upcoming show set. The Prep Timeline tab shows a blank "No upcoming shows" empty state for most users on first open, which is confusing and unhelpful. Posing Guide is immediately useful to everyone. When a show IS set, the app still opens on Timeline.
 
-`src/pages/CheckIn/index.tsx` — The check-in form has 5 sections (weight, measurements, adherence, wellbeing, notes) with no visual hierarchy between required and optional. Added a divider rule above the Adherence section that reads "Optional — skip if you're in a hurry", so a tired athlete immediately knows only the bodyweight field is required and can submit faster.
+2. `src/pages/Dashboard/index.tsx` — "Start Today's Workout" button changed from `variant="secondary"` (gray outline) to primary brand style. For a user who opens the app to train, the workout CTA was visually deprioritized below the exercise list. A primary-colored button makes the action immediately obvious. Also added ▶ prefix for quicker scanning.
