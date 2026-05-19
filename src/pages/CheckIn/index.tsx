@@ -118,11 +118,11 @@ export default function CheckIn() {
   const [editNotes, setEditNotes] = useState('')
   const [editDate, setEditDate] = useState('')
 
-  const defaultWeight = user
-    ? isImperial
-      ? Math.round(user.weight_kg / 0.453592 * 10) / 10
-      : user.weight_kg
-    : 80
+  // Use last check-in weight as default so repeat users don't have to clear the old profile weight each week
+  const lastWeightKg = checkinHistory[0]?.weight_kg ?? user?.weight_kg ?? 80
+  const defaultWeight = isImperial
+    ? Math.round(lastWeightKg / 0.453592 * 10) / 10
+    : lastWeightKg
 
   const [weightDisplay, setWeightDisplay] = useState(String(defaultWeight))
   const [waistDisplay, setWaistDisplay] = useState('')
