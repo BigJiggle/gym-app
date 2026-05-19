@@ -3,36 +3,37 @@
 ## Phase 1: QA Engineer
 - TypeScript: PASS (0 errors)
 - Unit tests: PASS (31 passing, 0 failing)
-- Bugs fixed: 0
+- Bugs fixed: 2
 
 ### Feature Audit
-- Onboarding: OK — All 6 steps render correctly; Step1 validated on Next and on Submit; user and show created on completion; plans generated in background without blocking navigation.
-- Diet page: OK — Meal swap modal works; food exclusion confirmation flow works; Food Preferences panel opens/saves/regenerates correctly; Grocery and Weekly View tabs render.
-- Training page: OK — Workout session starts and tracks sets; complete writes all sets to DB then marks workout done; cancel discards without saving; auto-resume restores active session on re-open.
-- Check-in page: OK — Locked state shows countdown with correct days/time remaining and link to Settings; available state submits correctly and shows coach feedback; edit-last-check-in panel works on locked screen.
-- Education page: OK — All 5 tabs (Prep Timeline, Posing Guide, Competition Prep, Peak Week, First Timer) render and expand correctly; YouTube tutorial links open externally; carb calculator computes correctly in metric and imperial.
-- Progress page: OK — Weight chart renders with check-in history; measurement history table displays correct unit conversions; weekly adherence bars show correctly; empty state displayed when no data.
-- Settings page: OK — Unit toggle persists immediately; check-in schedule type and interval can both be changed; Edit Profile form syncs from store on open; Save & Regenerate Plans fires both plan generators; Reset Data requires double confirmation.
+- Onboarding: OK — all 6 steps render and submit correctly; dead orphan `Step5Review.tsx` deleted
+- Diet page: OK — swap modal, food exclusion, and recalculate all function correctly
+- Training page: OK — workout start, set logging, and mark-complete flow works; `exerciseStates.get(ex.name)!` is safe
+- Check-in page: OK — locked countdown, edit-last-check-in, and submit form all work correctly
+- Education page: BUG FIXED — current prep-week auto-expansion now works after shows load asynchronously
+- Progress page: OK — sort orders correct (progressEntries ASC, checkinHistory DESC); WeightChart handles empty state
+- Settings page: OK — unit conversion and check-in interval controls function correctly
 
 ### Bugs Fixed
-None — codebase was clean.
+- `src/pages/Education/index.tsx` — `expandedWeek` was initialized with `useState(timeline?.find(…)?.weeksOut ?? null)` before `shows` had loaded from the async DB call; the current week never auto-expanded on page open. Fixed by moving initialization to a `useEffect` with a `useRef` guard that sets the value once `timeline` is available.
+- `src/pages/Onboarding/steps/Step5Review.tsx` — orphan file never imported anywhere; was replaced by `Step6Review.tsx` when the Food Setup step was added but the old file was never deleted. Removed to prevent future confusion.
 
 ### Known Issues (not fixed)
-- `src/pages/Onboarding/steps/Step5Review.tsx` is an orphaned file never imported anywhere (Step6Review.tsx is the one used). Not a runtime bug — dead code only.
-- Swapping a meal via the Swap Meal sheet updates food names in local state only; individual meal macro numbers (calories, protein, etc.) shown on the card are not recalculated after swap. By design — swap alternatives are matched by approximate macros.
+- None. All identified issues were either false positives (sort assumptions, non-null assertions that are actually safe) or fixed above.
 
 ---
 
 ## Phase 2: Bodybuilder User
-- Status: RAN (Phase 1 fixed 0 bugs, under the 3-bug threshold)
-- Feature added: **Weight Trend Projection** — On the Progress page, a "Weight Trend" card appears once 2+ check-ins exist, showing: average weekly rate of weight change (over last 4 check-ins), weeks until show day (if set), projected show-day weight at current pace, and a status badge (On Track / Losing Too Fast / Losing Too Slow / Weight Trending Up) calibrated to healthy cut/bulk rates (0.4–1% bodyweight/week for a cut). A reference line shows the ideal rate range for the user's current weight. Respects imperial/metric units.
-- Files changed: `src/pages/Progress/index.tsx`
+- Status: RAN (Phase 1 fixed 2 bugs, which is fewer than 3)
+- Feature added: **Week-over-week volume comparison per muscle group**
+- Description: The "This Week's Volume" widget in Training → Plan now shows a delta (e.g. `+3` in green, `-2` in red) for each muscle group comparing this week's completed sets to last week. A prep athlete can immediately see if volume is being maintained, increasing, or dropping during a cut — without digging into logs.
+- Files changed: `src/pages/Training/index.tsx`
 
 ---
 
 ## Phase 3: UX Reviewer
 - Changes made: 2
 
-`src/pages/Training/index.tsx` — Added a "Today" text label (brand-colored) next to the day abbreviation badge on the current day's session card. Previously the only visual indicator was a subtle border-color change (`border-brand-800/40`) and the ▶ Start button appearing; a tired user scanning multiple session cards could easily miss which session is today's. The explicit label makes it immediately obvious without any layout change.
+`src/pages/Diet/index.tsx` — "Swap Meal" was styled as faint gray text (`text-xs text-gray-500`), indistinguishable from a label. It is the primary per-meal customization action, so it now has a visible border (`border border-gray-700 hover:border-brand-700`) making it clearly a button a tired user can find at a glance.
 
-`src/pages/Progress/index.tsx` — Replaced the plain text empty state ("No progress data yet. Submit weekly check-ins…") with a card that includes a direct "Do First Check-In" button linking to `/checkin`. A user arriving on Progress with no data had no actionable next step — they had to remember where Check-In was in the nav and navigate there manually.
+`src/pages/CheckIn/index.tsx` — The check-in form has 5 sections (weight, measurements, adherence, wellbeing, notes) with no visual hierarchy between required and optional. Added a divider rule above the Adherence section that reads "Optional — skip if you're in a hurry", so a tired athlete immediately knows only the bodyweight field is required and can submit faster.
