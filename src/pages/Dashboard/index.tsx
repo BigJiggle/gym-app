@@ -57,6 +57,13 @@ export default function Dashboard() {
   const todaySession = trainingPlan?.sessions?.find((s) => s.day_of_week === todayDow)
   const showCountdown = user.show_date ? getShowCountdown(user.show_date) : null
 
+  // Next training session after today (for rest-day preview)
+  const nextSession = (() => {
+    if (!trainingPlan?.sessions?.length) return null
+    const sorted = [...trainingPlan.sessions].sort((a, b) => a.day_of_week - b.day_of_week)
+    return sorted.find(s => s.day_of_week > todayDow) ?? sorted[0]
+  })()
+
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       {/* Header */}
@@ -167,9 +174,28 @@ export default function Dashboard() {
               </Link>
             </div>
           ) : (
-            <div className="py-4 text-center">
-              <p className="text-gray-500 text-sm">Rest & recovery today.</p>
-              <p className="text-gray-600 text-xs mt-1">Focus on sleep, nutrition, and mobility.</p>
+            <div className="py-2">
+              <p className="text-gray-500 text-sm text-center">Rest & recovery today.</p>
+              <p className="text-gray-600 text-xs mt-1 text-center">Focus on sleep, nutrition, and mobility.</p>
+              {nextSession && (
+                <div className="mt-3 pt-3 border-t border-gray-800">
+                  <p className="text-xs text-gray-500 mb-1.5">Next Training Day</p>
+                  <p className="text-sm font-medium text-brand-400">
+                    {DAY_NAMES[nextSession.day_of_week === 7 ? 0 : nextSession.day_of_week]} — {nextSession.session_name}
+                  </p>
+                  <div className="mt-1.5 space-y-0.5">
+                    {nextSession.exercises.slice(0, 4).map((ex, i) => (
+                      <div key={i} className="flex justify-between text-xs">
+                        <span className="text-gray-500">{ex.name}</span>
+                        <span className="text-gray-700">{ex.sets}×{ex.reps}</span>
+                      </div>
+                    ))}
+                    {nextSession.exercises.length > 4 && (
+                      <p className="text-xs text-gray-700">+{nextSession.exercises.length - 4} more</p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
