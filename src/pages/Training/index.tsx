@@ -70,19 +70,12 @@ export default function Training() {
 
   const todayDow = new Date().getDay() === 0 ? 7 : new Date().getDay()
 
-  // Compute this-week muscle group coverage from completed workouts
-  const weeklyMuscleSets: Map<string, number> = (() => {
-    const today = new Date()
-    const jsDay = today.getDay() // 0=Sun
-    const daysFromMon = jsDay === 0 ? 6 : jsDay - 1
-    const monday = new Date(today)
-    monday.setDate(today.getDate() - daysFromMon)
-    const mondayStr = monday.toLocaleDateString('en-CA')
-    const todayStr = today.toLocaleDateString('en-CA')
+  // Compute muscle group set counts for a given date range
+  function computeMuscleSets(fromStr: string, toStr: string): Map<string, number> {
     const nameToGroup = new Map(exerciseLibrary.map((e) => [e.name, e.muscleGroup]))
     const result = new Map<string, number>()
     for (const log of workoutHistory) {
-      if (log.status !== 'completed' || log.date < mondayStr || log.date > todayStr) continue
+      if (log.status !== 'completed' || log.date < fromStr || log.date > toStr) continue
       for (const s of log.sets ?? []) {
         if (s.skipped) continue
         const group = nameToGroup.get(s.exercise_name)
@@ -90,6 +83,29 @@ export default function Training() {
       }
     }
     return result
+  }
+
+  // This week (Mon–today) and last week (Mon–Sun)
+  const weeklyMuscleSets: Map<string, number> = (() => {
+    const today = new Date()
+    const jsDay = today.getDay()
+    const daysFromMon = jsDay === 0 ? 6 : jsDay - 1
+    const monday = new Date(today)
+    monday.setDate(today.getDate() - daysFromMon)
+    return computeMuscleSets(monday.toLocaleDateString('en-CA'), today.toLocaleDateString('en-CA'))
+  })()
+
+  const lastWeekMuscleSets: Map<string, number> = (() => {
+    const today = new Date()
+    const jsDay = today.getDay()
+    const daysFromMon = jsDay === 0 ? 6 : jsDay - 1
+    const thisMonday = new Date(today)
+    thisMonday.setDate(today.getDate() - daysFromMon)
+    const lastMonday = new Date(thisMonday)
+    lastMonday.setDate(thisMonday.getDate() - 7)
+    const lastSunday = new Date(thisMonday)
+    lastSunday.setDate(thisMonday.getDate() - 1)
+    return computeMuscleSets(lastMonday.toLocaleDateString('en-CA'), lastSunday.toLocaleDateString('en-CA'))
   })()
 
   // All muscle groups in a fixed display order
@@ -246,26 +262,46 @@ export default function Training() {
             </div>
           </div>
 
-          {/* This Week's Muscle Coverage */}
+          {/* This Week's Muscle Coverage + vs Last Week */}
           {exerciseLibrary.length > 0 && (
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">This Week's Volume</p>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">This Week's Volume</p>
+                {lastWeekMuscleSets.size > 0 && (
+                  <p className="text-xs text-gray-600">vs last week</p>
+                )}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                 {ALL_MUSCLE_GROUPS.map((group) => {
                   const sets = weeklyMuscleSets.get(group) ?? 0
+                  const lastSets = lastWeekMuscleSets.get(group) ?? 0
                   const trained = sets > 0
+                  const delta = sets - lastSets
+                  const hasLastWeek = lastWeekMuscleSets.size > 0
                   return (
                     <div
                       key={group}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                      className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                         trained
-                          ? 'bg-brand-900/40 border border-brand-700/50 text-brand-300'
-                          : 'bg-gray-800 border border-gray-700 text-gray-600'
+                          ? 'bg-brand-900/40 border border-brand-700/50'
+                          : 'bg-gray-800 border border-gray-700'
                       }`}
                     >
-                      {trained && <span className="text-green-400 text-xs">✓</span>}
-                      <span className="capitalize">{group}</span>
-                      {trained && <span className="font-bold text-brand-400">{sets}s</span>}
+                      <div className="flex items-center gap-1.5">
+                        {trained && <span className="text-green-400">✓</span>}
+                        <span className={`capitalize ${trained ? 'text-brand-300' : 'text-gray-600'}`}>{group}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {trained && <span className="font-bold text-brand-400">{sets}s</span>}
+                        {hasLastWeek && trained && delta !== 0 && (
+                          <span className={`text-xs font-medium ${delta > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {delta > 0 ? `+${delta}` : delta}
+                          </span>
+                        )}
+                        {hasLastWeek && !trained && lastSets > 0 && (
+                          <span className="text-xs text-gray-600">{lastSets}s↓</span>
+                        )}
+                      </div>
                     </div>
                   )
                 })}
