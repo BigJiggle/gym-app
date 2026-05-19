@@ -563,6 +563,13 @@ export default function CheckIn() {
           </div>
         </Card>
 
+        {/* Optional section divider */}
+        <div className="flex items-center gap-3">
+          <div className="flex-1 h-px bg-gray-800" />
+          <span className="text-xs text-gray-600 uppercase tracking-wider">Optional — skip if you're in a hurry</span>
+          <div className="flex-1 h-px bg-gray-800" />
+        </div>
+
         {/* Adherence */}
         <Card title="Adherence">
           <div className="space-y-4">
