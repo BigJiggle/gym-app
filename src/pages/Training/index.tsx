@@ -326,6 +326,9 @@ export default function Training() {
                       <span className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded font-mono">
                         {DAY_NAMES[session.day_of_week]}
                       </span>
+                      {isToday && (
+                        <span className="text-xs font-semibold text-brand-400">Today</span>
+                      )}
                       <h3 className="text-sm font-semibold text-gray-200">{session.session_name}</h3>
                     </div>
                     <div className="flex items-center gap-2">
