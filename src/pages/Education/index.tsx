@@ -80,6 +80,15 @@ export default function Education() {
     }
   }, [timeline])
 
+  // Shows load asynchronously after the component may already be mounted.
+  // Auto-switch to the timeline tab the first time upcoming shows become available,
+  // but only if the user hasn't manually navigated away from the default 'posing' tab.
+  useEffect(() => {
+    if (hasUpcomingShow && tab === 'posing') {
+      setTab('timeline')
+    }
+  }, [hasUpcomingShow])
+
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div>
