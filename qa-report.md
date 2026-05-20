@@ -1,45 +1,44 @@
 # App Health Report — 2026-05-20
 
 ## Phase 1: QA Engineer
+
 - TypeScript: PASS (0 errors)
 - Unit tests: PASS (31 passing, 0 failing)
-- Bugs fixed: 0
+- Bugs fixed: 1
 
 ### Feature Audit
-- Onboarding: OK — 6 steps flow correctly; step 1 validation works; defaults cover steps 2–5; submit properly creates user, show entry, and queues plan generation async
-- Diet page: OK — Meal swap replaces food list in store state; grocery list correctly multiplies weekly quantities × 7; all 3 tabs (Meal Plan, Weekly View, Grocery List) render
-- Training page: OK — Session cards expand/collapse; Start button visible on today's session directly; WorkoutSession tracks sets in memory and saves batch on Complete; auto-resume on reload works via activeWorkout + sessionToStart
-- Check-in page: OK — Locked state shows countdown and schedule info with edit-last-check-in panel; available state shows form with required weight field; submit re-fetches real next allowed date
-- Education page: OK — All 5 tabs (Prep Timeline, Posing Guide, Show Checklist, Peak Week, First Timer) render with correct content; Timeline auto-expands current week
-- Progress page: OK — Empty state links to check-in; weight chart, trend analysis, projected show weight, measurement history, and adherence bars all render
-- Settings page: OK — Units toggle, check-in schedule (day/interval/biweekly modes), profile edit with re-sync on open, show management, and reset all work correctly
+
+- Onboarding: OK — All 6 steps render, navigation and validation work correctly, plan generation fires after profile creation.
+- Diet page: BUG FIXED — Grocery list weekly quantities were wrong when the same food appeared in multiple meals (only first occurrence counted); now sums all daily grams before multiplying by 7.
+- Training page: OK — Start workout, log sets, mark complete, skip exercise, add/remove sets all function correctly.
+- Check-in page: OK — Locked countdown displays correctly, available form submits, coach feedback renders, edit-last-check-in panel works.
+- Education page: OK — All 5 tabs (Prep Timeline, Posing Guide, Show Checklist, Peak Week, First Timer) render and navigate without issues.
+- Progress page: OK — Weight chart, measurement changes, trend analysis, and empty state all render correctly.
+- Settings page: OK — Unit toggle propagates app-wide, check-in interval controls save, profile edit/regenerate both paths work.
 
 ### Bugs Fixed
-None — codebase was clean on initial audit.
+
+- `src/pages/Diet/GroceryList.tsx:35–55` — `buildGroceryItems` silently skipped duplicate foods (same base name in multiple meals), so a food appearing in breakfast AND lunch only contributed one daily portion × 7 days to the grocery quantity. Fixed by accumulating gram totals across all meal occurrences before multiplying by 7; non-gram items fall back to `count × 7` days multiplier.
 
 ### Known Issues (not fixed)
-- Diet page meal swap replaces only the `foods` array in UI state (not persisted to DB). Macros on the swapped card remain from the original plan. Design decision: alternatives are calorie-matched and no `updateDietPlan` IPC exists.
-- `WorkoutLogEditor.tsx` — `autoSave` calls `window.api.updateWorkoutSet` inside a React state-setter callback (potential double-fire in StrictMode). No crash in Electron production build; noted as technical debt from previous audit.
-- Check-in `weightDisplay` is initialised at mount from `checkinHistory[0]`. If history hasn't loaded yet (cold open to /checkin), weight field shows the profile weight. Normal navigation flow (Dashboard → Check-in) populates the store before arrival.
+
+- `Diet/index.tsx` — Meal swap replaces only the `foods` array in UI state (not persisted to DB). Design decision: alternatives are calorie-matched and no `updateDietPlan` IPC exists for individual meal food arrays.
+- `CheckIn/index.tsx` — `weightDisplay` initialised at mount from store state. On a cold open directly to /checkin (bypassing Dashboard), history may not be loaded yet and weight field shows profile weight. Normal navigation flow (Dashboard → Check-in) populates the store before arrival.
 
 ---
 
 ## Phase 2: Bodybuilder User
-- Status: RAN (Phase 1 fixed 0 bugs, under the 3-bug threshold)
-- Feature added: **Today's Intake Progress on the Diet / Meal Plan tab**
-  - Loads today's meal completions on mount using the existing `getMealCompletions` / `logMealCompletion` / `unlogMealCompletion` IPC calls — no new backend changes
-  - Inserts a "Today's Intake" card (between the macro targets grid and the macro distribution bar) showing: meals-eaten badge (N/total), animated calorie progress bar (consumed vs. target), animated protein progress bar (consumed vs. target), and a "All meals hit today!" completion message when done
-  - Each meal card gains a "Mark Eaten / ✓ Eaten" toggle at the bottom right that syncs with the Dashboard's meal checkboxes (shared Zustand `mealCompletions` state)
-  - Progress bars turn solid green when the respective target is reached
-- Files changed: `src/pages/Diet/index.tsx`
+
+- Status: RAN (Phase 1 fixed 1 bug, fewer than 3)
+- Feature added: **Lift Progression Chart** — An exercise-specific estimated 1RM trend chart in Training → History → Stats & Charts. User selects any exercise they have logged weight for (minimum 2 sessions) and sees a line chart of e1RM (Epley formula: weight × (1 + reps/30)) over time, with actual weight × reps in the tooltip and a start-vs-now delta shown below the chart. Makes it immediately visible whether strength is being retained during a competition cut.
+- Files changed: `src/pages/Training/WorkoutStats.tsx`
 
 ---
 
 ## Phase 3: UX Reviewer
+
 - Changes made: 2
 
-`src/pages/Training/WorkoutSession.tsx` — **Removed the misleading "← Back" button from the workout session header.**
-Both "← Back" (gray, left) and "Cancel" (red, right) previously called the same `handleEndEarly` function, which prompts "Cancel this workout? No data will be saved." A tired user reasonably assumes "← Back" means safe navigation away without data loss. Replacing it with a fixed-width spacer leaves only the clearly-destructive red "Cancel" button. Header layout stays balanced.
+`src/pages/Training/index.tsx` — Added `▼`/`▲` chevron to the right of every session card header. Without it, the cards looked like static display panels; a tired user had no visual cue that tapping expands them to reveal the exercise list and "Start Workout" button. The chevron makes the expand interaction immediately obvious.
 
-`src/pages/Training/WorkoutSession.tsx` — **Added a green "✓ Done" completion state to fully-logged exercise cards.**
-When all sets of an exercise are marked done, the card border turns green and "✓ Done" replaces the "Skip" button. Previously, done sets grayed out individually but the card had no overall completion signal, making it hard for a fatigued athlete to glance and see which exercises were still pending. No behavior changes — purely visual feedback.
+`src/pages/Progress/index.tsx` — Removed the duplicate empty state. When no check-ins exist, the page previously showed the WeightChart container (which internally displayed "No weight data yet. Submit your first check-in…") AND immediately below showed another card saying "No progress data yet. Your weight chart appears here…" with the same CTA. Fixed by only rendering the WeightChart when `progressEntries.length > 0`, so the bottom "Do First Check-In" empty state is the single no-data message a new user sees.
