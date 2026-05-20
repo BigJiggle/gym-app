@@ -374,20 +374,6 @@ export default function Diet() {
               <div className="bg-blue-500" style={{ width: `${carbsPct}%` }} />
               <div className="bg-yellow-500" style={{ width: `${fatPct}%` }} />
             </div>
-            <div className="flex gap-4 mt-2 text-xs text-gray-500">
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
-                Protein {proteinPct}%
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
-                Carbs {carbsPct}%
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-yellow-500 inline-block" />
-                Fat {fatPct}%
-              </span>
-            </div>
           </div>
 
           {/* Meals */}

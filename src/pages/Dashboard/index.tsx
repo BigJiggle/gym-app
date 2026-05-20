@@ -333,18 +333,15 @@ export default function Dashboard() {
       </div>
 
       {/* Quick links */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="flex flex-wrap gap-x-6 gap-y-2 px-1">
         {[
-          { to: '/training', label: 'View Training Plan', icon: '🏋' },
-          { to: '/diet', label: 'View Nutrition Plan', icon: '🥗' },
-          { to: '/progress', label: 'Track Progress', icon: '📈' },
-          { to: '/education', label: 'Posing Guide', icon: '📖' }
-        ].map(({ to, label, icon }) => (
-          <Link key={to} to={to}>
-            <div className="bg-gray-900 hover:bg-gray-800 border border-gray-800 hover:border-gray-700 rounded-xl p-3 text-center transition-colors cursor-pointer">
-              <div className="text-2xl mb-1">{icon}</div>
-              <p className="text-xs text-gray-400 font-medium">{label}</p>
-            </div>
+          { to: '/training', label: 'Training Plan' },
+          { to: '/diet', label: 'Nutrition Plan' },
+          { to: '/progress', label: 'Progress' },
+          { to: '/education', label: 'Posing Guide' },
+        ].map(({ to, label }) => (
+          <Link key={to} to={to} className="text-sm text-brand-400 hover:text-brand-300 transition-colors">
+            {label} →
           </Link>
         ))}
       </div>
