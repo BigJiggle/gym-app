@@ -366,6 +366,55 @@ export default function Diet() {
             </div>
           )}
 
+          {/* Weekly macro totals — calories and protein hit across all logged days this week */}
+          {totalMeals > 0 && (() => {
+            const pastDays = weekDays.filter(d => d.dateStr <= todayStr)
+            const weekCals = pastDays.reduce((acc, { dateStr }) =>
+              acc + (dietPlan.meals ?? []).reduce((sum, m, idx) =>
+                sum + (mealCompletions.some(c => c.date === dateStr && c.meal_index === idx) ? m.calories : 0), 0
+              ), 0
+            )
+            const weekProtein = pastDays.reduce((acc, { dateStr }) =>
+              acc + (dietPlan.meals ?? []).reduce((sum, m, idx) =>
+                sum + (mealCompletions.some(c => c.date === dateStr && c.meal_index === idx) ? m.protein_g : 0), 0
+              ), 0
+            )
+            const targetWeekCals = dietPlan.calories_target * pastDays.length
+            const targetWeekProtein = dietPlan.protein_g * pastDays.length
+            const weekCalPct = targetWeekCals > 0 ? Math.min(100, Math.round((weekCals / targetWeekCals) * 100)) : 0
+            const weekProtPct = targetWeekProtein > 0 ? Math.min(100, Math.round((weekProtein / targetWeekProtein) * 100)) : 0
+            return (
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-gray-200">Weekly Macro Totals</p>
+                  <span className="text-xs text-gray-500">{pastDays.length} day{pastDays.length !== 1 ? 's' : ''} logged</span>
+                </div>
+                <div>
+                  <div className="flex justify-between text-xs mb-1.5">
+                    <span className="text-gray-500">Calories this week</span>
+                    <span className={weekCalPct >= 90 ? 'text-green-400' : 'text-brand-400'}>
+                      {weekCals.toLocaleString()} / {targetWeekCals.toLocaleString()} kcal ({weekCalPct}%)
+                    </span>
+                  </div>
+                  <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full transition-all duration-300 ${weekCalPct >= 90 ? 'bg-green-500' : 'bg-brand-500'}`} style={{ width: `${weekCalPct}%` }} />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex justify-between text-xs mb-1.5">
+                    <span className="text-gray-500">Protein this week</span>
+                    <span className={weekProtPct >= 90 ? 'text-green-400' : 'text-green-300'}>
+                      {Math.round(weekProtein)}g / {Math.round(targetWeekProtein)}g ({weekProtPct}%)
+                    </span>
+                  </div>
+                  <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full transition-all duration-300 ${weekProtPct >= 90 ? 'bg-green-500' : 'bg-green-600'}`} style={{ width: `${weekProtPct}%` }} />
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
+
           {/* Macro bar */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
             <p className="text-sm font-medium text-gray-300 mb-3">Macro Distribution</p>
