@@ -226,11 +226,13 @@ export default function Progress() {
         )
       })()}
 
-      {/* Weight chart */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-        <h2 className="font-semibold text-gray-100 mb-4">Weight Over Time</h2>
-        <WeightChart entries={progressEntries} startWeight={user.weight_kg} units={settings.units} />
-      </div>
+      {/* Weight chart — only rendered when there is data; empty state below handles the no-data case */}
+      {progressEntries.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <h2 className="font-semibold text-gray-100 mb-4">Weight Over Time</h2>
+          <WeightChart entries={progressEntries} startWeight={user.weight_kg} units={settings.units} />
+        </div>
+      )}
 
       {/* Measurement history */}
       {checkinHistory.length > 0 && (

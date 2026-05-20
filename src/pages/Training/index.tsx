@@ -377,6 +377,7 @@ export default function Training() {
                         </button>
                       )}
                       <span className="text-xs text-gray-500">{session.exercises.length} ex</span>
+                      <span className="text-gray-600 text-xs">{isExpanded ? '▲' : '▼'}</span>
                     </div>
                   </div>
 
