@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+  LineChart, Line, CartesianGrid, ReferenceLine
 } from 'recharts'
 import type { WorkoutLog, ExerciseLibraryItem } from '../../types'
 
@@ -36,6 +37,42 @@ function computePRs(history: WorkoutLog[]): PR[] {
     }
   }
   return Array.from(bests.values()).sort((a, b) => a.exerciseName.localeCompare(b.exerciseName))
+}
+
+// Epley formula: normalises different rep ranges into a comparable strength number
+function epley1RM(weight: number, reps: number): number {
+  return Math.round(weight * (1 + reps / 30) * 10) / 10
+}
+
+interface ProgressionPoint {
+  date: string
+  label: string   // short date label for X-axis
+  weight: number  // top-set weight in kg
+  reps: number    // reps for that set
+  e1rm: number    // estimated 1RM
+}
+
+function computeExerciseProgression(history: WorkoutLog[], exerciseName: string): ProgressionPoint[] {
+  const byDate = new Map<string, { weight: number; reps: number; e1rm: number }>()
+  for (const log of history) {
+    if (log.status !== 'completed') continue
+    for (const s of log.sets ?? []) {
+      if (s.exercise_name !== exerciseName || s.skipped) continue
+      if (!s.weight_kg || s.weight_kg === 0 || !s.reps_actual || s.reps_actual === 0) continue
+      const e1rm = epley1RM(s.weight_kg, s.reps_actual)
+      const existing = byDate.get(log.date)
+      if (!existing || e1rm > existing.e1rm) {
+        byDate.set(log.date, { weight: s.weight_kg, reps: s.reps_actual, e1rm })
+      }
+    }
+  }
+  return Array.from(byDate.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, v]) => ({
+      date,
+      label: date.slice(5),   // MM-DD
+      ...v,
+    }))
 }
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -125,6 +162,36 @@ export default function WorkoutStats({ history, sessionsPerWeek, units = 'metric
   const now = new Date()
   const [viewYear, setViewYear] = useState(now.getFullYear())
   const [viewMonth, setViewMonth] = useState(now.getMonth())
+  const [selectedExercise, setSelectedExercise] = useState<string>('')
+
+  // Exercises with at least 2 data points (enough to draw a progression line)
+  const trackableExercises = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const log of history) {
+      if (log.status !== 'completed') continue
+      const seen = new Set<string>()
+      for (const s of log.sets ?? []) {
+        if (!s.skipped && s.weight_kg && s.weight_kg > 0 && s.reps_actual && !seen.has(s.exercise_name)) {
+          seen.add(s.exercise_name)
+          counts.set(s.exercise_name, (counts.get(s.exercise_name) ?? 0) + 1)
+        }
+      }
+    }
+    return Array.from(counts.entries())
+      .filter(([, n]) => n >= 2)
+      .map(([name]) => name)
+      .sort()
+  }, [history])
+
+  const progressionData = useMemo(() => {
+    if (!selectedExercise) return []
+    const raw = computeExerciseProgression(history, selectedExercise)
+    return raw.map((p) => ({
+      ...p,
+      e1rm: toDisplay(p.e1rm),
+      weight: toDisplay(p.weight),
+    }))
+  }, [selectedExercise, history, units])
 
   function prevMonth() {
     if (viewMonth === 0) { setViewYear((y) => y - 1); setViewMonth(11) }
@@ -378,6 +445,76 @@ export default function WorkoutStats({ history, sessionsPerWeek, units = 'metric
         <span className="flex items-center gap-1"><span className="text-red-700">–</span> Skipped</span>
         <span className="flex items-center gap-1"><span className="text-gray-600">○</span> Rest day</span>
       </div>
+
+      {/* Lift Progression Chart */}
+      {trackableExercises.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Lift Progression</p>
+            <span className="text-xs text-gray-600">e1RM = estimated 1-rep max</span>
+          </div>
+          <select
+            value={selectedExercise}
+            onChange={(e) => setSelectedExercise(e.target.value)}
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200 mb-3"
+          >
+            <option value="">— Select an exercise —</option>
+            {trackableExercises.map((ex) => (
+              <option key={ex} value={ex}>{ex}</option>
+            ))}
+          </select>
+          {selectedExercise && progressionData.length >= 2 && (
+            <>
+              <ResponsiveContainer width="100%" height={160}>
+                <LineChart data={progressionData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                  <XAxis dataKey="label" tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={{ stroke: '#374151' }} tickLine={false} />
+                  <YAxis tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={{ stroke: '#374151' }} tickLine={false} domain={['auto', 'auto']} />
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (!active || !payload?.length) return null
+                      const d = payload[0].payload as typeof progressionData[0]
+                      return (
+                        <div className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs">
+                          <p className="text-gray-400 mb-1">{d.date}</p>
+                          <p className="text-brand-400 font-bold">e1RM: {d.e1rm} {weightUnit}</p>
+                          <p className="text-gray-400">Top set: {d.weight} {weightUnit} × {d.reps} reps</p>
+                        </div>
+                      )
+                    }}
+                  />
+                  <ReferenceLine y={progressionData[0]?.e1rm} stroke="#4b5563" strokeDasharray="4 2" />
+                  <Line
+                    type="monotone"
+                    dataKey="e1rm"
+                    stroke="#f97316"
+                    strokeWidth={2}
+                    dot={{ fill: '#f97316', r: 4, strokeWidth: 0 }}
+                    activeDot={{ r: 6, fill: '#fb923c' }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+              <div className="flex justify-between text-xs mt-2">
+                <span className="text-gray-600">Start: {progressionData[0]?.e1rm} {weightUnit}</span>
+                <span className={`font-semibold ${
+                  progressionData[progressionData.length - 1]?.e1rm >= progressionData[0]?.e1rm
+                    ? 'text-green-400' : 'text-red-400'
+                }`}>
+                  Now: {progressionData[progressionData.length - 1]?.e1rm} {weightUnit}
+                  {' '}({progressionData[progressionData.length - 1]?.e1rm >= progressionData[0]?.e1rm ? '+' : ''}
+                  {(progressionData[progressionData.length - 1]?.e1rm - progressionData[0]?.e1rm).toFixed(1)})
+                </span>
+              </div>
+            </>
+          )}
+          {selectedExercise && progressionData.length < 2 && (
+            <p className="text-xs text-gray-600 text-center py-4">Log at least 2 sessions with weight to see progression.</p>
+          )}
+          {!selectedExercise && (
+            <p className="text-xs text-gray-600 text-center py-4">Pick an exercise to chart your strength over time.</p>
+          )}
+        </div>
+      )}
 
       {/* Personal Records */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
