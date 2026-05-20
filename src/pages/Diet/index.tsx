@@ -40,11 +40,20 @@ export default function Diet() {
   const [prefsRestrictions, setPrefsRestrictions] = useState<string[]>([])
 
   const todayStr = localDateStr()
+  const jsDay = new Date().getDay()
+  const monday = new Date()
+  monday.setDate(monday.getDate() - (jsDay === 0 ? 6 : jsDay - 1))
+  const mondayStr = localDateStr(monday)
+  const weekDays = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(monday)
+    d.setDate(monday.getDate() + i)
+    return { dateStr: localDateStr(d), label: ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'][i] }
+  })
 
   useEffect(() => {
     if (!user?.id) return
     loadDietPlan(user.id)
-    loadMealCompletions(user.id, todayStr, todayStr)
+    loadMealCompletions(user.id, mondayStr, todayStr)
   }, [user?.id])
 
   // Sync prefs panel state from user when panel opens
@@ -300,6 +309,60 @@ export default function Diet() {
               {mealsEaten === totalMeals && (
                 <p className="text-xs text-green-400 font-medium">All meals hit today — great work!</p>
               )}
+            </div>
+          )}
+
+          {/* Weekly meal compliance strip */}
+          {totalMeals > 0 && (
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">This Week's Diet</p>
+                {(() => {
+                  const pastDays = weekDays.filter(d => d.dateStr <= todayStr)
+                  const fullDays = pastDays.filter(d =>
+                    mealCompletions.filter(c => c.date === d.dateStr).length >= totalMeals
+                  ).length
+                  return (
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                      fullDays === pastDays.length && pastDays.length > 0 ? 'bg-green-900/30 text-green-400' :
+                      fullDays > 0 ? 'bg-yellow-900/20 text-yellow-400' :
+                      'bg-gray-800 text-gray-500'
+                    }`}>
+                      {fullDays}/{pastDays.length} days on track
+                    </span>
+                  )
+                })()}
+              </div>
+              <div className="grid grid-cols-7 gap-1">
+                {weekDays.map(({ dateStr, label }) => {
+                  const completed = mealCompletions.filter(c => c.date === dateStr).length
+                  const isFuture = dateStr > todayStr
+                  const isToday = dateStr === todayStr
+                  const isFull = !isFuture && completed >= totalMeals
+                  const isPartial = !isFuture && completed > 0 && completed < totalMeals
+                  return (
+                    <div
+                      key={dateStr}
+                      className={`flex flex-col items-center py-1.5 rounded-lg text-center ${
+                        isFuture ? 'opacity-25' :
+                        isFull ? 'bg-green-900/30' :
+                        isPartial ? 'bg-yellow-900/20' :
+                        'bg-gray-800/60'
+                      } ${isToday ? 'ring-1 ring-brand-500' : ''}`}
+                    >
+                      <span className="text-xs text-gray-500">{label}</span>
+                      <span className={`text-xs font-bold mt-0.5 leading-none ${
+                        isFuture ? 'text-gray-700' :
+                        isFull ? 'text-green-400' :
+                        isPartial ? 'text-yellow-400' :
+                        'text-gray-600'
+                      }`}>
+                        {isFuture ? '—' : `${completed}/${totalMeals}`}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           )}
 
