@@ -3,41 +3,39 @@
 ## Phase 1: QA Engineer
 - TypeScript: PASS (0 errors)
 - Unit tests: PASS (31 passing, 0 failing)
-- Bugs fixed: 1
+- Bugs fixed: 2
 
 ### Feature Audit
-- Onboarding: OK — 6-step wizard with validation, defaults pre-populated, back/forward navigation works correctly.
-- Diet page: OK — Meal swap, food preferences, weekly view, and grocery list all functional; macro tracking works.
-- Training page: OK — Session cards expand correctly, workout session overlay starts/saves/completes properly with imperial/metric conversion.
-- Check-in page: OK — Locked state shows countdown with edit-last-check-in panel; available state shows full form; early submission blocked correctly.
-- Education page: BUG FIXED — Default tab ('posing') wasn't switching to 'timeline' when shows loaded asynchronously after component mount.
-- Progress page: OK — Weight chart, measurement changes, adherence history, and trend projection all display correctly.
-- Settings page: OK — Unit system, check-in schedule (day-based and interval), profile edit, and reset all work as expected.
+- Onboarding: OK — 6-step flow completes and navigates to dashboard; step-1 validation guards required fields
+- Diet page: OK — swap meal, mark eaten, food prefs, grocery list, weekly view all functional
+- Training page: OK — workout session starts, sets log, complete workflow saves to history
+- Check-in page: OK — locked countdown displays correctly; form submits and shows coach feedback; edit-last panel works
+- Education page: OK — all 5 tabs render; timeline auto-expands current week; no-show empty state shown
+- Progress page: BUG FIXED — two issues in Progress/index.tsx (see below)
+- Settings page: OK — unit toggle, check-in schedule, edit profile, shows management all functional
 
 ### Bugs Fixed
-- `src/pages/Education/index.tsx` — `useState` initial value computed `hasUpcomingShow` from `shows` before they loaded from the database. `loadUser()` sets `loading: false` before `listShows()` completes, so the Education component could mount with `shows = []` even if the user had upcoming competitions. Fixed by adding a `useEffect` that auto-switches from 'posing' to 'timeline' the first time `hasUpcomingShow` becomes `true`, without overriding subsequent manual tab selections.
+- `src/pages/Progress/index.tsx:14` — Local variable named `window` inside `computeWeeklyRate` shadowed the global `window` object. Renamed to `recentCheckins`.
+- `src/pages/Progress/index.tsx:82-85` — `STATUS_LABEL` used cut-specific strings ("Losing Too Fast", "Losing Too Slow") for all goals. A bulk user who isn't gaining saw "Losing Too Slow" which is the opposite of correct. Made labels goal-aware: bulk users now see "Gaining Too Fast" and "Not Gaining".
 
 ### Known Issues (not fixed)
-- `src/pages/Progress/index.tsx:14` — The local variable `window` inside `computeWeeklyRate` shadows the global `window` object. Not a runtime bug (the function doesn't use `window.api`), but is a naming hazard worth renaming in a future cleanup pass.
-- `src/pages/Diet/index.tsx` — Meal swaps via the "Swap Meal" modal are in-memory only (stored in Zustand, not persisted to the database). Swapped foods reset on next app launch. Addressed in Phase 3 with a clarifying note; persistence would require a backend change.
+- None identified beyond the two fixed above.
 
 ---
 
 ## Phase 2: Bodybuilder User
-- Status: RAN (Phase 1 fixed 1 bug, fewer than 3)
-- Feature added: **Exercise Personal Records shown inline in expanded Training session cards**
-  - When a session card is expanded, each exercise now displays the user's all-time best set (e.g., "PR: 100kg × 5") sourced directly from `workoutHistory` already loaded in the component.
-  - Helps athletes on a cut immediately see if they're maintaining strength on each lift without navigating to Training > History > Stats & Charts.
-  - Weight is shown in the user's preferred unit (kg or lbs).
-  - Exercises with no logged history show no PR label (clean empty state).
-- Files changed:
-  - `src/pages/Training/index.tsx` — added `useMemo` import, `exercisePRs` computed from `workoutHistory`, `isImperial` helper, and PR display in the expanded exercise list.
+- Status: RAN (Phase 1 fixed 2 bugs, fewer than 3)
+- Feature added: **Weekly Macro Totals card on Diet page**
+  - Shows cumulative calories and protein logged this week vs. target × days elapsed, with percentage bars and colour coding (green ≥ 90%, brand orange otherwise)
+  - Uses already-loaded `mealCompletions` data — no new IPC calls or schema changes
+  - Rationale: contest prep athletes need to know weekly compliance, not just today's, before each check-in; previously there was no way to see this without manually summing daily logs
+- Files changed: `src/pages/Diet/index.tsx`
 
 ---
 
 ## Phase 3: UX Reviewer
 - Changes made: 2
 
-1. `src/pages/Training/index.tsx` — Today's session card border changed from `border-brand-800/40` (barely visible 40% opacity dark orange) to `border-brand-500 bg-brand-950/10` (solid brand border with subtle background tint). A tired user after a workout needs to instantly spot their session without hunting for the small "Today" text label.
+**`src/pages/Training/index.tsx`** — The ▶ Start button previously only appeared on the collapsed card for today's session. All other sessions required expanding the card before the Start button was visible. Changed to show ▶ Start on every collapsed card: filled brand colour for today, outlined for other days. Saves one tap for any non-today session or makeup workout.
 
-2. `src/pages/Diet/index.tsx` — Added a one-line note inside the "Swap Meal" modal: *"This swap updates your view for today. To permanently exclude a food, tap ✕ on it in the meal card."* Users expect app actions to be saved; without this note, they would be confused when the original meal returned on next launch. The note also teaches them the correct path for permanent food exclusions.
+**`src/pages/CheckIn/index.tsx`** — The weight input displayed a Card title "Bodyweight (lbs)" and an inner label "Current weight (lbs) *" — the same information twice. Removed the redundant inner label and replaced the Card subtitle with "Required" to preserve the affordance. The most-entered field in the app now has one clear label instead of two.
