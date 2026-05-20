@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useUserStore } from '../../store/userStore'
 import { usePlanStore } from '../../store/planStore'
 import { useSettingsStore } from '../../store/settingsStore'
@@ -110,6 +110,24 @@ export default function Training() {
 
   // All muscle groups in a fixed display order
   const ALL_MUSCLE_GROUPS = ['chest', 'back', 'shoulders', 'triceps', 'biceps', 'quads', 'hamstrings', 'glutes', 'calves', 'core']
+
+  // Personal records: best top-set weight for each exercise across all completed workouts
+  const exercisePRs = useMemo(() => {
+    const bests = new Map<string, { weightKg: number; reps: number; date: string }>()
+    for (const log of workoutHistory) {
+      if (log.status !== 'completed') continue
+      for (const s of log.sets ?? []) {
+        if (s.skipped || !s.weight_kg || s.weight_kg === 0 || !s.reps_actual) continue
+        const existing = bests.get(s.exercise_name)
+        if (!existing || s.weight_kg > existing.weightKg) {
+          bests.set(s.exercise_name, { weightKg: s.weight_kg, reps: s.reps_actual, date: log.date })
+        }
+      }
+    }
+    return bests
+  }, [workoutHistory])
+
+  const isImperial = settings.units === 'imperial'
 
   // If there is an active workout and a session to track, show the overlay
   if (activeWorkout && sessionToStart) {
@@ -396,17 +414,26 @@ export default function Training() {
                   {/* Full exercise list when expanded */}
                   {isExpanded && (
                     <div className="mt-3 space-y-1.5 border-t border-gray-800 pt-3">
-                      {session.exercises.map((ex, i) => (
-                        <div key={i} className="flex justify-between items-start text-sm">
-                          <div>
-                            <span className="text-gray-200">{ex.name}</span>
-                            {ex.notes && <p className="text-xs text-gray-600 mt-0.5">{ex.notes}</p>}
+                      {session.exercises.map((ex, i) => {
+                        const pr = exercisePRs.get(ex.name)
+                        const prDisplay = pr
+                          ? `${isImperial ? Math.round(pr.weightKg * 2.20462 * 10) / 10 : pr.weightKg}${isImperial ? 'lbs' : 'kg'} × ${pr.reps}`
+                          : null
+                        return (
+                          <div key={i} className="flex justify-between items-start text-sm">
+                            <div>
+                              <span className="text-gray-200">{ex.name}</span>
+                              {ex.notes && <p className="text-xs text-gray-600 mt-0.5">{ex.notes}</p>}
+                              {prDisplay && (
+                                <p className="text-xs text-amber-400/80 mt-0.5">PR: {prDisplay}</p>
+                              )}
+                            </div>
+                            <span className="text-gray-400 font-mono text-xs ml-3 flex-shrink-0">
+                              {ex.sets}×{ex.reps} RIR{ex.rir}
+                            </span>
                           </div>
-                          <span className="text-gray-400 font-mono text-xs ml-3 flex-shrink-0">
-                            {ex.sets}×{ex.reps} RIR{ex.rir}
-                          </span>
-                        </div>
-                      ))}
+                        )
+                      })}
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
