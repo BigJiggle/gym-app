@@ -11,10 +11,10 @@ import type { CheckIn } from '../../types'
 
 function computeWeeklyRate(checkins: CheckIn[]): number | null {
   // Need at least 2 entries; checkins are newest-first
-  const window = checkins.slice(0, 4)
-  if (window.length < 2) return null
-  const newest = window[0]
-  const oldest = window[window.length - 1]
+  const recentCheckins = checkins.slice(0, 4)
+  if (recentCheckins.length < 2) return null
+  const newest = recentCheckins[0]
+  const oldest = recentCheckins[recentCheckins.length - 1]
   const weeksDiff = newest.week_number - oldest.week_number
   if (weeksDiff <= 0) return null
   return (newest.weight_kg - oldest.weight_kg) / weeksDiff
@@ -78,8 +78,8 @@ export default function Progress() {
   }
   const STATUS_LABEL: Record<TrendStatus, string> = {
     on_track: 'On Track',
-    too_fast: 'Losing Too Fast',
-    too_slow: 'Losing Too Slow',
+    too_fast: user.goal === 'bulk' ? 'Gaining Too Fast' : 'Losing Too Fast',
+    too_slow: user.goal === 'bulk' ? 'Not Gaining' : 'Losing Too Slow',
     gaining: 'Weight Trending Up',
     neutral: 'Tracking',
   }
