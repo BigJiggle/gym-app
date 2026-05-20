@@ -47,8 +47,13 @@ interface ExerciseCardProps {
 function ExerciseCard({ exercise, state, isImperial, onSetUpdate, onSetDone, onRemoveSet, onSkipExercise, onAddSet }: ExerciseCardProps) {
   const weightUnit = isImperial ? 'lbs' : 'kg'
   const weightStep = isImperial ? 5 : 2.5
+  const allSetsDone = !state.allSkipped && state.sets.length > 0 && state.sets.every((s) => s.done)
   return (
-    <div className={`bg-gray-900 border rounded-xl p-4 ${state.allSkipped ? 'border-gray-700 opacity-50' : 'border-gray-800'}`}>
+    <div className={`bg-gray-900 border rounded-xl p-4 transition-colors ${
+      state.allSkipped ? 'border-gray-700 opacity-50' :
+      allSetsDone ? 'border-green-800/60' :
+      'border-gray-800'
+    }`}>
       <div className="flex items-center justify-between mb-3">
         <div>
           <div className="flex items-center gap-2">
@@ -69,7 +74,8 @@ function ExerciseCard({ exercise, state, isImperial, onSetUpdate, onSetDone, onR
           </div>
           <p className="text-xs text-gray-500">{exercise.sets} sets × {exercise.reps} @ RIR {exercise.rir}</p>
         </div>
-        {!state.allSkipped && (
+        {allSetsDone && <span className="text-xs text-green-400 font-medium">✓ Done</span>}
+        {!state.allSkipped && !allSetsDone && (
           <button
             onClick={onSkipExercise}
             className="text-xs text-gray-500 hover:text-red-400 border border-gray-700 hover:border-red-800 rounded-lg px-2 py-1 transition-colors"
@@ -352,14 +358,12 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
   return (
     <div className="fixed inset-0 bg-gray-950 z-50 flex flex-col">
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-gray-900">
-        <button onClick={handleEndEarly} className="text-gray-400 hover:text-gray-200 text-sm">
-          ← Back
-        </button>
+        <div className="w-16" />
         <div className="text-center">
           <p className="font-semibold text-gray-100 text-sm">{session.session_name}</p>
           <p className="text-xs text-brand-400 font-mono">{formatTime(elapsedSeconds)}</p>
         </div>
-        <button onClick={handleEndEarly} className="text-red-400 hover:text-red-300 text-sm">
+        <button onClick={handleEndEarly} className="text-red-400 hover:text-red-300 text-sm w-16 text-right">
           Cancel
         </button>
       </div>
