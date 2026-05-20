@@ -368,7 +368,7 @@ export default function Training() {
                     isExpanded
                       ? 'border-brand-500/50'
                       : isToday
-                        ? 'border-brand-800/40'
+                        ? 'border-brand-500 bg-brand-950/10'
                         : 'border-gray-800'
                   }`}
                 >
