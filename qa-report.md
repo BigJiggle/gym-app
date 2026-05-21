@@ -1,4 +1,45 @@
-# App Health Report — 2026-05-21
+# App Health Report — 2026-05-21 (Session 2)
+
+## Phase 1: QA Engineer
+- TypeScript: PASS (0 errors)
+- Unit tests: PASS (84 passing, 0 failing)
+- Bugs fixed: 1
+
+### Feature Audit
+- Onboarding: OK — all 6 steps complete correctly; plans generate async after navigation (intentional design)
+- Diet page: **BUG** — returning from WeeklyMealView to Plan tab showed stale (empty) meal completions; root cause: shared Zustand store overwritten by WeeklyMealView's week load. Fixed.
+- Training page: OK — start workout, log sets, mark complete all work; auto-resume on re-open works
+- Check-in page: OK — locked/unlocked state logic is correct; settings changes re-query interval immediately
+- Education page: OK — all 5 tabs render content
+- Progress page: OK — weight chart, measurement changes, adherence, empty states all handled correctly
+- Settings page: OK — unit system and check-in interval changes persist and propagate to other pages
+
+### Bugs Fixed
+1. **Stale meal completions on Diet Plan tab** (`src/pages/Diet/index.tsx`) — The single `useEffect` loaded both the diet plan and meal completions together. When the user switched to the Weekly View tab, that component loaded its own week's completions into the shared Zustand store, overwriting the current week's data. On returning to the Plan tab, Today's Intake and This Week's Diet showed all meals as unchecked. Fixed by splitting into two `useEffect`s: one for the diet plan (depends on `user?.id`), one for meal completions (depends on `user?.id, tab`) that only fires when `tab === 'plan'`.
+
+### Known Issues (not fixed)
+- WorkoutSession timer resets to 0 when auto-resuming a previously started workout — doesn't reflect true elapsed time. Cosmetic limitation, no crash.
+
+---
+
+## Phase 2: Bodybuilder User
+- Status: RAN (Phase 1 fixed 1 bug, which is fewer than 3)
+- Feature added: **Prep Pace card on Dashboard** — shows weekly weight rate (kg or lbs/wk, averaged over last 4 check-ins) and a status badge (On Track / Losing Too Fast / Losing Too Slow / Weight Trending Up / Gaining Too Fast / Not Gaining) relative to the user's current goal. Taps through to the Progress page for the full chart. Zero new IPC calls — reuses `checkinHistory` already loaded by Dashboard's existing `useEffect`. Thresholds: cut 0.3–1.2% body weight/wk is "on track"; bulk 0–1% is "on track".
+- Files changed:
+  - `src/pages/Dashboard/index.tsx` (Prep Pace card added)
+
+---
+
+## Phase 3: UX Reviewer
+- Changes made: 2
+
+`src/pages/Training/WorkoutStats.tsx` — Added a clean empty state when no workouts have been logged yet. Previously the Stats tab rendered with all-zeros numbers and blank chart areas — confusing to a new user. Now it shows: "No workouts logged yet. Complete your first workout from the Plan tab to unlock stats, personal records, and progress charts." The early return is placed after all hooks are called (valid React pattern).
+
+`src/pages/Diet/index.tsx` — Added a color-coded legend row beneath the Macro Distribution bar (Protein X% · Carbs X% · Fat X% in matching green/blue/yellow). The bar previously showed three colored segments with no labels; the user had to cross-reference the stat cards above to decode which color was which macro. The legend makes the bar self-explanatory at a glance.
+
+---
+
+# App Health Report — 2026-05-21 (Session 1)
 
 ## Phase 1: QA Engineer
 - TypeScript: PASS (0 errors)
@@ -281,7 +322,11 @@ When running a QA pass, the agent must:
 
 `src/pages/CheckIn/index.tsx` — Redundant weight label removed. Card title already states the unit; inner label replaced with `subtitle="Required"` on the Card.
 
-## Bugs Fixed by Routine (2026-05-21)
+## Bugs Fixed by Routine (2026-05-21, Session 2)
+
+`src/pages/Diet/index.tsx` — Shared `mealCompletions` Zustand state overwritten by WeeklyMealView when user viewed a previous week, causing Today's Intake and This Week's Diet to show all meals as unchecked after returning to the Plan tab. Fixed by adding a dedicated `useEffect` that reloads current-week completions whenever `tab === 'plan'`.
+
+## Bugs Fixed by Routine (2026-05-21, Session 1)
 
 `src/pages/Progress/index.tsx:12-22` — `computeWeeklyRate` used `week_number` sequential counter as denominator. Rate was 2× too high for biweekly schedules, 7× for daily. Fixed to use actual `check_in_date` calendar difference in weeks.
 
