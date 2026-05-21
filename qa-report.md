@@ -3,43 +3,41 @@
 ## Phase 1: QA Engineer
 - TypeScript: PASS (0 errors)
 - Unit tests: PASS (84 passing, 0 failing)
-- Bugs fixed: 1
+- Bugs fixed: 0
 
 ### Feature Audit
-- Onboarding: OK — All 6 steps navigate correctly; step 1 validated on Continue and again on final submit
-- Diet page: OK — Swap modal, food exclusions, preferences panel, and weekly compliance all function correctly
-- Training page: OK — Session cards, workout session overlay, set logging, and completion flow all work
-- Check-in page: OK — Locked countdown and open form states both handled correctly; missed slots panel renders
-- Education page: OK — All 5 tabs (Timeline, Posing, Checklist, Peak Week, First Timer) render with proper empty states
-- Progress page: BUG FIXED — `computeWeeklyRate` now uses actual calendar date difference instead of sequential week_number counter
-- Settings page: OK — Unit and check-in interval changes persist; edit profile panel re-syncs on open
+- Onboarding: OK — all 6 steps complete correctly; plans generate async after navigation (intentional design)
+- Diet page: OK — swap meal updates in-memory display (intentional); "Save & Regenerate Plan" persists changes
+- Training page: OK — start workout, log sets, mark complete all work; auto-resume on re-open works
+- Check-in page: OK — locked/unlocked state logic is correct; settings changes re-query interval immediately
+- Education page: OK — all 5 tabs render content (Prep Timeline, Posing Guide, Show Checklist, Peak Week, First Timer)
+- Progress page: OK — weight chart, measurement changes, adherence, empty states all handled correctly
+- Settings page: OK — unit system and check-in interval changes persist and propagate to other pages
 
 ### Bugs Fixed
-`src/pages/Progress/index.tsx:12-22` — `computeWeeklyRate` used `newest.week_number - oldest.week_number` as the denominator. `week_number` is a sequential check-in counter (1, 2, 3…), not an actual elapsed-weeks value. For biweekly schedules the displayed rate was 2× too high; for daily schedules 7× too high. Fixed to compute `daysDiff` from `check_in_date` strings and divide by 7 to get true weekly rate.
+None. TypeScript was clean and all 84 tests passed on first run. All 7 user flows traced through source code without finding crashes, broken logic, or missing null checks that would affect users.
 
 ### Known Issues (not fixed)
-`src/pages/Diet/index.tsx:648-656` — Swapping a meal updates the Zustand store in-memory only; the change is lost on navigation or reload. Fixing requires persisting meal overrides to the DB — tracked as BUG-010 in `qa-bugs.json`.
-
-`src/pages/Training/WorkoutLogEditor.tsx:100-115` — `autoSave` calls `window.api.updateWorkoutSet` inside a `setRows` state-setter callback. Harmless in production, could double-invoke under React Strict Mode.
-
-`src/pages/Settings/index.tsx` — Clearing a numeric height or weight field in edit profile then saving passes NaN to the DB. Minor edge case requiring deliberate user error.
+- WorkoutSession timer resets to 0 when auto-resuming a previously started workout — doesn't reflect true elapsed time. Cosmetic limitation, no crash.
+- The "Show Checklist" and "First Timer" Education tabs both render the same FIRST_TIMER_CHECKLIST data (different framing). Minor content overlap.
 
 ---
 
 ## Phase 2: Bodybuilder User
-- Status: RAN (Phase 1 fixed 1 bug, fewer than 3)
-- Feature added: **Daily Remaining Macros** — The Diet page "Today's Intake" section now shows remaining calories and protein for the day ("X kcal · Xg protein remaining today") when not all meals have been logged. Prep athletes eating to precise daily macro targets no longer need to subtract mentally; the remaining numbers are surfaced immediately on the page they use most.
+- Status: RAN (Phase 1 fixed 0 bugs, which is fewer than 3)
+- Feature added: **Measurements trend chart on Progress page** — a line chart showing body measurements (waist, chest, hip, arm, thigh) over check-in history. Waist shown by default — the critical stage-conditioning metric for contest prep. Toggle buttons to show/hide individual measurements. Supports imperial/metric display. Only visible when ≥2 check-ins have measurement data.
 - Files changed:
-  - `src/pages/Diet/index.tsx` — Added remaining macro display in Today's Intake card, shown only when `mealsEaten < totalMeals && calPct < 100`
+  - `src/components/charts/MeasurementsChart.tsx` (new component)
+  - `src/pages/Progress/index.tsx` (import + chart section added)
 
 ---
 
 ## Phase 3: UX Reviewer
 - Changes made: 2
 
-`src/pages/CheckIn/index.tsx` — Added helper text under the weight input ("Pre-filled from Week N · YYYY-MM-DD") so users know the pre-filled value comes from their last check-in, not their onboarding profile. Without this hint, a tired user could mistake a 2-week-old pre-fill for their current weight.
+`src/pages/Dashboard/index.tsx` — Replaced the text-only "Generate Plan →" link in the no-plan empty state with a proper `<Button size="sm" variant="secondary">` component. The original was a tiny gray text link that blended with the background; a tired user would miss it entirely.
 
-`src/pages/Training/index.tsx` — Added a green "✓ Done" badge on session cards that have a completed workout log for today. A user who finishes their morning workout and opens the app later can immediately see which sessions are done without navigating to the History tab.
+`src/pages/Diet/index.tsx` — Changed the "Mark Eaten" button's uneaten-state styling from near-invisible gray (`border-gray-700 text-gray-500`) to a visible brand-tinted background (`bg-brand-900/20 border border-brand-700 text-brand-400`). Logging meals is the primary daily action on this page; the button was effectively hidden. Now it's immediately scannable without hunting.
 
 ---
 
