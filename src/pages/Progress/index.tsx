@@ -15,7 +15,10 @@ function computeWeeklyRate(checkins: CheckIn[]): number | null {
   if (recentCheckins.length < 2) return null
   const newest = recentCheckins[0]
   const oldest = recentCheckins[recentCheckins.length - 1]
-  const weeksDiff = newest.week_number - oldest.week_number
+  const daysDiff =
+    (new Date(newest.check_in_date).getTime() - new Date(oldest.check_in_date).getTime()) /
+    (1000 * 60 * 60 * 24)
+  const weeksDiff = daysDiff / 7
   if (weeksDiff <= 0) return null
   return (newest.weight_kg - oldest.weight_kg) / weeksDiff
 }

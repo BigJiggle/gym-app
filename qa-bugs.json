@@ -119,6 +119,19 @@
       "user_impact": "After filling a missed slot, the next check-in date calculation is wrong."
     },
     {
+      "id": "BUG-011",
+      "title": "computeWeeklyRate used week_number counter instead of actual date diff",
+      "file": "src/pages/Progress/index.tsx",
+      "line": "12-22",
+      "status": "fixed",
+      "found_by": "qa_agent",
+      "date_found": "2026-05-21",
+      "date_fixed": "2026-05-21",
+      "description": "weeksDiff was computed as newest.week_number - oldest.week_number. week_number is a sequential counter (1,2,3…) not an actual week count. For biweekly check-ins the rate was 2× too high; for daily check-ins 7× too high.",
+      "regression_test": "Simulate 4 biweekly check-ins (14-day gaps). Weekly rate should equal weight change over 6 actual weeks / 6, not / 3.",
+      "user_impact": "Progress page showed incorrect weekly weight change rate for any check-in schedule other than weekly."
+    },
+    {
       "id": "BUG-010",
       "title": "Diet meal swaps lost on navigation (known - not yet fixed)",
       "file": "src/pages/Diet/index.tsx",
