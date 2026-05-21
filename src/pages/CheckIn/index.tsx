@@ -285,7 +285,7 @@ function MissedSlotPanel({ slot, userId, isImperial, onFilled }: MissedSlotPanel
 
 export default function CheckIn() {
   const { user } = useUserStore()
-  const { submitCheckin, checkinHistory, loadCheckinHistory, loading } = usePlanStore()
+  const { submitCheckin, checkinHistory, latestCheckin, loadCheckinHistory, loading } = usePlanStore()
   const { settings } = useSettingsStore()
 
   const isImperial = settings.units === 'imperial'
@@ -319,11 +319,11 @@ export default function CheckIn() {
   // Missed-slots banner on open-form screen
   const [missedBannerOpen, setMissedBannerOpen] = useState(false)
 
-  const defaultWeight = user
-    ? isImperial
-      ? Math.round(user.weight_kg / 0.453592 * 10) / 10
-      : user.weight_kg
-    : 80
+  // Prefer last check-in weight over profile weight so users see their recent number
+  const defaultWeightKg = latestCheckin?.weight_kg ?? user?.weight_kg ?? 80
+  const defaultWeight = isImperial
+    ? Math.round(defaultWeightKg / 0.453592 * 10) / 10
+    : defaultWeightKg
 
   const [weightDisplay, setWeightDisplay] = useState(String(defaultWeight))
   const [waistDisplay, setWaistDisplay] = useState('')

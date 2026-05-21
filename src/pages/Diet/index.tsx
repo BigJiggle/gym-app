@@ -840,7 +840,7 @@ export default function Diet() {
                 </div>
               ))}
             </div>
-            <p className="text-xs text-gray-600 mb-3">This swap updates your view for today. To permanently exclude a food, tap ✕ on it in the meal card.</p>
+            <p className="text-xs text-gray-600 mb-3">Updates your plan view until the plan is regenerated. To permanently exclude a food, tap ✕ on it in the meal card.</p>
             <Button variant="secondary" onClick={() => setSwapTarget(null)} className="w-full">
               Cancel
             </Button>
