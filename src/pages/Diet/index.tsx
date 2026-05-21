@@ -477,7 +477,7 @@ export default function Diet() {
                       className={`text-xs font-medium rounded-lg px-2.5 py-1 transition-colors flex items-center gap-1 ${
                         isMealEaten(i)
                           ? 'bg-green-900/30 border border-green-800/50 text-green-400'
-                          : 'border border-gray-700 text-gray-500 hover:border-green-800 hover:text-green-400'
+                          : 'bg-brand-900/20 border border-brand-700 text-brand-400 hover:bg-brand-900/40'
                       }`}
                     >
                       {isMealEaten(i) ? '✓ Eaten' : 'Mark Eaten'}

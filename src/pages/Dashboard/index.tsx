@@ -244,10 +244,10 @@ export default function Dashboard() {
           </div>
 
           {!dietPlan ? (
-            <div className="py-3 text-center">
+            <div className="py-3 text-center space-y-2">
               <p className="text-gray-500 text-sm">No nutrition plan yet.</p>
               <Link to="/diet">
-                <button className="text-xs text-brand-400 mt-1 hover:underline">Generate Plan →</button>
+                <Button size="sm" variant="secondary">Generate Plan →</Button>
               </Link>
             </div>
           ) : (
