@@ -779,6 +779,11 @@ export default function CheckIn() {
             required
             className="w-36 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200"
           />
+          {latestCheckin && (
+            <p className="text-xs text-gray-600 mt-1.5">
+              Pre-filled from {checkinLabel(latestCheckin)} · {latestCheckin.check_in_date}
+            </p>
+          )}
         </Card>
 
         {/* Measurements */}

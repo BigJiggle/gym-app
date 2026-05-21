@@ -69,6 +69,7 @@ export default function Training() {
   if (!user) return null
 
   const todayDow = new Date().getDay() === 0 ? 7 : new Date().getDay()
+  const todayDateStr = new Date().toLocaleDateString('en-CA')
 
   // Compute muscle group set counts for a given date range
   function computeMuscleSets(fromStr: string, toStr: string): Map<string, number> {
@@ -361,6 +362,9 @@ export default function Training() {
             {trainingPlan.sessions?.map((session) => {
               const isToday = session.day_of_week === todayDow
               const isExpanded = expandedSession === session.day_of_week
+              const isDoneToday = workoutHistory.some(
+                (log) => log.date === todayDateStr && log.status === 'completed' && log.session_id === (session as any).id
+              )
               return (
                 <div
                   key={session.day_of_week}
@@ -382,6 +386,9 @@ export default function Training() {
                       </span>
                       {isToday && (
                         <span className="text-xs font-semibold text-brand-400">Today</span>
+                      )}
+                      {isDoneToday && (
+                        <span className="text-xs font-semibold text-green-400">✓ Done</span>
                       )}
                       <h3 className="text-sm font-semibold text-gray-200">{session.session_name}</h3>
                     </div>
