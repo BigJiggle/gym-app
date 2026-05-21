@@ -125,7 +125,18 @@ export const usePlanStore = create<PlanStore>((set) => ({
   },
 
   logSet: async (workoutLogId, data) => {
-    return window.api.logSet(workoutLogId, data)
+    const result = await window.api.logSet(workoutLogId, data)
+    // Keep activeWorkout.sets in sync so the UI reflects logged sets without
+    // requiring a full reload. Insert if new, replace if the user edited a set.
+    set((s) => {
+      if (!s.activeWorkout) return s
+      const exists = s.activeWorkout.sets.some((sv) => sv.id === result.id)
+      const sets = exists
+        ? s.activeWorkout.sets.map((sv) => (sv.id === result.id ? result : sv))
+        : [...s.activeWorkout.sets, result]
+      return { activeWorkout: { ...s.activeWorkout, sets } }
+    })
+    return result
   },
 
   completeWorkout: async (workoutLogId, notes) => {
@@ -149,11 +160,13 @@ export const usePlanStore = create<PlanStore>((set) => ({
   },
 
   logMealCompletion: async (userId, date, mealIndex, mealName) => {
-    await window.api.logMealCompletion(userId, date, mealIndex, mealName)
+    // Handler now returns the persisted DB record — use the real id so there
+    // are no duplicate-key collisions if the same meal is logged twice quickly.
+    const record = await window.api.logMealCompletion(userId, date, mealIndex, mealName) as MealCompletion
     set((s) => ({
       mealCompletions: [
         ...s.mealCompletions.filter((c) => !(c.date === date && c.meal_index === mealIndex)),
-        { id: Date.now(), user_id: userId, date, meal_index: mealIndex, meal_name: mealName, completed: 1, logged_at: new Date().toISOString() }
+        record
       ]
     }))
   },

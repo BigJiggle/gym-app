@@ -111,6 +111,8 @@ export interface CheckIn {
   stress_level: number
   notes?: string
   adjustments: CheckinAdjustments
+  schedule_type?: 'day' | 'interval'  // stored at submit time; undefined on legacy rows
+  interval_days?: number               // stored at submit time; undefined on legacy rows
 }
 
 export type CreateCheckinInput = Omit<CheckIn, 'id' | 'week_number' | 'adjustments'>
@@ -242,6 +244,7 @@ declare global {
       getWorkoutHistory: (userId: number, limit?: number) => Promise<WorkoutLog[]>
       getWorkoutSummary: (workoutLogId: number) => Promise<WorkoutLog>
       getNextCheckinDate: (userId: number) => Promise<string | null>
+      submitMissedCheckin: (data: CreateCheckinInput & { check_in_date: string }) => Promise<CheckIn>
       logMealCompletion: (userId: number, date: string, mealIndex: number, mealName: string) => Promise<void>
       unlogMealCompletion: (userId: number, date: string, mealIndex: number) => Promise<void>
       getMealCompletions: (userId: number, startDate: string, endDate: string) => Promise<MealCompletion[]>

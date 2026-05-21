@@ -8,6 +8,9 @@ import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import type { CheckIn } from '../../types'
 import { localDateStr } from '../../utils/dates'
+import { computeMissedSlots } from '../../../electron/services/checkinSchedule'
+
+// ── Helpers ────────────────────────────────────────────────────────────────
 
 function RatingBar({
   label,
@@ -85,6 +88,201 @@ function AdherenceSlider({
   )
 }
 
+/** Derive a human-readable label for a check-in based on what schedule
+ *  was active when it was submitted.
+ *  - Day-based (or legacy rows without schedule_type) → "Week N"
+ *  - Interval-based → "Daily / Weekly / X-Day Check-In N"
+ */
+function checkinLabel(checkin: CheckIn): string {
+  if (checkin.schedule_type === 'interval' && checkin.interval_days) {
+    const freq =
+      checkin.interval_days === 1 ? 'Daily' :
+      checkin.interval_days === 7 ? 'Weekly' :
+      `${checkin.interval_days}-Day`
+    return `${freq} Check-In ${checkin.week_number}`
+  }
+  return `Week ${checkin.week_number}`
+}
+
+// ── MissedSlotPanel ────────────────────────────────────────────────────────
+
+interface MissedSlotPanelProps {
+  slot: { expected_date: string; expected_label: string }
+  userId: number
+  isImperial: boolean
+  onFilled: () => void
+}
+
+function MissedSlotPanel({ slot, userId, isImperial, onFilled }: MissedSlotPanelProps) {
+  const [open, setOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const weightUnit = isImperial ? 'lbs' : 'kg'
+  const measureUnit = isImperial ? 'in' : 'cm'
+
+  const [weight, setWeight] = useState('')
+  const [waist, setWaist] = useState('')
+  const [chest, setChest] = useState('')
+  const [hip, setHip] = useState('')
+  const [arm, setArm] = useState('')
+  const [thigh, setThigh] = useState('')
+  const [training, setTraining] = useState(90)
+  const [diet, setDiet] = useState(90)
+  const [energy, setEnergy] = useState(3)
+  const [sleep, setSleep] = useState(3)
+  const [stress, setStress] = useState(2)
+  const [notes, setNotes] = useState('')
+  const [date, setDate] = useState(slot.expected_date)
+
+  function toKg(val: string): number | null {
+    const n = parseFloat(val)
+    if (isNaN(n) || n <= 0) return null
+    return isImperial ? Math.round(n * 0.453592 * 100) / 100 : n
+  }
+  function toCm(val: string): number | null {
+    const n = parseFloat(val)
+    if (isNaN(n) || n <= 0) return null
+    return isImperial ? Math.round(n * 2.54 * 10) / 10 : n
+  }
+
+  async function handleFillIn() {
+    setErr(null)
+    const wKg = toKg(weight)
+    if (!wKg) { setErr('Enter a valid weight'); return }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { setErr('Date must be YYYY-MM-DD'); return }
+    setSaving(true)
+    try {
+      await window.api.submitMissedCheckin({
+        user_id: userId,
+        check_in_date: date,
+        weight_kg: wKg,
+        waist_cm: toCm(waist) ?? undefined,
+        chest_cm: toCm(chest) ?? undefined,
+        hip_cm: toCm(hip) ?? undefined,
+        arm_cm: toCm(arm) ?? undefined,
+        thigh_cm: toCm(thigh) ?? undefined,
+        training_adherence: training,
+        diet_adherence: diet,
+        energy_level: energy,
+        sleep_quality: sleep,
+        stress_level: stress,
+        notes: notes.trim() || undefined,
+      } as any)
+      setSaved(true)
+      setTimeout(() => { onFilled(); setOpen(false) }, 800)
+    } catch (e) {
+      setErr(String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="bg-gray-900 border border-amber-900/40 rounded-xl overflow-hidden">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-800/40 transition-colors"
+      >
+        <div>
+          <p className="text-sm font-semibold text-amber-400">⚠ {slot.expected_label}</p>
+          <p className="text-xs text-gray-500 mt-0.5">Tap to fill in retroactively</p>
+        </div>
+        <span className="text-xs text-gray-500">{open ? '▲' : '▼'}</span>
+      </button>
+
+      {open && (
+        <div className="px-5 pb-5 space-y-4 border-t border-gray-800">
+          {/* Date */}
+          <div className="pt-4">
+            <label className="text-sm font-medium text-gray-300 mb-1.5 block">
+              Check-In Date
+              <span className="text-xs text-gray-500 font-normal ml-2">— pre-filled with expected date</span>
+            </label>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              max={new Date().toLocaleDateString('en-CA')}
+              className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200"
+            />
+          </div>
+
+          {/* Weight */}
+          <div>
+            <label className="text-sm font-medium text-gray-300 mb-1.5 block">
+              Weight ({weightUnit}) <span className="text-red-400">*</span>
+            </label>
+            <input
+              type="number" step="0.1" value={weight}
+              onChange={(e) => setWeight(e.target.value)}
+              placeholder={isImperial ? '185.0' : '84.0'}
+              className="w-36 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200"
+            />
+          </div>
+
+          {/* Measurements */}
+          <div>
+            <p className="text-sm font-medium text-gray-300 mb-2">Measurements ({measureUnit}) — optional</p>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { label: 'Waist', val: waist, set: setWaist },
+                { label: 'Chest', val: chest, set: setChest },
+                { label: 'Hip',   val: hip,   set: setHip   },
+                { label: 'Arm (flexed)', val: arm, set: setArm },
+                { label: 'Thigh', val: thigh, set: setThigh },
+              ].map(({ label, val, set }) => (
+                <div key={label}>
+                  <label className="text-xs text-gray-500 mb-1 block">{label}</label>
+                  <input
+                    type="number" step="0.5" value={val}
+                    onChange={(e) => set(e.target.value)}
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-gray-200"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Adherence */}
+          <div className="space-y-3">
+            <AdherenceSlider label="Training Adherence" value={training} onChange={setTraining} />
+            <AdherenceSlider label="Diet Adherence"     value={diet}     onChange={setDiet}     />
+          </div>
+
+          {/* Wellbeing */}
+          <div className="space-y-3">
+            <RatingBar label="Energy Level"  value={energy} onChange={setEnergy} lowLabel="Exhausted"  highLabel="Excellent"    />
+            <RatingBar label="Sleep Quality" value={sleep}  onChange={setSleep}  lowLabel="Poor"        highLabel="Great"        />
+            <RatingBar label="Stress Level"  value={stress} onChange={setStress} lowLabel="Relaxed"     highLabel="Overwhelmed"  />
+          </div>
+
+          <Textarea
+            label="Notes (optional)"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="How did that week go?"
+            rows={2}
+          />
+
+          {err && <p className="text-xs text-red-400">{err}</p>}
+
+          <button
+            onClick={handleFillIn}
+            disabled={saving || saved}
+            className="w-full py-2 rounded-xl bg-amber-700 hover:bg-amber-600 text-white text-sm font-semibold transition-colors disabled:opacity-50"
+          >
+            {saving ? 'Saving...' : saved ? '✓ Saved' : 'Fill In Missed Check-In'}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Main CheckIn page ──────────────────────────────────────────────────────
+
 export default function CheckIn() {
   const { user } = useUserStore()
   const { submitCheckin, checkinHistory, loadCheckinHistory, loading } = usePlanStore()
@@ -118,6 +316,9 @@ export default function CheckIn() {
   const [editNotes, setEditNotes] = useState('')
   const [editDate, setEditDate] = useState('')
 
+  // Missed-slots banner on open-form screen
+  const [missedBannerOpen, setMissedBannerOpen] = useState(false)
+
   const defaultWeight = user
     ? isImperial
       ? Math.round(user.weight_kg / 0.453592 * 10) / 10
@@ -149,18 +350,25 @@ export default function CheckIn() {
     return isImperial ? Math.round(n * 2.54 * 10) / 10 : n
   }
 
+  // Re-query nextAllowed whenever user or schedule settings change.
+  // This ensures the locked screen immediately reflects a Settings change.
   useEffect(() => {
     if (!user) return
+    setCheckingInterval(true)
     loadCheckinHistory(user.id)
     window.api.getNextCheckinDate(user.id)
       .then((iso) => {
-        if (iso && new Date(iso) > new Date()) {
-          setNextAllowed(new Date(iso))
-        }
+        setNextAllowed(iso && new Date(iso) > new Date() ? new Date(iso) : null)
         setCheckingInterval(false)
       })
       .catch(() => setCheckingInterval(false))
-  }, [user?.id])
+  }, [
+    user?.id,
+    settings.checkin_schedule_type,
+    settings.checkin_day,
+    settings.checkin_interval_days,
+    settings.checkin_biweekly,
+  ])
 
   if (!user) return null
   if (checkingInterval) {
@@ -174,7 +382,21 @@ export default function CheckIn() {
     )
   }
 
-  // Locked state
+  // Compute missed slots from history (used on both locked and open screens)
+  const scheduleType = (settings.checkin_schedule_type ?? 'day') as 'day' | 'interval'
+  const intervalDays = parseInt(settings.checkin_interval_days ?? '7', 10)
+  const checkinDayNum = parseInt(settings.checkin_day ?? '1', 10)
+  const missedSlots = computeMissedSlots(checkinHistory, scheduleType, checkinDayNum, intervalDays)
+
+  // Callback shared by MissedSlotPanel — refreshes history after a missed fill
+  async function onMissedFilled() {
+    if (!user) return
+    await loadCheckinHistory(user.id)
+    const iso = await window.api.getNextCheckinDate(user.id).catch(() => null)
+    setNextAllowed(iso && new Date(iso) > new Date() ? new Date(iso) : null)
+  }
+
+  // ── LOCKED STATE ──────────────────────────────────────────────────────────
   if (nextAllowed && nextAllowed > new Date()) {
     const msLeft = nextAllowed.getTime() - Date.now()
     const totalMinutes = Math.ceil(msLeft / (1000 * 60))
@@ -186,9 +408,7 @@ export default function CheckIn() {
       : hoursLeft > 0
         ? `${hoursLeft} hour${hoursLeft !== 1 ? 's' : ''}${minsLeft > 0 ? ` ${minsLeft}m` : ''}`
         : `${minsLeft} minute${minsLeft !== 1 ? 's' : ''}`
-    const scheduleType = settings.checkin_schedule_type ?? 'day'
     const biweekly = settings.checkin_biweekly === 'true'
-    const intervalDays = parseInt(settings.checkin_interval_days ?? '7', 10)
     const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
     const DAY_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
     const preferredDay = DAY_NAMES[parseInt(settings.checkin_day ?? '1')]
@@ -232,7 +452,6 @@ export default function CheckIn() {
         if (editDate && !/^\d{4}-\d{2}-\d{2}$/.test(editDate)) {
           setEditError('Date must be YYYY-MM-DD format'); return
         }
-        // Always use null (not undefined) — SQLite rejects undefined bindings
         const toCmVal = (v: string): number | null => {
           const n = parseFloat(v)
           return isNaN(n) || n <= 0 ? null : isImperial ? Math.round(n * 2.54 * 10) / 10 : n
@@ -253,7 +472,7 @@ export default function CheckIn() {
           check_in_date: editDate || null,
         } as any)
         setEditSaved(true)
-        // Refresh nextAllowed after date change so the lock screen updates
+        // Refresh nextAllowed so the lock screen updates after a date change
         const newIso = await window.api.getNextCheckinDate(user!.id)
         if (newIso) {
           const newNext = new Date(newIso)
@@ -271,7 +490,7 @@ export default function CheckIn() {
 
     return (
       <div className="p-6 max-w-2xl mx-auto space-y-4">
-        <h1 className="text-2xl font-bold text-gray-100">Weekly Check-In</h1>
+        <h1 className="text-2xl font-bold text-gray-100">Check-In</h1>
 
         {/* Locked card */}
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 text-center space-y-3">
@@ -315,7 +534,7 @@ export default function CheckIn() {
               <div>
                 <p className="text-sm font-semibold text-gray-200">Edit Last Check-In</p>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Week {lastCheckin.week_number} — {lastCheckin.check_in_date}
+                  {checkinLabel(lastCheckin)} — {lastCheckin.check_in_date}
                 </p>
               </div>
               <span className="text-xs text-gray-500">{editOpen ? '▲' : '▼'}</span>
@@ -323,7 +542,6 @@ export default function CheckIn() {
 
             {editOpen && (
               <div className="px-5 pb-5 space-y-4 border-t border-gray-800">
-                {/* Check-in date — shown first so wrong dates are easy to spot and fix */}
                 <div className="pt-4">
                   <label className="text-sm font-medium text-gray-300 mb-1.5 block">
                     Check-In Date
@@ -339,28 +557,22 @@ export default function CheckIn() {
                   <p className="text-xs text-gray-600 mt-1">Changing this date recalculates your next check-in immediately.</p>
                 </div>
 
-                {/* Weight */}
                 <div>
-                  <label className="text-sm font-medium text-gray-300 mb-1.5 block">
-                    Weight ({weightUnit})
-                  </label>
+                  <label className="text-sm font-medium text-gray-300 mb-1.5 block">Weight ({weightUnit})</label>
                   <input
-                    type="number"
-                    step="0.1"
-                    value={editWeight}
+                    type="number" step="0.1" value={editWeight}
                     onChange={(e) => setEditWeight(e.target.value)}
                     className="w-36 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200"
                   />
                 </div>
 
-                {/* Measurements */}
                 <div>
                   <p className="text-sm font-medium text-gray-300 mb-2">Measurements ({measureUnit})</p>
                   <div className="grid grid-cols-2 gap-2">
                     {[
                       { label: 'Waist', val: editWaist, set: setEditWaist },
                       { label: 'Chest', val: editChest, set: setEditChest },
-                      { label: 'Hip', val: editHip, set: setEditHip },
+                      { label: 'Hip',   val: editHip,   set: setEditHip   },
                       { label: 'Arm (flexed)', val: editArm, set: setEditArm },
                       { label: 'Thigh', val: editThigh, set: setEditThigh },
                     ].map(({ label, val, set }) => (
@@ -376,20 +588,17 @@ export default function CheckIn() {
                   </div>
                 </div>
 
-                {/* Adherence */}
                 <div className="space-y-3">
                   <AdherenceSlider label="Training Adherence" value={editTraining} onChange={setEditTraining} />
-                  <AdherenceSlider label="Diet Adherence" value={editDiet} onChange={setEditDiet} />
+                  <AdherenceSlider label="Diet Adherence"     value={editDiet}     onChange={setEditDiet}     />
                 </div>
 
-                {/* Wellbeing */}
                 <div className="space-y-3">
-                  <RatingBar label="Energy Level" value={editEnergy} onChange={setEditEnergy} lowLabel="Exhausted" highLabel="Excellent" />
-                  <RatingBar label="Sleep Quality" value={editSleep} onChange={setEditSleep} lowLabel="Poor" highLabel="Great" />
-                  <RatingBar label="Stress Level" value={editStress} onChange={setEditStress} lowLabel="Relaxed" highLabel="Overwhelmed" />
+                  <RatingBar label="Energy Level"  value={editEnergy} onChange={setEditEnergy} lowLabel="Exhausted"   highLabel="Excellent"   />
+                  <RatingBar label="Sleep Quality" value={editSleep}  onChange={setEditSleep}  lowLabel="Poor"         highLabel="Great"        />
+                  <RatingBar label="Stress Level"  value={editStress} onChange={setEditStress} lowLabel="Relaxed"      highLabel="Overwhelmed"  />
                 </div>
 
-                {/* Notes */}
                 <Textarea
                   label="Notes (optional)"
                   value={editNotes}
@@ -411,17 +620,28 @@ export default function CheckIn() {
             )}
           </div>
         )}
+
+        {/* Missed check-ins (locked screen) */}
+        {missedSlots.map((slot) => (
+          <MissedSlotPanel
+            key={slot.expected_date}
+            slot={slot}
+            userId={user.id}
+            isImperial={isImperial}
+            onFilled={onMissedFilled}
+          />
+        ))}
       </div>
     )
   }
 
-  // Success state
+  // ── SUCCESS STATE ──────────────────────────────────────────────────────────
   if (submitted) {
     return (
       <div className="p-6 max-w-2xl mx-auto space-y-4">
         <h1 className="text-2xl font-bold text-gray-100">Check-In Complete ✓</h1>
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <h2 className="font-semibold text-gray-200 mb-1">Week {submitted.week_number} — Coach Feedback</h2>
+          <h2 className="font-semibold text-gray-200 mb-1">{checkinLabel(submitted)} — Coach Feedback</h2>
           <p className="text-xs text-gray-500 mb-3">
             Logged weight: {isImperial
               ? `${Math.round(submitted.weight_kg / 0.453592 * 10) / 10} lbs`
@@ -455,7 +675,6 @@ export default function CheckIn() {
         </div>
         <Button onClick={async () => {
           setSubmitted(null)
-          // Load the real next check-in date from the backend instead of a fake 60s placeholder
           try {
             const iso = await window.api.getNextCheckinDate(user!.id)
             setNextAllowed(iso && new Date(iso) > new Date() ? new Date(iso) : null)
@@ -468,6 +687,8 @@ export default function CheckIn() {
       </div>
     )
   }
+
+  // ── OPEN FORM STATE ────────────────────────────────────────────────────────
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -506,18 +727,45 @@ export default function CheckIn() {
     }
   }
 
-  const weekLabel = checkinHistory.length > 0
-    ? `Week ${checkinHistory[0].week_number + 1}`
-    : 'Week 1'
+  const lastEntry = checkinHistory[0] ?? null
+  const weekLabel = lastEntry ? checkinLabel({ ...lastEntry, week_number: lastEntry.week_number + 1 }) : 'Week 1'
 
   return (
     <div className="p-6 max-w-2xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-100">Weekly Check-In</h1>
+        <h1 className="text-2xl font-bold text-gray-100">Check-In</h1>
         <p className="text-gray-500 mt-0.5">
           {weekLabel} — {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
         </p>
       </div>
+
+      {/* Missed check-ins banner (open form) */}
+      {missedSlots.length > 0 && (
+        <div className="bg-amber-950/30 border border-amber-800/40 rounded-xl overflow-hidden">
+          <button
+            onClick={() => setMissedBannerOpen((o) => !o)}
+            className="w-full flex items-center justify-between px-5 py-3 text-left hover:bg-amber-900/20 transition-colors"
+          >
+            <p className="text-sm font-semibold text-amber-400">
+              ⚠ {missedSlots.length} missed check-in{missedSlots.length !== 1 ? 's' : ''} — tap to fill in
+            </p>
+            <span className="text-xs text-gray-500">{missedBannerOpen ? '▲' : '▼'}</span>
+          </button>
+          {missedBannerOpen && (
+            <div className="px-4 pb-4 space-y-3 border-t border-amber-900/30">
+              {missedSlots.map((slot) => (
+                <MissedSlotPanel
+                  key={slot.expected_date}
+                  slot={slot}
+                  userId={user.id}
+                  isImperial={isImperial}
+                  onFilled={onMissedFilled}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-5">
         {/* Bodyweight */}
@@ -544,7 +792,7 @@ export default function CheckIn() {
             {[
               { label: 'Waist', value: waistDisplay, set: setWaistDisplay },
               { label: 'Chest', value: chestDisplay, set: setChestDisplay },
-              { label: 'Hip', value: hipDisplay, set: setHipDisplay },
+              { label: 'Hip',   value: hipDisplay,   set: setHipDisplay   },
               { label: 'Arm (flexed)', value: armDisplay, set: setArmDisplay },
               { label: 'Thigh', value: thighDisplay, set: setThighDisplay },
             ].map(({ label, value, set }) => (
@@ -566,43 +814,17 @@ export default function CheckIn() {
         {/* Adherence */}
         <Card title="Adherence">
           <div className="space-y-4">
-            <AdherenceSlider
-              label="Training Adherence"
-              value={trainingAdherence}
-              onChange={setTrainingAdherence}
-            />
-            <AdherenceSlider
-              label="Diet Adherence"
-              value={dietAdherence}
-              onChange={setDietAdherence}
-            />
+            <AdherenceSlider label="Training Adherence" value={trainingAdherence} onChange={setTrainingAdherence} />
+            <AdherenceSlider label="Diet Adherence"     value={dietAdherence}     onChange={setDietAdherence}     />
           </div>
         </Card>
 
         {/* Wellbeing */}
         <Card title="How are you feeling?">
           <div className="space-y-4">
-            <RatingBar
-              label="Energy Level"
-              value={energyLevel}
-              onChange={setEnergyLevel}
-              lowLabel="Exhausted"
-              highLabel="Excellent"
-            />
-            <RatingBar
-              label="Sleep Quality"
-              value={sleepQuality}
-              onChange={setSleepQuality}
-              lowLabel="Very poor"
-              highLabel="Excellent"
-            />
-            <RatingBar
-              label="Stress Level"
-              value={stressLevel}
-              onChange={setStressLevel}
-              lowLabel="None"
-              highLabel="Very high"
-            />
+            <RatingBar label="Energy Level"  value={energyLevel}  onChange={setEnergyLevel}  lowLabel="Exhausted" highLabel="Excellent"   />
+            <RatingBar label="Sleep Quality" value={sleepQuality} onChange={setSleepQuality} lowLabel="Very poor"  highLabel="Excellent"   />
+            <RatingBar label="Stress Level"  value={stressLevel}  onChange={setStressLevel}  lowLabel="None"       highLabel="Very high"   />
           </div>
         </Card>
 

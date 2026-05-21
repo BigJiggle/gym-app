@@ -499,3 +499,33 @@ export const FOOD_DISPLAY: Record<string, string> = {
   navy_beans:                         'Navy Beans (200g cooked)',
   kidney_beans:                       'Kidney Beans (200g cooked)',
 }
+
+// ─────────────────────────────────────────────
+// SNACK_ONLY_FOODS
+// Foods appropriate for snacks, breakfast, or pre/post-workout light meals,
+// but NOT suitable as the primary protein or carb in main meals (Lunch, Dinner).
+//
+// Used by getFood() to prevent preference-substitution from placing snack foods
+// into dinner/lunch templates. E.g. a user who prefers greek_yogurt should get
+// it in snack slots but NOT as a replacement for salmon in dinner.
+// ─────────────────────────────────────────────
+export const SNACK_ONLY_FOODS: ReadonlySet<string> = new Set([
+  // Snack proteins — great for snacks/breakfast, wrong as dinner protein anchors
+  'greek_yogurt',
+  'cottage_cheese',
+  'kefir',
+  'whey_protein',
+  'casein_protein',
+  'pea_protein',
+  'soy_protein',
+  'labneh',
+  'dahi',
+  // Snack carbs — great for snacks/pre-workout, wrong as dinner/lunch carb anchors
+  'apple',
+  'banana',
+  'berries',
+  'orange',
+  'rice_cakes',
+  'crackers',
+  'pretzels',
+])

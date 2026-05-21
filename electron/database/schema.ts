@@ -97,6 +97,8 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
   ('notifications_enabled', 'true'),
   ('checkin_day', '1'),
   ('checkin_interval_days', '7'),
+  ('checkin_schedule_type', 'day'),
+  ('checkin_biweekly', 'false'),
   ('ui_zoom', '100'),
   ('theme_name', 'default'),
   ('claude_api_key', '');
@@ -244,6 +246,13 @@ export const MIGRATIONS: { version: number; sql: string }[] = [
       DROP TABLE users;
       ALTER TABLE users_new RENAME TO users;
       PRAGMA foreign_keys = ON
+    `
+  },
+  {
+    version: 10,
+    sql: `
+      ALTER TABLE weekly_checkins ADD COLUMN schedule_type TEXT NOT NULL DEFAULT 'day';
+      ALTER TABLE weekly_checkins ADD COLUMN interval_days INTEGER NOT NULL DEFAULT 7
     `
   }
 ]

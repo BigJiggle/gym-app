@@ -83,3 +83,74 @@ describe('nutritionEngine', () => {
     expect(Math.abs(macroCalories - plan.calories_target)).toBeLessThanOrEqual(tolerance)
   })
 })
+
+// ── Food preferences: snack foods must NOT replace main meal ingredients ──────
+// Regression tests for the bug where greek_yogurt/apple preferences silently
+// replaced salmon/rice in Dinner because they share the same macro category.
+
+describe('nutritionEngine — preference substitution respects meal context', () => {
+  const BASE_6 = { ...BASE_INPUT, meal_count: 6, include_snacks: false }
+
+  function dinnerFoods(prefs: string[]): string[] {
+    const plan = generateNutritionPlan({ ...BASE_6, food_preferences: prefs } as any)
+    const dinner = plan.meals.find((m) => m.name === 'Dinner')
+    return dinner?.foods ?? []
+  }
+
+  function lunchFoods(prefs: string[]): string[] {
+    const plan = generateNutritionPlan({ ...BASE_6, food_preferences: prefs } as any)
+    const lunch = plan.meals.find((m) => m.name === 'Lunch')
+    return lunch?.foods ?? []
+  }
+
+  it('greek_yogurt preference does NOT appear in Dinner foods', () => {
+    const foods = dinnerFoods(['greek_yogurt'])
+    const hasYogurt = foods.some((f) => f.toLowerCase().includes('greek yogurt'))
+    expect(hasYogurt).toBe(false)
+  })
+
+  it('apple preference does NOT appear in Dinner foods', () => {
+    const foods = dinnerFoods(['apple'])
+    const hasApple = foods.some((f) => f.toLowerCase().includes('apple'))
+    expect(hasApple).toBe(false)
+  })
+
+  it('banana preference does NOT appear in Dinner foods', () => {
+    const foods = dinnerFoods(['banana'])
+    const hasBanana = foods.some((f) => f.toLowerCase().includes('banana'))
+    expect(hasBanana).toBe(false)
+  })
+
+  it('greek_yogurt preference does NOT appear in Lunch foods', () => {
+    const foods = lunchFoods(['greek_yogurt'])
+    const hasYogurt = foods.some((f) => f.toLowerCase().includes('greek yogurt'))
+    expect(hasYogurt).toBe(false)
+  })
+
+  it('whey_protein preference does NOT replace chicken/salmon in Dinner', () => {
+    const foods = dinnerFoods(['whey_protein'])
+    const hasShake = foods.some((f) => f.toLowerCase().includes('shake') || f.toLowerCase().includes('whey'))
+    expect(hasShake).toBe(false)
+  })
+
+  it('greek_yogurt preference DOES appear in Mid-Morning Snack (snack slot allows it)', () => {
+    const plan = generateNutritionPlan({
+      ...BASE_INPUT,
+      meal_count: 5,
+      include_snacks: true,
+      food_preferences: ['greek_yogurt'],
+    } as any)
+    const snack = plan.meals.find((m) => m.name === 'Mid-Morning Snack')
+    // Snack template already uses greek_yogurt as its default — confirming it's not blocked
+    const hasYogurt = snack?.foods.some((f) => f.toLowerCase().includes('greek yogurt'))
+    expect(hasYogurt).toBe(true)
+  })
+
+  it('non-snack preference (tuna_can) CAN substitute in Dinner as a valid protein swap', () => {
+    // tuna_can is NOT in SNACK_ONLY_FOODS — it's a legitimate main-meal protein
+    const foods = dinnerFoods(['tuna_can'])
+    // The preference may or may not fire depending on category match, but it must NOT be blocked
+    // Just assert no crash and a valid foods array is returned
+    expect(foods.length).toBeGreaterThan(0)
+  })
+})

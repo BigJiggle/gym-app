@@ -3,6 +3,7 @@ import {
   FOOD_SUBSTITUTES,
   FOOD_CATEGORY,
   FOOD_DISPLAY,
+  SNACK_ONLY_FOODS,
   type FoodSubstituteTuple,
 } from './foodDatabase'
 
@@ -136,7 +137,18 @@ function isExcluded(id: string, exclusions: string[]): boolean {
 // Returns the food string for a meal slot, respecting exclusions and preferences.
 // If the default food is excluded → iterate FOOD_SUBSTITUTES until finding one not excluded.
 // If a preferred food matches the same macro category and is not excluded → use it instead.
-function getFood(id: string, exclusions: string[], defaultStr: string, preferences?: string[]): string {
+//
+// isMainMeal (default true): when true, foods in SNACK_ONLY_FOODS are skipped during
+// preference substitution. This prevents greek_yogurt/apple/etc. from replacing
+// salmon or rice in Dinner/Lunch because they share the same macro category.
+// Pass false for snack meal templates where snack foods are explicitly appropriate.
+function getFood(
+  id: string,
+  exclusions: string[],
+  defaultStr: string,
+  preferences?: string[],
+  isMainMeal = true
+): string {
   if (!isExcluded(id, exclusions)) {
     if (preferences?.length) {
       const category = FOOD_CATEGORY[id]
@@ -144,6 +156,9 @@ function getFood(id: string, exclusions: string[], defaultStr: string, preferenc
         for (const prefId of preferences) {
           if (prefId === id) break                          // already the preferred food
           if (isExcluded(prefId, exclusions)) continue
+          // Skip snack-only foods when substituting into main meal slots so that a
+          // preference for greek_yogurt or apple never replaces salmon or rice in dinner.
+          if (isMainMeal && SNACK_ONLY_FOODS.has(prefId)) continue
           if (FOOD_CATEGORY[prefId] === category) {
             // Use FOOD_DISPLAY for correct portion, fall back to auto-generated label
             if (FOOD_DISPLAY[prefId]) return FOOD_DISPLAY[prefId]
@@ -426,30 +441,33 @@ function getMealTemplates(
     {
       name: 'Mid-Morning Snack',
       time: '10:30',
+      // isMainMeal = false: snack-only foods (greek_yogurt, apple, etc.) are
+      // intentionally present here and must not be filtered by preferences.
       foods: (p) =>
         p === 'vegan'
           ? [
-              getFood('pea_protein', exclusions, 'Pea Protein Shake (35g)', preferences),
-              getFood('apple', exclusions, 'Apple', preferences)
+              getFood('pea_protein', exclusions, 'Pea Protein Shake (35g)', preferences, false),
+              getFood('apple', exclusions, 'Apple', preferences, false)
             ]
           : [
-              getFood('greek_yogurt', exclusions, 'Greek Yogurt (150g)', preferences),
-              getFood('berries', exclusions, 'Mixed Berries (100g)', preferences)
+              getFood('greek_yogurt', exclusions, 'Greek Yogurt (150g)', preferences, false),
+              getFood('berries', exclusions, 'Mixed Berries (100g)', preferences, false)
             ]
     },
     {
       name: 'Afternoon Snack',
       time: '15:30',
+      // isMainMeal = false: same reason as Mid-Morning Snack.
       foods: (p) =>
         p === 'vegan'
           ? [
-              getFood('rice_cakes', exclusions, 'Rice Cakes x2', preferences),
-              getFood('almond_butter', exclusions, 'Almond Butter (16g)', preferences),
-              getFood('banana', exclusions, 'Banana (half)', preferences)
+              getFood('rice_cakes',    exclusions, 'Rice Cakes x2',        preferences, false),
+              getFood('almond_butter', exclusions, 'Almond Butter (16g)',  preferences, false),
+              getFood('banana',        exclusions, 'Banana (half)',         preferences, false)
             ]
           : [
-              getFood('cottage_cheese', exclusions, 'Cottage Cheese (150g)', preferences),
-              getFood('rice_cakes', exclusions, 'Rice Cakes x2', preferences)
+              getFood('cottage_cheese', exclusions, 'Cottage Cheese (150g)', preferences, false),
+              getFood('rice_cakes',     exclusions, 'Rice Cakes x2',         preferences, false)
             ]
     }
   ]

@@ -43,6 +43,7 @@ const api = {
 
   // Check-in scheduling
   getNextCheckinDate: (userId: number) => ipcRenderer.invoke('checkin:nextAllowed', userId),
+  submitMissedCheckin: (data: unknown) => ipcRenderer.invoke('checkin:submitMissed', data),
 
   // Meal completion tracking
   logMealCompletion: (userId: number, date: string, mealIndex: number, mealName: string) =>
