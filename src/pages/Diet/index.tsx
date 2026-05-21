@@ -309,6 +309,14 @@ export default function Diet() {
               {mealsEaten === totalMeals && (
                 <p className="text-xs text-green-400 font-medium">All meals hit today — great work!</p>
               )}
+              {mealsEaten < totalMeals && calPct < 100 && (
+                <p className="text-xs text-gray-400 font-medium">
+                  <span className="text-brand-400">{dietPlan.calories_target - consumedCalories} kcal</span>
+                  {' · '}
+                  <span className="text-green-300">{Math.max(0, dietPlan.protein_g - consumedProtein)}g protein</span>
+                  {' remaining today'}
+                </p>
+              )}
             </div>
           )}
 
