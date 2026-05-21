@@ -181,7 +181,7 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
   const [exerciseStates, setExerciseStates] = useState<Map<string, ExerciseState>>(
     () => buildInitialStates(session)
   )
-  const [summaryStats, setSummaryStats] = useState<{ sets: number; exercises: number } | null>(null)
+  const [summaryStats, setSummaryStats] = useState<{ sets: number; exercises: number; volume: number } | null>(null)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -267,7 +267,11 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
     // Snapshot summary stats before async work
     const doneSets = currentStates.reduce((acc, [, s]) => acc + s.sets.filter((x) => x.done).length, 0)
     const doneExercises = currentStates.filter(([, s]) => s.sets.some((x) => x.done)).length
-    setSummaryStats({ sets: doneSets, exercises: doneExercises })
+    // Total volume in the user's display unit (lbs or kg) — excludes bodyweight sets (weight=0)
+    const volume = currentStates.reduce((total, [, s]) =>
+      total + s.sets.reduce((acc, x) => x.done && x.weight > 0 ? acc + x.weight * x.reps : acc, 0)
+    , 0)
+    setSummaryStats({ sets: doneSets, exercises: doneExercises, volume: Math.round(volume) })
     setSaving(true)
 
     // Build the full set list to persist
@@ -410,7 +414,7 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
           <div className="text-6xl mb-4">🏆</div>
           <h2 className="text-2xl font-black text-gray-100 mb-1">Workout Complete!</h2>
           <p className="text-gray-400 mb-6">Great work today</p>
-          <div className="grid grid-cols-3 gap-4 w-full max-w-sm mb-8">
+          <div className="grid grid-cols-2 gap-4 w-full max-w-sm mb-8">
             <div className="bg-gray-900 rounded-xl p-3 text-center">
               <p className="text-2xl font-bold text-brand-400">{formatTime(elapsedSeconds)}</p>
               <p className="text-xs text-gray-500 mt-1">Duration</p>
@@ -422,6 +426,14 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
             <div className="bg-gray-900 rounded-xl p-3 text-center">
               <p className="text-2xl font-bold text-gray-400">{summaryStats?.sets ?? totalSetsLogged}</p>
               <p className="text-xs text-gray-500 mt-1">Sets logged</p>
+            </div>
+            <div className="bg-gray-900 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-yellow-400">
+                {summaryStats?.volume
+                  ? summaryStats.volume.toLocaleString()
+                  : '—'}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">Volume ({isImperial ? 'lbs' : 'kg'})</p>
             </div>
           </div>
           <button
