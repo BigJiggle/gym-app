@@ -33,25 +33,40 @@ function multiplyQty(foodStr: string, days = 7): string {
 }
 
 function buildGroceryItems(meals: Meal[]): GroceryItem[] {
-  const map = new Map<string, GroceryItem>()
+  interface AccumEntry {
+    food: string
+    baseName: string
+    totalGPerDay: number  // -1 means no gram info available
+    count: number
+    category: GroceryItem['category']
+  }
+  const map = new Map<string, AccumEntry>()
   for (const meal of meals) {
     for (const food of meal.foods) {
       const baseName = food.replace(/\s*\(.*?\)/g, '').replace(/\s*x\d+/g, '').trim()
       const key = baseName.toLowerCase()
+      // Match gram amounts like "(150g)" or "(200g cooked)"
+      const gramsMatch = food.match(/\((\d+(?:\.\d+)?)\s*g(?:[^)]*)\)/)
+      const grams = gramsMatch ? parseFloat(gramsMatch[1]) : -1
       if (map.has(key)) {
-        // Already exists — just note it appears multiple times (already multiplied × 7)
+        const entry = map.get(key)!
+        entry.count++
+        if (entry.totalGPerDay >= 0 && grams >= 0) {
+          entry.totalGPerDay += grams
+        } else {
+          entry.totalGPerDay = -1  // mixed formats — fall back to count-based multiplier
+        }
       } else {
-        map.set(key, {
-          food,
-          baseName,
-          weeklyQty: multiplyQty(food, 7),
-          category: categorize(food),
-          checked: false,
-        })
+        map.set(key, { food, baseName, totalGPerDay: grams, count: 1, category: categorize(food) })
       }
     }
   }
-  return Array.from(map.values())
+  return Array.from(map.values()).map(({ food, baseName, totalGPerDay, count, category }) => {
+    const weeklyQty = totalGPerDay >= 0
+      ? `${baseName} (${Math.round(totalGPerDay * 7)}g/wk)`
+      : multiplyQty(food, count * 7)
+    return { food, baseName, weeklyQty, category, checked: false }
+  })
 }
 
 const CATEGORY_CONFIG = [

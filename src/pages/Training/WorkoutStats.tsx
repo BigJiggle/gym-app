@@ -1,16 +1,83 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+  LineChart, Line, CartesianGrid, ReferenceLine
 } from 'recharts'
-import type { WorkoutLog } from '../../types'
+import type { WorkoutLog, ExerciseLibraryItem } from '../../types'
 
 interface Props {
   history: WorkoutLog[]
   sessionsPerWeek: number
+  units?: 'metric' | 'imperial'
+  exerciseLibrary?: ExerciseLibraryItem[]
+}
+
+interface PR {
+  exerciseName: string
+  weightKg: number
+  reps: number
+  date: string
+}
+
+function computePRs(history: WorkoutLog[]): PR[] {
+  const bests = new Map<string, PR>()
+  for (const log of history) {
+    if (log.status !== 'completed') continue
+    for (const s of log.sets ?? []) {
+      if (s.skipped || s.weight_kg === null || s.weight_kg === 0 || s.reps_actual === null) continue
+      const existing = bests.get(s.exercise_name)
+      if (!existing || s.weight_kg > existing.weightKg) {
+        bests.set(s.exercise_name, {
+          exerciseName: s.exercise_name,
+          weightKg: s.weight_kg,
+          reps: s.reps_actual,
+          date: log.date,
+        })
+      }
+    }
+  }
+  return Array.from(bests.values()).sort((a, b) => a.exerciseName.localeCompare(b.exerciseName))
+}
+
+// Epley formula: normalises different rep ranges into a comparable strength number
+function epley1RM(weight: number, reps: number): number {
+  return Math.round(weight * (1 + reps / 30) * 10) / 10
+}
+
+interface ProgressionPoint {
+  date: string
+  label: string   // short date label for X-axis
+  weight: number  // top-set weight in kg
+  reps: number    // reps for that set
+  e1rm: number    // estimated 1RM
+}
+
+function computeExerciseProgression(history: WorkoutLog[], exerciseName: string): ProgressionPoint[] {
+  const byDate = new Map<string, { weight: number; reps: number; e1rm: number }>()
+  for (const log of history) {
+    if (log.status !== 'completed') continue
+    for (const s of log.sets ?? []) {
+      if (s.exercise_name !== exerciseName || s.skipped) continue
+      if (!s.weight_kg || s.weight_kg === 0 || !s.reps_actual || s.reps_actual === 0) continue
+      const e1rm = epley1RM(s.weight_kg, s.reps_actual)
+      const existing = byDate.get(log.date)
+      if (!existing || e1rm > existing.e1rm) {
+        byDate.set(log.date, { weight: s.weight_kg, reps: s.reps_actual, e1rm })
+      }
+    }
+  }
+  return Array.from(byDate.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, v]) => ({
+      date,
+      label: date.slice(5),   // MM-DD
+      ...v,
+    }))
 }
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const DAY_HEADERS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
+const ALL_MUSCLE_GROUPS = ['chest', 'back', 'shoulders', 'triceps', 'biceps', 'quads', 'hamstrings', 'glutes', 'calves', 'core']
 
 function todayStr() {
   return new Date().toLocaleDateString('en-CA')
@@ -54,10 +121,77 @@ function monthlyAdherenceData(history: WorkoutLog[], sessionsPerWeek: number) {
   return result
 }
 
-export default function WorkoutStats({ history, sessionsPerWeek }: Props) {
+// Returns the Monday of the week containing `date`, offset by `weekOffset` weeks back
+function getMondayOfWeek(weekOffset: number): Date {
+  const today = new Date()
+  const jsDay = today.getDay()
+  const daysFromMon = jsDay === 0 ? 6 : jsDay - 1
+  const monday = new Date(today)
+  monday.setDate(today.getDate() - daysFromMon - weekOffset * 7)
+  monday.setHours(0, 0, 0, 0)
+  return monday
+}
+
+function dateToStr(d: Date): string {
+  return d.toLocaleDateString('en-CA')
+}
+
+function computeWeekMuscleSets(
+  history: WorkoutLog[],
+  nameToGroup: Map<string, string>,
+  fromStr: string,
+  toStr: string
+): Map<string, number> {
+  const result = new Map<string, number>()
+  for (const log of history) {
+    if (log.status !== 'completed' || log.date < fromStr || log.date > toStr) continue
+    for (const s of log.sets ?? []) {
+      if (s.skipped) continue
+      const group = nameToGroup.get(s.exercise_name)
+      if (group) result.set(group, (result.get(group) ?? 0) + 1)
+    }
+  }
+  return result
+}
+
+export default function WorkoutStats({ history, sessionsPerWeek, units = 'metric', exerciseLibrary = [] }: Props) {
+  const prs = computePRs(history)
+  const toDisplay = (kg: number) =>
+    units === 'imperial' ? Math.round(kg * 2.20462 * 10) / 10 : kg
+  const weightUnit = units === 'imperial' ? 'lbs' : 'kg'
   const now = new Date()
   const [viewYear, setViewYear] = useState(now.getFullYear())
   const [viewMonth, setViewMonth] = useState(now.getMonth())
+  const [selectedExercise, setSelectedExercise] = useState<string>('')
+
+  // Exercises with at least 2 data points (enough to draw a progression line)
+  const trackableExercises = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const log of history) {
+      if (log.status !== 'completed') continue
+      const seen = new Set<string>()
+      for (const s of log.sets ?? []) {
+        if (!s.skipped && s.weight_kg && s.weight_kg > 0 && s.reps_actual && !seen.has(s.exercise_name)) {
+          seen.add(s.exercise_name)
+          counts.set(s.exercise_name, (counts.get(s.exercise_name) ?? 0) + 1)
+        }
+      }
+    }
+    return Array.from(counts.entries())
+      .filter(([, n]) => n >= 2)
+      .map(([name]) => name)
+      .sort()
+  }, [history])
+
+  const progressionData = useMemo(() => {
+    if (!selectedExercise) return []
+    const raw = computeExerciseProgression(history, selectedExercise)
+    return raw.map((p) => ({
+      ...p,
+      e1rm: toDisplay(p.e1rm),
+      weight: toDisplay(p.weight),
+    }))
+  }, [selectedExercise, history, units])
 
   function prevMonth() {
     if (viewMonth === 0) { setViewYear((y) => y - 1); setViewMonth(11) }
@@ -103,6 +237,26 @@ export default function WorkoutStats({ history, sessionsPerWeek }: Props) {
     .reduce((acc, l) => acc + (l.sets?.filter((s) => !s.skipped).length ?? 0), 0)
   const avgSets = completedLogs.length > 0 ? Math.round(totalSetsAllTime / completedLogs.length) : 0
 
+  // 4-week volume trend: requires exercise library to map exercise → muscle group
+  const nameToGroup = new Map(exerciseLibrary.map((e) => [e.name, e.muscleGroup]))
+  const weekBounds = Array.from({ length: 4 }, (_, i) => {
+    const offsetWeeks = 3 - i // 3, 2, 1, 0 (oldest → current)
+    const mon = getMondayOfWeek(offsetWeeks)
+    const sun = new Date(mon)
+    sun.setDate(mon.getDate() + 6)
+    const label = offsetWeeks === 0 ? 'This Wk'
+      : offsetWeeks === 1 ? 'Last Wk'
+      : `−${offsetWeeks}w`
+    return { label, from: dateToStr(mon), to: dateToStr(sun) }
+  })
+  const weekSets = weekBounds.map(({ from, to }) =>
+    computeWeekMuscleSets(history, nameToGroup, from, to)
+  )
+  // Only show muscle groups that appear in the exercise library AND have at least 1 set in any of the 4 weeks
+  const activeMuscleGroups = exerciseLibrary.length > 0
+    ? ALL_MUSCLE_GROUPS.filter((g) => weekSets.some((ws) => (ws.get(g) ?? 0) > 0))
+    : []
+
   return (
     <div className="space-y-4">
       {/* All-time summary */}
@@ -120,6 +274,62 @@ export default function WorkoutStats({ history, sessionsPerWeek }: Props) {
           <p className="text-xs text-gray-500 mt-0.5">Plan Frequency</p>
         </div>
       </div>
+
+      {/* 4-week muscle volume trend */}
+      {activeMuscleGroups.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+            4-Week Muscle Volume (sets)
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr>
+                  <th className="text-left text-gray-600 pb-2 pr-3 font-medium w-24">Muscle</th>
+                  {weekBounds.map(({ label }) => (
+                    <th
+                      key={label}
+                      className={`text-center pb-2 px-1 font-medium w-14 ${
+                        label === 'This Wk' ? 'text-brand-400' : 'text-gray-500'
+                      }`}
+                    >
+                      {label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {activeMuscleGroups.map((group) => (
+                  <tr key={group} className="border-t border-gray-800/50">
+                    <td className="py-1.5 pr-3 text-gray-400 capitalize">{group}</td>
+                    {weekSets.map((ws, wi) => {
+                      const count = ws.get(group) ?? 0
+                      const isCurrentWeek = wi === 3
+                      const cellColor = count === 0
+                        ? 'text-red-500/60 bg-red-900/10'
+                        : count >= 6
+                          ? 'text-green-400 bg-green-900/20'
+                          : 'text-yellow-400 bg-yellow-900/10'
+                      return (
+                        <td key={wi} className="py-1.5 px-1 text-center">
+                          <span className={`inline-block rounded px-1.5 py-0.5 font-bold tabular-nums ${cellColor} ${isCurrentWeek ? 'ring-1 ring-brand-700' : ''}`}>
+                            {count}
+                          </span>
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-gray-700 mt-2">
+            <span className="text-green-400">6+</span> = strong &nbsp;
+            <span className="text-yellow-400">1–5</span> = moderate &nbsp;
+            <span className="text-red-500/70">0</span> = not trained
+          </p>
+        </div>
+      )}
 
       {/* Monthly adherence bar chart */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
@@ -234,6 +444,98 @@ export default function WorkoutStats({ history, sessionsPerWeek }: Props) {
         <span className="flex items-center gap-1"><span className="text-green-500">●</span> Completed</span>
         <span className="flex items-center gap-1"><span className="text-red-700">–</span> Skipped</span>
         <span className="flex items-center gap-1"><span className="text-gray-600">○</span> Rest day</span>
+      </div>
+
+      {/* Lift Progression Chart */}
+      {trackableExercises.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Lift Progression</p>
+            <span className="text-xs text-gray-600">e1RM = estimated 1-rep max</span>
+          </div>
+          <select
+            value={selectedExercise}
+            onChange={(e) => setSelectedExercise(e.target.value)}
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200 mb-3"
+          >
+            <option value="">— Select an exercise —</option>
+            {trackableExercises.map((ex) => (
+              <option key={ex} value={ex}>{ex}</option>
+            ))}
+          </select>
+          {selectedExercise && progressionData.length >= 2 && (
+            <>
+              <ResponsiveContainer width="100%" height={160}>
+                <LineChart data={progressionData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                  <XAxis dataKey="label" tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={{ stroke: '#374151' }} tickLine={false} />
+                  <YAxis tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={{ stroke: '#374151' }} tickLine={false} domain={['auto', 'auto']} />
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (!active || !payload?.length) return null
+                      const d = payload[0].payload as typeof progressionData[0]
+                      return (
+                        <div className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs">
+                          <p className="text-gray-400 mb-1">{d.date}</p>
+                          <p className="text-brand-400 font-bold">e1RM: {d.e1rm} {weightUnit}</p>
+                          <p className="text-gray-400">Top set: {d.weight} {weightUnit} × {d.reps} reps</p>
+                        </div>
+                      )
+                    }}
+                  />
+                  <ReferenceLine y={progressionData[0]?.e1rm} stroke="#4b5563" strokeDasharray="4 2" />
+                  <Line
+                    type="monotone"
+                    dataKey="e1rm"
+                    stroke="#f97316"
+                    strokeWidth={2}
+                    dot={{ fill: '#f97316', r: 4, strokeWidth: 0 }}
+                    activeDot={{ r: 6, fill: '#fb923c' }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+              <div className="flex justify-between text-xs mt-2">
+                <span className="text-gray-600">Start: {progressionData[0]?.e1rm} {weightUnit}</span>
+                <span className={`font-semibold ${
+                  progressionData[progressionData.length - 1]?.e1rm >= progressionData[0]?.e1rm
+                    ? 'text-green-400' : 'text-red-400'
+                }`}>
+                  Now: {progressionData[progressionData.length - 1]?.e1rm} {weightUnit}
+                  {' '}({progressionData[progressionData.length - 1]?.e1rm >= progressionData[0]?.e1rm ? '+' : ''}
+                  {(progressionData[progressionData.length - 1]?.e1rm - progressionData[0]?.e1rm).toFixed(1)})
+                </span>
+              </div>
+            </>
+          )}
+          {selectedExercise && progressionData.length < 2 && (
+            <p className="text-xs text-gray-600 text-center py-4">Log at least 2 sessions with weight to see progression.</p>
+          )}
+          {!selectedExercise && (
+            <p className="text-xs text-gray-600 text-center py-4">Pick an exercise to chart your strength over time.</p>
+          )}
+        </div>
+      )}
+
+      {/* Personal Records */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+        <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Personal Records</p>
+        {prs.length > 0 ? (
+          <div className="space-y-2">
+            {prs.map((pr) => (
+              <div key={pr.exerciseName} className="flex items-center justify-between py-1 border-b border-gray-800 last:border-0">
+                <p className="text-sm text-gray-300 truncate pr-3">{pr.exerciseName}</p>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className="text-sm font-bold text-brand-400">
+                    {toDisplay(pr.weightKg)}{weightUnit} × {pr.reps}
+                  </span>
+                  <span className="text-xs text-gray-600 hidden sm:inline">{pr.date}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-600 text-center py-2">Log workouts with weights to see your records.</p>
+        )}
       </div>
     </div>
   )

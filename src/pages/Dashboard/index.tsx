@@ -57,6 +57,13 @@ export default function Dashboard() {
   const todaySession = trainingPlan?.sessions?.find((s) => s.day_of_week === todayDow)
   const showCountdown = user.show_date ? getShowCountdown(user.show_date) : null
 
+  // Next training session after today (for rest-day preview)
+  const nextSession = (() => {
+    if (!trainingPlan?.sessions?.length) return null
+    const sorted = [...trainingPlan.sessions].sort((a, b) => a.day_of_week - b.day_of_week)
+    return sorted.find(s => s.day_of_week > todayDow) ?? sorted[0]
+  })()
+
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       {/* Header */}
@@ -161,15 +168,34 @@ export default function Dashboard() {
                 )}
               </div>
               <Link to="/training">
-                <Button variant="secondary" size="sm" className="w-full mt-2">
-                  View Full Session
+                <Button size="sm" className="w-full mt-2">
+                  ▶ Start Today's Workout
                 </Button>
               </Link>
             </div>
           ) : (
-            <div className="py-4 text-center">
-              <p className="text-gray-500 text-sm">Rest & recovery today.</p>
-              <p className="text-gray-600 text-xs mt-1">Focus on sleep, nutrition, and mobility.</p>
+            <div className="py-2">
+              <p className="text-gray-500 text-sm text-center">Rest & recovery today.</p>
+              <p className="text-gray-600 text-xs mt-1 text-center">Focus on sleep, nutrition, and mobility.</p>
+              {nextSession && (
+                <div className="mt-3 pt-3 border-t border-gray-800">
+                  <p className="text-xs text-gray-500 mb-1.5">Next Training Day</p>
+                  <p className="text-sm font-medium text-brand-400">
+                    {DAY_NAMES[nextSession.day_of_week === 7 ? 0 : nextSession.day_of_week]} — {nextSession.session_name}
+                  </p>
+                  <div className="mt-1.5 space-y-0.5">
+                    {nextSession.exercises.slice(0, 4).map((ex, i) => (
+                      <div key={i} className="flex justify-between text-xs">
+                        <span className="text-gray-500">{ex.name}</span>
+                        <span className="text-gray-700">{ex.sets}×{ex.reps}</span>
+                      </div>
+                    ))}
+                    {nextSession.exercises.length > 4 && (
+                      <p className="text-xs text-gray-700">+{nextSession.exercises.length - 4} more</p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -226,7 +252,7 @@ export default function Dashboard() {
             </div>
           ) : (
             <div className="space-y-1.5">
-              {(dietPlan.meals ?? []).slice(0, 4).map((meal, idx) => {
+              {(dietPlan.meals ?? []).map((meal, idx) => {
                 const done = isMealDone(idx)
                 return (
                   <div
@@ -251,43 +277,71 @@ export default function Dashboard() {
                   </div>
                 )
               })}
-              {(dietPlan.meals?.length ?? 0) > 4 && (
-                <p className="text-xs text-gray-600 text-center pt-1">
-                  +{(dietPlan.meals?.length ?? 0) - 4} more meals in the plan
-                </p>
-              )}
-              {/* Progress bar */}
-              {(dietPlan.meals?.length ?? 0) > 0 && (
-                <div className="mt-2">
-                  <div className="flex justify-between text-xs text-gray-500 mb-1">
-                    <span>{mealCompletions.filter(c => c.date === todayStr).length}/{dietPlan.meals?.length ?? 0} meals logged</span>
+              {/* Macro progress */}
+              {(dietPlan.meals?.length ?? 0) > 0 && (() => {
+                const eatenIndices = new Set(
+                  mealCompletions.filter(c => c.date === todayStr).map(c => c.meal_index)
+                )
+                const meals = dietPlan.meals ?? []
+                const eatenCals = meals.reduce((sum, m, i) => sum + (eatenIndices.has(i) ? m.calories : 0), 0)
+                const eatenProtein = meals.reduce((sum, m, i) => sum + (eatenIndices.has(i) ? m.protein_g : 0), 0)
+                const calPct = Math.min(100, Math.round((eatenCals / dietPlan.calories_target) * 100))
+                const proteinPct = Math.min(100, Math.round((eatenProtein / dietPlan.protein_g) * 100))
+                const remainingCals = dietPlan.calories_target - eatenCals
+                const remainingProtein = dietPlan.protein_g - eatenProtein
+                return (
+                  <div className="mt-3 pt-3 border-t border-gray-800 space-y-2">
+                    <div>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-gray-400">Calories</span>
+                        <span className="text-gray-300">
+                          <span className="text-brand-400 font-medium">{eatenCals}</span>
+                          <span className="text-gray-600"> / {dietPlan.calories_target} kcal</span>
+                          {remainingCals > 0 && <span className="text-gray-600"> · {remainingCals} left</span>}
+                        </span>
+                      </div>
+                      <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-brand-500 transition-all duration-300"
+                          style={{ width: `${calPct}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-gray-400">Protein</span>
+                        <span className="text-gray-300">
+                          <span className={`font-medium ${proteinPct >= 80 ? 'text-green-400' : proteinPct >= 40 ? 'text-yellow-400' : 'text-red-400'}`}>{eatenProtein}g</span>
+                          <span className="text-gray-600"> / {dietPlan.protein_g}g</span>
+                          {remainingProtein > 0 && <span className="text-gray-600"> · {remainingProtein}g left</span>}
+                        </span>
+                      </div>
+                      <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full transition-all duration-300 ${proteinPct >= 80 ? 'bg-green-500' : proteinPct >= 40 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                          style={{ width: `${proteinPct}%` }}
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-600 text-right">{eatenIndices.size}/{meals.length} meals logged</p>
                   </div>
-                  <div className="h-1 bg-gray-800 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-green-500 transition-all"
-                      style={{ width: `${Math.round((mealCompletions.filter(c => c.date === todayStr).length / (dietPlan.meals?.length ?? 1)) * 100)}%` }}
-                    />
-                  </div>
-                </div>
-              )}
+                )
+              })()}
             </div>
           )}
         </div>
       </div>
 
       {/* Quick links */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="flex flex-wrap gap-x-6 gap-y-2 px-1">
         {[
-          { to: '/training', label: 'View Training Plan', icon: '🏋' },
-          { to: '/diet', label: 'View Nutrition Plan', icon: '🥗' },
-          { to: '/progress', label: 'Track Progress', icon: '📈' },
-          { to: '/education', label: 'Posing Guide', icon: '📖' }
-        ].map(({ to, label, icon }) => (
-          <Link key={to} to={to}>
-            <div className="bg-gray-900 hover:bg-gray-800 border border-gray-800 hover:border-gray-700 rounded-xl p-3 text-center transition-colors cursor-pointer">
-              <div className="text-2xl mb-1">{icon}</div>
-              <p className="text-xs text-gray-400 font-medium">{label}</p>
-            </div>
+          { to: '/training', label: 'Training Plan' },
+          { to: '/diet', label: 'Nutrition Plan' },
+          { to: '/progress', label: 'Progress' },
+          { to: '/education', label: 'Posing Guide' },
+        ].map(({ to, label }) => (
+          <Link key={to} to={to} className="text-sm text-brand-400 hover:text-brand-300 transition-colors">
+            {label} →
           </Link>
         ))}
       </div>

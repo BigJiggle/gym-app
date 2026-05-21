@@ -229,6 +229,16 @@ When running a QA pass, the agent must:
 | `ORDER BY id DESC` broke after retroactive fill | `electron/ipc/checkinHandlers.ts:34,224` | Changed to `ORDER BY check_in_date DESC` |
 | `checkin_schedule_type` not seeded | `electron/database/schema.ts` | Added seed rows for `checkin_schedule_type` and `checkin_biweekly` |
 
+## Bugs Fixed by Routine (2026-05-20)
+
+`src/pages/Progress/index.tsx:14` — Local variable `window` inside `computeWeeklyRate` shadowed the global `window` object. Renamed to `recentCheckins`.
+
+`src/pages/Progress/index.tsx:82-85` — `STATUS_LABEL` used cut-specific strings for all goals. Bulk users saw "Losing Too Slow" instead of "Not Gaining". Made labels goal-aware.
+
+`src/pages/CheckIn/index.tsx` — Redundant weight label removed. Card title already states the unit; inner label replaced with `subtitle="Required"` on the Card.
+
+---
+
 ## Known Issues (not yet fixed)
 
 `src/pages/Diet/index.tsx:648-656` — Swapping a meal updates the Zustand store in-memory only; the change is lost on navigation or reload. Fixing requires persisting meal overrides to the DB — tracked as BUG-010 in `qa-bugs.json`.

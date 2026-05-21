@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useUserStore } from '../../store/userStore'
 import { useSettingsStore } from '../../store/settingsStore'
 import { DIVISIONS } from '../../data/posing'
@@ -15,7 +15,9 @@ type Tab = 'posing' | 'prep' | 'peakweek' | 'firsttimer' | 'timeline'
 export default function Education() {
   const { user, shows } = useUserStore()
   const { settings } = useSettingsStore()
-  const [tab, setTab] = useState<Tab>('timeline')
+  const today2 = new Date().toLocaleDateString('en-CA')
+  const hasUpcomingShow = shows.some(s => s.show_date >= today2)
+  const [tab, setTab] = useState<Tab>(hasUpcomingShow ? 'timeline' : 'posing')
   const [selectedDivisionId, setSelectedDivisionId] = useState<string>(() => {
     if (user?.division) {
       const match = DIVISIONS.find((d) =>
@@ -42,7 +44,7 @@ export default function Education() {
   const TABS: { id: Tab; label: string }[] = [
     { id: 'timeline', label: 'Prep Timeline' },
     { id: 'posing', label: 'Posing Guide' },
-    { id: 'prep', label: 'Competition Prep' },
+    { id: 'prep', label: 'Show Checklist' },
     { id: 'peakweek', label: 'Peak Week' },
     { id: 'firsttimer', label: 'First Timer' },
   ]
@@ -65,9 +67,27 @@ export default function Education() {
   const timeline = nearestShow ? buildPrepTimeline(nearestShow.show_date) : null
   const showCountdown = nearestShow ? getShowCountdown(nearestShow.show_date) : null
 
-  const [expandedWeek, setExpandedWeek] = useState<number | null>(
-    timeline?.find(w => w.isCurrentWeek)?.weeksOut ?? null
-  )
+  const [expandedWeek, setExpandedWeek] = useState<number | null>(null)
+  const expandedWeekInitialized = useRef(false)
+
+  // Auto-expand the current week once the show data loads (shows load async from DB)
+  useEffect(() => {
+    if (expandedWeekInitialized.current || !timeline) return
+    const currentWeek = timeline.find(w => w.isCurrentWeek)
+    if (currentWeek) {
+      setExpandedWeek(currentWeek.weeksOut)
+      expandedWeekInitialized.current = true
+    }
+  }, [timeline])
+
+  // Shows load asynchronously after the component may already be mounted.
+  // Auto-switch to the timeline tab the first time upcoming shows become available,
+  // but only if the user hasn't manually navigated away from the default 'posing' tab.
+  useEffect(() => {
+    if (hasUpcomingShow && tab === 'posing') {
+      setTab('timeline')
+    }
+  }, [hasUpcomingShow])
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
@@ -497,7 +517,7 @@ export default function Education() {
       {tab === 'prep' && (
         <div className="space-y-4">
           <div>
-            <h2 className="font-bold text-gray-100 mb-1">First Timer Competition Checklist</h2>
+            <h2 className="font-bold text-gray-100 mb-1">Competition Prep Checklist</h2>
             <p className="text-sm text-gray-500 mb-3">Tap any time block to expand the checklist for that phase.</p>
             <div className="space-y-2">
               {Object.entries(FIRST_TIMER_CHECKLIST).map(([key, section]) => {

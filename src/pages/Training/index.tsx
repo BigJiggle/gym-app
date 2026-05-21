@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useUserStore } from '../../store/userStore'
 import { usePlanStore } from '../../store/planStore'
 import { useSettingsStore } from '../../store/settingsStore'
@@ -8,7 +8,7 @@ import WorkoutSession from './WorkoutSession'
 import SessionEditor from './SessionEditor'
 import WorkoutLogEditor from './WorkoutLogEditor'
 import WorkoutStats from './WorkoutStats'
-import type { TrainingSession } from '../../types'
+import type { TrainingSession, ExerciseLibraryItem } from '../../types'
 import { parseLocalDate } from '../../utils/dates'
 
 const DAY_NAMES = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -46,12 +46,14 @@ export default function Training() {
   const [editingSession, setEditingSession] = useState<{id: number; name: string; exercises: import('../../types').Exercise[]} | null>(null)
   const [editingLog, setEditingLog] = useState<import('../../types').WorkoutLog | null>(null)
   const [editingLogExercises, setEditingLogExercises] = useState<import('../../types').Exercise[] | null>(null)
+  const [exerciseLibrary, setExerciseLibrary] = useState<ExerciseLibraryItem[]>([])
 
   useEffect(() => {
     if (!user?.id) return
     loadTrainingPlan(user.id)
     loadActiveWorkout(user.id)
     loadWorkoutHistory(user.id)
+    window.api.getExerciseLibrary().then(setExerciseLibrary)
   }, [user?.id])
 
   // Auto-resume: if there's an active workout from a previous session, find its matching
@@ -67,6 +69,65 @@ export default function Training() {
   if (!user) return null
 
   const todayDow = new Date().getDay() === 0 ? 7 : new Date().getDay()
+
+  // Compute muscle group set counts for a given date range
+  function computeMuscleSets(fromStr: string, toStr: string): Map<string, number> {
+    const nameToGroup = new Map(exerciseLibrary.map((e) => [e.name, e.muscleGroup]))
+    const result = new Map<string, number>()
+    for (const log of workoutHistory) {
+      if (log.status !== 'completed' || log.date < fromStr || log.date > toStr) continue
+      for (const s of log.sets ?? []) {
+        if (s.skipped) continue
+        const group = nameToGroup.get(s.exercise_name)
+        if (group) result.set(group, (result.get(group) ?? 0) + 1)
+      }
+    }
+    return result
+  }
+
+  // This week (Mon–today) and last week (Mon–Sun)
+  const weeklyMuscleSets: Map<string, number> = (() => {
+    const today = new Date()
+    const jsDay = today.getDay()
+    const daysFromMon = jsDay === 0 ? 6 : jsDay - 1
+    const monday = new Date(today)
+    monday.setDate(today.getDate() - daysFromMon)
+    return computeMuscleSets(monday.toLocaleDateString('en-CA'), today.toLocaleDateString('en-CA'))
+  })()
+
+  const lastWeekMuscleSets: Map<string, number> = (() => {
+    const today = new Date()
+    const jsDay = today.getDay()
+    const daysFromMon = jsDay === 0 ? 6 : jsDay - 1
+    const thisMonday = new Date(today)
+    thisMonday.setDate(today.getDate() - daysFromMon)
+    const lastMonday = new Date(thisMonday)
+    lastMonday.setDate(thisMonday.getDate() - 7)
+    const lastSunday = new Date(thisMonday)
+    lastSunday.setDate(thisMonday.getDate() - 1)
+    return computeMuscleSets(lastMonday.toLocaleDateString('en-CA'), lastSunday.toLocaleDateString('en-CA'))
+  })()
+
+  // All muscle groups in a fixed display order
+  const ALL_MUSCLE_GROUPS = ['chest', 'back', 'shoulders', 'triceps', 'biceps', 'quads', 'hamstrings', 'glutes', 'calves', 'core']
+
+  // Personal records: best top-set weight for each exercise across all completed workouts
+  const exercisePRs = useMemo(() => {
+    const bests = new Map<string, { weightKg: number; reps: number; date: string }>()
+    for (const log of workoutHistory) {
+      if (log.status !== 'completed') continue
+      for (const s of log.sets ?? []) {
+        if (s.skipped || !s.weight_kg || s.weight_kg === 0 || !s.reps_actual) continue
+        const existing = bests.get(s.exercise_name)
+        if (!existing || s.weight_kg > existing.weightKg) {
+          bests.set(s.exercise_name, { weightKg: s.weight_kg, reps: s.reps_actual, date: log.date })
+        }
+      }
+    }
+    return bests
+  }, [workoutHistory])
+
+  const isImperial = settings.units === 'imperial'
 
   // If there is an active workout and a session to track, show the overlay
   if (activeWorkout && sessionToStart) {
@@ -219,6 +280,56 @@ export default function Training() {
             </div>
           </div>
 
+          {/* This Week's Muscle Coverage + vs Last Week */}
+          {exerciseLibrary.length > 0 && (
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">This Week's Volume</p>
+                {lastWeekMuscleSets.size > 0 && (
+                  <p className="text-xs text-gray-600">vs last week</p>
+                )}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                {ALL_MUSCLE_GROUPS.map((group) => {
+                  const sets = weeklyMuscleSets.get(group) ?? 0
+                  const lastSets = lastWeekMuscleSets.get(group) ?? 0
+                  const trained = sets > 0
+                  const delta = sets - lastSets
+                  const hasLastWeek = lastWeekMuscleSets.size > 0
+                  return (
+                    <div
+                      key={group}
+                      className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                        trained
+                          ? 'bg-brand-900/40 border border-brand-700/50'
+                          : 'bg-gray-800 border border-gray-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        {trained && <span className="text-green-400">✓</span>}
+                        <span className={`capitalize ${trained ? 'text-brand-300' : 'text-gray-600'}`}>{group}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {trained && <span className="font-bold text-brand-400">{sets}s</span>}
+                        {hasLastWeek && trained && delta !== 0 && (
+                          <span className={`text-xs font-medium ${delta > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {delta > 0 ? `+${delta}` : delta}
+                          </span>
+                        )}
+                        {hasLastWeek && !trained && lastSets > 0 && (
+                          <span className="text-xs text-gray-600">{lastSets}s↓</span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              {weeklyMuscleSets.size === 0 && (
+                <p className="text-xs text-gray-600 mt-1">No workouts logged yet this week.</p>
+              )}
+            </div>
+          )}
+
           {/* AI refine — only shown when Claude API key is set */}
           {(settings.claude_api_key ?? '') && (
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 space-y-2">
@@ -257,7 +368,7 @@ export default function Training() {
                     isExpanded
                       ? 'border-brand-500/50'
                       : isToday
-                        ? 'border-brand-800/40'
+                        ? 'border-brand-500 bg-brand-950/10'
                         : 'border-gray-800'
                   }`}
                 >
@@ -269,11 +380,24 @@ export default function Training() {
                       <span className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded font-mono">
                         {DAY_NAMES[session.day_of_week]}
                       </span>
+                      {isToday && (
+                        <span className="text-xs font-semibold text-brand-400">Today</span>
+                      )}
                       <h3 className="text-sm font-semibold text-gray-200">{session.session_name}</h3>
                     </div>
                     <div className="flex items-center gap-2">
-                      {isToday && <Badge variant="brand">Today</Badge>}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleStartWorkout(session) }}
+                        className={`text-xs px-3 py-1 rounded-lg font-bold transition-colors ${
+                          isToday
+                            ? 'bg-brand-600 hover:bg-brand-500 text-white'
+                            : 'border border-gray-700 text-gray-400 hover:border-brand-700 hover:text-brand-400'
+                        }`}
+                      >
+                        ▶ Start
+                      </button>
                       <span className="text-xs text-gray-500">{session.exercises.length} ex</span>
+                      <span className="text-gray-600 text-xs">{isExpanded ? '▲' : '▼'}</span>
                     </div>
                   </div>
 
@@ -292,17 +416,26 @@ export default function Training() {
                   {/* Full exercise list when expanded */}
                   {isExpanded && (
                     <div className="mt-3 space-y-1.5 border-t border-gray-800 pt-3">
-                      {session.exercises.map((ex, i) => (
-                        <div key={i} className="flex justify-between items-start text-sm">
-                          <div>
-                            <span className="text-gray-200">{ex.name}</span>
-                            {ex.notes && <p className="text-xs text-gray-600 mt-0.5">{ex.notes}</p>}
+                      {session.exercises.map((ex, i) => {
+                        const pr = exercisePRs.get(ex.name)
+                        const prDisplay = pr
+                          ? `${isImperial ? Math.round(pr.weightKg * 2.20462 * 10) / 10 : pr.weightKg}${isImperial ? 'lbs' : 'kg'} × ${pr.reps}`
+                          : null
+                        return (
+                          <div key={i} className="flex justify-between items-start text-sm">
+                            <div>
+                              <span className="text-gray-200">{ex.name}</span>
+                              {ex.notes && <p className="text-xs text-gray-600 mt-0.5">{ex.notes}</p>}
+                              {prDisplay && (
+                                <p className="text-xs text-amber-400/80 mt-0.5">PR: {prDisplay}</p>
+                              )}
+                            </div>
+                            <span className="text-gray-400 font-mono text-xs ml-3 flex-shrink-0">
+                              {ex.sets}×{ex.reps} RIR{ex.rir}
+                            </span>
                           </div>
-                          <span className="text-gray-400 font-mono text-xs ml-3 flex-shrink-0">
-                            {ex.sets}×{ex.reps} RIR{ex.rir}
-                          </span>
-                        </div>
-                      ))}
+                        )
+                      })}
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
@@ -358,6 +491,8 @@ export default function Training() {
             <WorkoutStats
               history={workoutHistory}
               sessionsPerWeek={trainingPlan.sessions?.length ?? 3}
+              units={settings.units}
+              exerciseLibrary={exerciseLibrary}
             />
           )}
 

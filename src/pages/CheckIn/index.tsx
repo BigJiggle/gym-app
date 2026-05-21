@@ -769,21 +769,16 @@ export default function CheckIn() {
 
       <form onSubmit={handleSubmit} className="space-y-5">
         {/* Bodyweight */}
-        <Card title={`Bodyweight (${weightUnit})`}>
-          <div>
-            <label className="text-sm text-gray-400 mb-1 block">
-              Current weight ({weightUnit}) <span className="text-red-400">*</span>
-            </label>
-            <input
-              type="number"
-              step="0.1"
-              value={weightDisplay}
-              onChange={(e) => setWeightDisplay(e.target.value)}
-              placeholder={isImperial ? '185.0' : '84.0'}
-              required
-              className="w-36 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200"
-            />
-          </div>
+        <Card title={`Bodyweight (${weightUnit})`} subtitle="Required">
+          <input
+            type="number"
+            step="0.1"
+            value={weightDisplay}
+            onChange={(e) => setWeightDisplay(e.target.value)}
+            placeholder={isImperial ? '185.0' : '84.0'}
+            required
+            className="w-36 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200"
+          />
         </Card>
 
         {/* Measurements */}

@@ -8,13 +8,14 @@ import Button from '../../components/ui/Button'
 import WeeklyMealView from './WeeklyMealView'
 import GroceryList from './GroceryList'
 import { FOODS } from '../../data/foods'
+import { localDateStr } from '../../utils/dates'
 import type { Meal } from '../../types'
 
 type DietTab = 'plan' | 'weekly' | 'grocery'
 
 export default function Diet() {
   const { user, updateUser } = useUserStore()
-  const { dietPlan, loadDietPlan, generateDietPlan, loading } = usePlanStore()
+  const { dietPlan, loadDietPlan, generateDietPlan, loading, mealCompletions, loadMealCompletions, logMealCompletion, unlogMealCompletion } = usePlanStore()
   const { settings } = useSettingsStore()
 
   const [tab, setTab] = useState<DietTab>('plan')
@@ -38,8 +39,21 @@ export default function Diet() {
   const [prefsSaving, setPrefsSaving] = useState(false)
   const [prefsRestrictions, setPrefsRestrictions] = useState<string[]>([])
 
+  const todayStr = localDateStr()
+  const jsDay = new Date().getDay()
+  const monday = new Date()
+  monday.setDate(monday.getDate() - (jsDay === 0 ? 6 : jsDay - 1))
+  const mondayStr = localDateStr(monday)
+  const weekDays = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(monday)
+    d.setDate(monday.getDate() + i)
+    return { dateStr: localDateStr(d), label: ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'][i] }
+  })
+
   useEffect(() => {
-    if (user?.id) loadDietPlan(user.id)
+    if (!user?.id) return
+    loadDietPlan(user.id)
+    loadMealCompletions(user.id, mondayStr, todayStr)
   }, [user?.id])
 
   // Sync prefs panel state from user when panel opens
@@ -170,6 +184,28 @@ export default function Diet() {
   const carbsPct = Math.round((dietPlan.carbs_g * 4 / dietPlan.calories_target) * 100)
   const fatPct = Math.round((dietPlan.fat_g * 9 / dietPlan.calories_target) * 100)
 
+  // Today's intake progress
+  const todayCompletions = mealCompletions.filter((c) => c.date === todayStr)
+  const mealsEaten = todayCompletions.length
+  const totalMeals = dietPlan.meals?.length ?? 0
+  const consumedCalories = todayCompletions.reduce((acc, c) => acc + (dietPlan.meals?.[c.meal_index]?.calories ?? 0), 0)
+  const consumedProtein = todayCompletions.reduce((acc, c) => acc + (dietPlan.meals?.[c.meal_index]?.protein_g ?? 0), 0)
+  const calPct = Math.min(100, dietPlan.calories_target > 0 ? Math.round((consumedCalories / dietPlan.calories_target) * 100) : 0)
+  const protPct = Math.min(100, dietPlan.protein_g > 0 ? Math.round((consumedProtein / dietPlan.protein_g) * 100) : 0)
+
+  function isMealEaten(mealIndex: number) {
+    return todayCompletions.some((c) => c.meal_index === mealIndex)
+  }
+
+  function toggleMealEaten(mealIndex: number, mealName: string) {
+    if (!user) return
+    if (isMealEaten(mealIndex)) {
+      unlogMealCompletion(user.id, todayStr, mealIndex)
+    } else {
+      logMealCompletion(user.id, todayStr, mealIndex, mealName)
+    }
+  }
+
   const filteredForExclude = FOODS.filter((f) =>
     f.name.toLowerCase().includes(prefsExcludeSearch.toLowerCase())
   )
@@ -233,6 +269,152 @@ export default function Diet() {
             <StatCard label="Fat" value={dietPlan.fat_g} unit={`g (${fatPct}%)`} />
           </div>
 
+          {/* Today's intake progress */}
+          {totalMeals > 0 && (
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-gray-200">Today's Intake</p>
+                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${mealsEaten === totalMeals ? 'bg-green-900/30 text-green-400' : 'bg-gray-800 text-gray-400'}`}>
+                  {mealsEaten}/{totalMeals} meals
+                </span>
+              </div>
+              <div>
+                <div className="flex justify-between text-xs mb-1.5">
+                  <span className="text-gray-500">Calories</span>
+                  <span className={calPct >= 100 ? 'text-green-400' : 'text-brand-400'}>
+                    {consumedCalories} / {dietPlan.calories_target} kcal
+                  </span>
+                </div>
+                <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-300 ${calPct >= 100 ? 'bg-green-500' : 'bg-brand-500'}`}
+                    style={{ width: `${calPct}%` }}
+                  />
+                </div>
+              </div>
+              <div>
+                <div className="flex justify-between text-xs mb-1.5">
+                  <span className="text-gray-500">Protein</span>
+                  <span className={protPct >= 100 ? 'text-green-400' : 'text-green-300'}>
+                    {consumedProtein}g / {dietPlan.protein_g}g
+                  </span>
+                </div>
+                <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-300 ${protPct >= 100 ? 'bg-green-500' : 'bg-green-600'}`}
+                    style={{ width: `${protPct}%` }}
+                  />
+                </div>
+              </div>
+              {mealsEaten === totalMeals && (
+                <p className="text-xs text-green-400 font-medium">All meals hit today — great work!</p>
+              )}
+            </div>
+          )}
+
+          {/* Weekly meal compliance strip */}
+          {totalMeals > 0 && (
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">This Week's Diet</p>
+                {(() => {
+                  const pastDays = weekDays.filter(d => d.dateStr <= todayStr)
+                  const fullDays = pastDays.filter(d =>
+                    mealCompletions.filter(c => c.date === d.dateStr).length >= totalMeals
+                  ).length
+                  return (
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                      fullDays === pastDays.length && pastDays.length > 0 ? 'bg-green-900/30 text-green-400' :
+                      fullDays > 0 ? 'bg-yellow-900/20 text-yellow-400' :
+                      'bg-gray-800 text-gray-500'
+                    }`}>
+                      {fullDays}/{pastDays.length} days on track
+                    </span>
+                  )
+                })()}
+              </div>
+              <div className="grid grid-cols-7 gap-1">
+                {weekDays.map(({ dateStr, label }) => {
+                  const completed = mealCompletions.filter(c => c.date === dateStr).length
+                  const isFuture = dateStr > todayStr
+                  const isToday = dateStr === todayStr
+                  const isFull = !isFuture && completed >= totalMeals
+                  const isPartial = !isFuture && completed > 0 && completed < totalMeals
+                  return (
+                    <div
+                      key={dateStr}
+                      className={`flex flex-col items-center py-1.5 rounded-lg text-center ${
+                        isFuture ? 'opacity-25' :
+                        isFull ? 'bg-green-900/30' :
+                        isPartial ? 'bg-yellow-900/20' :
+                        'bg-gray-800/60'
+                      } ${isToday ? 'ring-1 ring-brand-500' : ''}`}
+                    >
+                      <span className="text-xs text-gray-500">{label}</span>
+                      <span className={`text-xs font-bold mt-0.5 leading-none ${
+                        isFuture ? 'text-gray-700' :
+                        isFull ? 'text-green-400' :
+                        isPartial ? 'text-yellow-400' :
+                        'text-gray-600'
+                      }`}>
+                        {isFuture ? '—' : `${completed}/${totalMeals}`}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Weekly macro totals — calories and protein hit across all logged days this week */}
+          {totalMeals > 0 && (() => {
+            const pastDays = weekDays.filter(d => d.dateStr <= todayStr)
+            const weekCals = pastDays.reduce((acc, { dateStr }) =>
+              acc + (dietPlan.meals ?? []).reduce((sum, m, idx) =>
+                sum + (mealCompletions.some(c => c.date === dateStr && c.meal_index === idx) ? m.calories : 0), 0
+              ), 0
+            )
+            const weekProtein = pastDays.reduce((acc, { dateStr }) =>
+              acc + (dietPlan.meals ?? []).reduce((sum, m, idx) =>
+                sum + (mealCompletions.some(c => c.date === dateStr && c.meal_index === idx) ? m.protein_g : 0), 0
+              ), 0
+            )
+            const targetWeekCals = dietPlan.calories_target * pastDays.length
+            const targetWeekProtein = dietPlan.protein_g * pastDays.length
+            const weekCalPct = targetWeekCals > 0 ? Math.min(100, Math.round((weekCals / targetWeekCals) * 100)) : 0
+            const weekProtPct = targetWeekProtein > 0 ? Math.min(100, Math.round((weekProtein / targetWeekProtein) * 100)) : 0
+            return (
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-gray-200">Weekly Macro Totals</p>
+                  <span className="text-xs text-gray-500">{pastDays.length} day{pastDays.length !== 1 ? 's' : ''} logged</span>
+                </div>
+                <div>
+                  <div className="flex justify-between text-xs mb-1.5">
+                    <span className="text-gray-500">Calories this week</span>
+                    <span className={weekCalPct >= 90 ? 'text-green-400' : 'text-brand-400'}>
+                      {weekCals.toLocaleString()} / {targetWeekCals.toLocaleString()} kcal ({weekCalPct}%)
+                    </span>
+                  </div>
+                  <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full transition-all duration-300 ${weekCalPct >= 90 ? 'bg-green-500' : 'bg-brand-500'}`} style={{ width: `${weekCalPct}%` }} />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex justify-between text-xs mb-1.5">
+                    <span className="text-gray-500">Protein this week</span>
+                    <span className={weekProtPct >= 90 ? 'text-green-400' : 'text-green-300'}>
+                      {Math.round(weekProtein)}g / {Math.round(targetWeekProtein)}g ({weekProtPct}%)
+                    </span>
+                  </div>
+                  <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full transition-all duration-300 ${weekProtPct >= 90 ? 'bg-green-500' : 'bg-green-600'}`} style={{ width: `${weekProtPct}%` }} />
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
+
           {/* Macro bar */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
             <p className="text-sm font-medium text-gray-300 mb-3">Macro Distribution</p>
@@ -240,20 +422,6 @@ export default function Diet() {
               <div className="bg-green-500" style={{ width: `${proteinPct}%` }} />
               <div className="bg-blue-500" style={{ width: `${carbsPct}%` }} />
               <div className="bg-yellow-500" style={{ width: `${fatPct}%` }} />
-            </div>
-            <div className="flex gap-4 mt-2 text-xs text-gray-500">
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
-                Protein {proteinPct}%
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
-                Carbs {carbsPct}%
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-yellow-500 inline-block" />
-                Fat {fatPct}%
-              </span>
             </div>
           </div>
 
@@ -292,17 +460,20 @@ export default function Diet() {
                   <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-800">
                     <button
                       onClick={() => setSwapTarget({ mealIndex: i, meal })}
-                      className="text-xs text-gray-500 hover:text-brand-400 transition-colors flex items-center gap-1"
+                      className="text-xs text-gray-400 hover:text-brand-300 border border-gray-700 hover:border-brand-700 rounded-lg px-2.5 py-1 transition-colors flex items-center gap-1"
                     >
                       &#8635; Swap Meal
                     </button>
-                    <span className="text-xs text-gray-600">
-                      {user.cooking_time_pref === 'quick'
-                        ? '⏱ Quick prep'
-                        : user.cooking_time_pref === 'chef'
-                        ? '\u{1F468}‍\u{1F373} Full prep'
-                        : '⏱ ~20 min prep'}
-                    </span>
+                    <button
+                      onClick={() => toggleMealEaten(i, meal.name)}
+                      className={`text-xs font-medium rounded-lg px-2.5 py-1 transition-colors flex items-center gap-1 ${
+                        isMealEaten(i)
+                          ? 'bg-green-900/30 border border-green-800/50 text-green-400'
+                          : 'border border-gray-700 text-gray-500 hover:border-green-800 hover:text-green-400'
+                      }`}
+                    >
+                      {isMealEaten(i) ? '✓ Eaten' : 'Mark Eaten'}
+                    </button>
                   </div>
                 </div>
               ))}
@@ -339,7 +510,7 @@ export default function Diet() {
                   {user.include_snacks ? ' · Snacks' : ''}
                 </p>
               </div>
-              <span className="text-gray-500 text-xs">{prefsOpen ? '▲ Close' : '▼ Edit'}</span>
+              <span className="text-gray-500 text-xs">{prefsOpen ? '▲ Close' : '▼ Customize'}</span>
             </button>
 
             {prefsOpen && (
@@ -640,7 +811,7 @@ export default function Diet() {
         <div className="fixed inset-0 bg-black/60 z-50 flex items-end justify-center">
           <div className="bg-gray-900 border border-gray-800 rounded-t-2xl p-6 w-full max-w-lg">
             <h3 className="font-bold text-gray-100 mb-1">Swap {swapTarget.meal.name}</h3>
-            <p className="text-xs text-gray-500 mb-4">Alternative options with similar macros:</p>
+            <p className="text-xs text-gray-500 mb-4">Tap an option to replace your current foods (~{swapTarget.meal.calories} kcal, {swapTarget.meal.protein_g}g protein):</p>
             <div className="space-y-2 mb-4">
               {getSwapAlternatives(swapTarget.meal, user.dietary_preference).map((alt, i) => (
                 <div
@@ -656,9 +827,8 @@ export default function Diet() {
                   }}
                   className="bg-gray-800 border border-gray-700 rounded-xl p-3 cursor-pointer hover:border-gray-600"
                 >
-                  <div className="flex justify-between text-xs text-gray-500 mb-1">
-                    <span className="text-gray-300 font-medium">Option {i + 1}</span>
-                    <span>{swapTarget.meal.calories} kcal</span>
+                  <div className="mb-1">
+                    <span className="text-xs text-gray-300 font-medium">Option {i + 1}</span>
                   </div>
                   <div className="flex flex-wrap gap-1">
                     {alt.map((food, fi) => (
@@ -670,6 +840,7 @@ export default function Diet() {
                 </div>
               ))}
             </div>
+            <p className="text-xs text-gray-600 mb-3">This swap updates your view for today. To permanently exclude a food, tap ✕ on it in the meal card.</p>
             <Button variant="secondary" onClick={() => setSwapTarget(null)} className="w-full">
               Cancel
             </Button>
