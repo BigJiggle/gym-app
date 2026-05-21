@@ -18,6 +18,7 @@ export default function Dashboard() {
     trainingPlan,
     dietPlan,
     latestCheckin,
+    checkinHistory,
     mealCompletions,
     lastRefreshMessage,
     loadTrainingPlan,
@@ -140,6 +141,66 @@ export default function Dashboard() {
           color="brand"
         />
       </div>
+
+      {/* Prep Pace — only shown when 2+ check-ins exist */}
+      {checkinHistory.length >= 2 && (() => {
+        const isImperial = settings.units === 'imperial'
+        const wUnit = isImperial ? 'lbs' : 'kg'
+        const recent = checkinHistory.slice(0, 4)
+        const newest = recent[0]
+        const oldest = recent[recent.length - 1]
+        const daysDiff = (new Date(newest.check_in_date).getTime() - new Date(oldest.check_in_date).getTime()) / (1000 * 60 * 60 * 24)
+        const weeksDiff = daysDiff / 7
+        if (weeksDiff <= 0) return null
+        const weeklyRateKg = (newest.weight_kg - oldest.weight_kg) / weeksDiff
+        const weeklyRateDisplay = isImperial
+          ? Math.round(weeklyRateKg * 2.20462 * 10) / 10
+          : Math.round(weeklyRateKg * 10) / 10
+        const currentWeightKg = checkinHistory[0].weight_kg
+        const pctPerWeek = currentWeightKg > 0 ? Math.abs(weeklyRateKg) / currentWeightKg : 0
+        type Status = 'on_track' | 'too_fast' | 'too_slow' | 'gaining' | 'neutral'
+        let status: Status = 'neutral'
+        if (user.goal === 'cut') {
+          if (weeklyRateKg >= 0) status = 'gaining'
+          else if (pctPerWeek > 0.012) status = 'too_fast'
+          else if (pctPerWeek < 0.003) status = 'too_slow'
+          else status = 'on_track'
+        } else if (user.goal === 'bulk') {
+          if (weeklyRateKg <= 0) status = 'too_slow'
+          else if (pctPerWeek > 0.01) status = 'too_fast'
+          else status = 'on_track'
+        }
+        const STATUS_LABEL: Record<Status, string> = {
+          on_track: 'On Track',
+          too_fast: user.goal === 'bulk' ? 'Gaining Too Fast' : 'Losing Too Fast',
+          too_slow: user.goal === 'bulk' ? 'Not Gaining' : 'Losing Too Slow',
+          gaining: 'Weight Trending Up',
+          neutral: 'Tracking',
+        }
+        const STATUS_COLOR: Record<Status, string> = {
+          on_track: 'text-green-400 bg-green-900/20 border-green-800/40',
+          too_fast: 'text-red-400 bg-red-900/20 border-red-800/40',
+          too_slow: 'text-amber-400 bg-amber-900/20 border-amber-800/40',
+          gaining: 'text-red-400 bg-red-900/20 border-red-800/40',
+          neutral: 'text-gray-400 bg-gray-800 border-gray-700',
+        }
+        return (
+          <Link to="/progress" className="block">
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center justify-between hover:border-gray-700 transition-colors">
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Prep Pace</p>
+                <p className={`text-lg font-bold ${weeklyRateKg < 0 ? 'text-green-400' : weeklyRateKg > 0 ? 'text-amber-400' : 'text-gray-300'}`}>
+                  {weeklyRateDisplay > 0 ? '+' : ''}{weeklyRateDisplay} {wUnit}/wk
+                </p>
+                <p className="text-xs text-gray-600 mt-0.5">avg last {Math.min(checkinHistory.length, 4)} check-ins · tap for full chart</p>
+              </div>
+              <span className={`text-xs font-medium px-3 py-1.5 rounded-full border ${STATUS_COLOR[status]}`}>
+                {STATUS_LABEL[status]}
+              </span>
+            </div>
+          </Link>
+        )
+      })()}
 
       {/* Today's workout + Latest check-in */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
