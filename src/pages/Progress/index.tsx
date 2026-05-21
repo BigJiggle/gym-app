@@ -4,6 +4,7 @@ import { useUserStore } from '../../store/userStore'
 import { usePlanStore } from '../../store/planStore'
 import { useSettingsStore } from '../../store/settingsStore'
 import WeightChart from '../../components/charts/WeightChart'
+import MeasurementsChart from '../../components/charts/MeasurementsChart'
 import { StatCard } from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import { displayWeight, displayLength, weightLabel, lengthLabel } from '../../utils/units'
@@ -234,6 +235,16 @@ export default function Progress() {
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <h2 className="font-semibold text-gray-100 mb-4">Weight Over Time</h2>
           <WeightChart entries={progressEntries} startWeight={user.weight_kg} units={settings.units} />
+        </div>
+      )}
+
+      {/* Measurements trend chart — only shown when ≥2 check-ins have any measurement data */}
+      {checkinHistory.length >= 2 && checkinHistory.some(c =>
+        c.waist_cm != null || c.chest_cm != null || c.hip_cm != null || c.arm_cm != null || c.thigh_cm != null
+      ) && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <h2 className="font-semibold text-gray-100 mb-4">Measurements Over Time</h2>
+          <MeasurementsChart checkins={checkinHistory} units={settings.units} />
         </div>
       )}
 
