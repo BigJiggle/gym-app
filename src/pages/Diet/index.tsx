@@ -53,8 +53,16 @@ export default function Diet() {
   useEffect(() => {
     if (!user?.id) return
     loadDietPlan(user.id)
-    loadMealCompletions(user.id, mondayStr, todayStr)
   }, [user?.id])
+
+  // Reload completions for current week whenever the plan tab is re-activated.
+  // The Weekly View loads its own week's completions into the shared store; without
+  // this refresh, returning from a previous-week view would show stale (empty) data
+  // in the Today's Intake and This Week's Diet sections.
+  useEffect(() => {
+    if (!user?.id || tab !== 'plan') return
+    loadMealCompletions(user.id, mondayStr, todayStr)
+  }, [user?.id, tab])
 
   // Sync prefs panel state from user when panel opens
   useEffect(() => {
