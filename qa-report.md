@@ -1,3 +1,45 @@
+# App Health Report — 2026-05-21
+
+## Phase 1: QA Engineer
+- TypeScript: PASS (0 errors)
+- Unit tests: PASS (84 passing, 0 failing)
+- Bugs fixed: 0
+
+### Feature Audit
+- Onboarding: OK — All 6 steps navigate correctly; step 1 validated on Continue and again on final submit
+- Diet page: OK — Swap modal, food exclusions, preferences panel, and weekly compliance all function correctly
+- Training page: OK — Session cards, workout session overlay, set logging, and completion flow all work
+- Check-in page: OK — Locked countdown and open form states both handled correctly; missed slots panel renders
+- Education page: OK — All 5 tabs (Timeline, Posing, Checklist, Peak Week, First Timer) render with proper empty states
+- Progress page: OK — Weight chart conditionally renders only when data exists; empty state links to check-in
+- Settings page: OK — Unit and check-in interval changes persist; edit profile panel re-syncs on open
+
+### Bugs Fixed
+None — TypeScript passed clean, all 84 tests passed, no crashes or logic errors found across all 7 user flows.
+
+### Known Issues (not fixed)
+- `src/pages/Settings/index.tsx` — Clearing a numeric height or weight field in edit profile then saving passes NaN to the DB. Minor edge case requiring deliberate user error. Not fixed to keep scope small.
+- `src/pages/Diet/index.tsx` (BUG-010, pre-existing) — Swapping a meal updates only in-memory store; change is lost on navigation or reload. Tracked in qa-bugs.json.
+
+---
+
+## Phase 2: Bodybuilder User
+- Status: RAN (Phase 1 fixed 0 bugs, fewer than 3)
+- Feature added: **Session Volume Total** — Workout summary screen now shows total training tonnage (weight × reps across all weighted sets) as a 4th stat card. The 3-column grid became a 2×2 grid. Displayed in the user's preferred unit (lbs or kg). Bodyweight sets (weight = 0) are excluded.
+- Files changed:
+  - `src/pages/Training/WorkoutSession.tsx` — extended `summaryStats` type, computed volume in `handleComplete`, rendered yellow "Volume" card in 2×2 summary grid
+
+---
+
+## Phase 3: UX Reviewer
+- Changes made: 2
+
+`src/pages/CheckIn/index.tsx` — Weight input now defaults to the most recent check-in weight (`latestCheckin.weight_kg`) instead of the onboarding profile weight. A user doing weekly check-ins previously had to retype ~185 lbs from scratch each time; now they see their last logged weight and only need to adjust slightly.
+
+`src/pages/Diet/index.tsx` — Meal swap note changed from "This swap updates your view for today" to "Updates your plan view until the plan is regenerated." The original wording implied the swap was a one-day change; the new text accurately reflects that it's an in-memory update that persists until the plan is regenerated.
+
+---
+
 # QA Report & Methodology — Gym App
 
 ## How to run QA
