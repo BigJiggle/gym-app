@@ -257,6 +257,15 @@ export default function WorkoutStats({ history, sessionsPerWeek, units = 'metric
     ? ALL_MUSCLE_GROUPS.filter((g) => weekSets.some((ws) => (ws.get(g) ?? 0) > 0))
     : []
 
+  if (completedLogs.length === 0) {
+    return (
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center space-y-2">
+        <p className="text-gray-400 font-medium">No workouts logged yet.</p>
+        <p className="text-gray-600 text-sm">Complete your first workout from the Plan tab to unlock stats, personal records, and progress charts.</p>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4">
       {/* All-time summary */}
