@@ -852,7 +852,9 @@ export default function Diet() {
                   className={`bg-gray-800 border border-gray-700 rounded-xl p-3 transition-colors ${swapping ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-gray-600'}`}
                 >
                   <div className="mb-1">
-                    <span className="text-xs text-gray-300 font-medium">Option {i + 1}</span>
+                    <span className="text-xs text-gray-300 font-medium">
+                      {alt[0]?.replace(/\s*\(.*?\)/g, '').replace(/\s*x\d+/g, '').trim() ?? `Option ${i + 1}`}
+                    </span>
                   </div>
                   <div className="flex flex-wrap gap-1">
                     {alt.map((food, fi) => (

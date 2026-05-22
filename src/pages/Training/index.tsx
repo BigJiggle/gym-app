@@ -536,6 +536,10 @@ export default function Training() {
                     (s) => s.id === log.session_id
                   ) as any | undefined
 
+                  const loggedExercises = [...new Set(
+                    log.sets?.filter(s => !s.skipped).map(s => s.exercise_name) ?? []
+                  )]
+
                   return (
                     <div key={log.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
                       <div className="flex items-start justify-between gap-2">
@@ -557,6 +561,12 @@ export default function Training() {
                             {skippedExercises > 0 && ` · ${skippedExercises} exercises skipped`}
                             {duration !== null && ` · ${duration} min`}
                           </p>
+                          {loggedExercises.length > 0 && (
+                            <p className="text-xs text-gray-600 mt-1 truncate">
+                              {loggedExercises.slice(0, 4).join(' · ')}
+                              {loggedExercises.length > 4 && ` +${loggedExercises.length - 4} more`}
+                            </p>
+                          )}
                         </div>
                         <div className="flex items-center gap-1.5 flex-shrink-0">
                           <span
