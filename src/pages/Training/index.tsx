@@ -573,9 +573,15 @@ export default function Training() {
 
           {historyTab === 'logs' && (
             workoutHistory.length === 0 ? (
-              <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center space-y-3">
                 <p className="text-gray-500 text-sm">No completed workouts yet.</p>
-                <p className="text-gray-600 text-xs mt-1">Start a workout from the Plan tab to begin tracking.</p>
+                <p className="text-gray-600 text-xs">Complete a workout to see your history here.</p>
+                <button
+                  onClick={() => setTab('plan')}
+                  className="mt-1 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold transition-colors"
+                >
+                  View Training Plan →
+                </button>
               </div>
             ) : (
               <div className="space-y-3">

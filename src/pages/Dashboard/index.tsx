@@ -318,16 +318,16 @@ export default function Dashboard() {
                 return (
                   <div
                     key={idx}
-                    className={`flex items-center gap-3 py-1.5 px-2 rounded-lg transition-colors ${done ? 'bg-green-950/20' : 'hover:bg-gray-800'}`}
+                    onClick={() => handleToggleMeal(idx, meal.name)}
+                    className={`flex items-center gap-3 py-1.5 px-2 rounded-lg transition-colors cursor-pointer ${done ? 'bg-green-950/20' : 'hover:bg-gray-800'}`}
                   >
-                    <button
-                      onClick={() => handleToggleMeal(idx, meal.name)}
+                    <div
                       className={`w-5 h-5 rounded-full flex-shrink-0 border-2 flex items-center justify-center transition-colors ${
-                        done ? 'border-green-500 bg-green-500 text-white' : 'border-gray-600 hover:border-green-500'
+                        done ? 'border-green-500 bg-green-500 text-white' : 'border-gray-600'
                       }`}
                     >
                       {done && <span className="text-xs">✓</span>}
-                    </button>
+                    </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
                         <span className={`text-sm ${done ? 'text-gray-500 line-through' : 'text-gray-200'}`}>{meal.name}</span>
