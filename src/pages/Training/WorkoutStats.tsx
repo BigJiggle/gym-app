@@ -257,6 +257,24 @@ export default function WorkoutStats({ history, sessionsPerWeek, units = 'metric
     ? ALL_MUSCLE_GROUPS.filter((g) => weekSets.some((ws) => (ws.get(g) ?? 0) > 0))
     : []
 
+  // Weekly tonnage: total (weight_kg × reps) across all completed sets — for progressive overload tracking
+  function computeTonnageKg(fromStr: string, toStr: string): number {
+    return history
+      .filter((l) => l.status === 'completed' && l.date >= fromStr && l.date <= toStr)
+      .reduce((total, l) =>
+        total + (l.sets ?? []).reduce((sum, s) =>
+          !s.skipped && s.weight_kg && s.reps_actual ? sum + s.weight_kg * s.reps_actual : sum, 0
+        ), 0
+      )
+  }
+  const thisWeekTonnageKg = computeTonnageKg(weekBounds[3].from, weekBounds[3].to)
+  const lastWeekTonnageKg = computeTonnageKg(weekBounds[2].from, weekBounds[2].to)
+  const thisWeekTonnage = Math.round(toDisplay(thisWeekTonnageKg))
+  const lastWeekTonnage = Math.round(toDisplay(lastWeekTonnageKg))
+  const tonnagePctDelta = lastWeekTonnageKg > 0
+    ? Math.round(((thisWeekTonnageKg - lastWeekTonnageKg) / lastWeekTonnageKg) * 100)
+    : null
+
   if (completedLogs.length === 0) {
     return (
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center space-y-2">
@@ -283,6 +301,47 @@ export default function WorkoutStats({ history, sessionsPerWeek, units = 'metric
           <p className="text-xs text-gray-500 mt-0.5">Plan Frequency</p>
         </div>
       </div>
+
+      {/* Weekly tonnage — progressive overload tracker */}
+      {(thisWeekTonnage > 0 || lastWeekTonnage > 0) && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Weekly Tonnage</p>
+            <span className="text-xs text-gray-600">weight × reps</span>
+          </div>
+          <div className="flex items-center gap-5">
+            <div>
+              <p className="text-2xl font-black text-brand-400 tabular-nums">
+                {thisWeekTonnage.toLocaleString()}
+                <span className="text-sm font-medium ml-1 text-brand-300">{weightUnit}</span>
+              </p>
+              <p className="text-xs text-gray-500 mt-0.5">This week</p>
+            </div>
+            {lastWeekTonnage > 0 && (
+              <>
+                <div className="text-gray-700 text-sm">vs</div>
+                <div>
+                  <p className="text-lg font-bold text-gray-500 tabular-nums">
+                    {lastWeekTonnage.toLocaleString()}
+                    <span className="text-xs font-medium ml-1">{weightUnit}</span>
+                  </p>
+                  <p className="text-xs text-gray-600 mt-0.5">Last week</p>
+                </div>
+                {tonnagePctDelta !== null && (
+                  <div className={`ml-auto text-base font-bold px-2.5 py-1 rounded-lg ${
+                    tonnagePctDelta > 0 ? 'text-green-400 bg-green-900/20' :
+                    tonnagePctDelta < 0 ? 'text-red-400 bg-red-900/20' :
+                    'text-gray-400 bg-gray-800'
+                  }`}>
+                    {tonnagePctDelta > 0 ? '+' : ''}{tonnagePctDelta}%
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+          <p className="text-xs text-gray-700 mt-2">Aim for 5–10% increase per week during hypertrophy phases.</p>
+        </div>
+      )}
 
       {/* 4-week muscle volume trend */}
       {activeMuscleGroups.length > 0 && (
