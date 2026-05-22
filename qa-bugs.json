@@ -135,12 +135,12 @@
       "id": "BUG-010",
       "title": "Diet meal swaps lost on navigation (known - not yet fixed)",
       "file": "src/pages/Diet/index.tsx",
-      "line": "648-656",
-      "status": "open",
+      "line": "841-850",
+      "status": "fixed",
       "found_by": "qa_agent",
       "date_found": "2026-05-18",
-      "date_fixed": null,
-      "description": "Swapping a meal updates the Zustand store in-memory only. No API call persists it. Navigating away loses the swap.",
+      "date_fixed": "2026-05-22",
+      "description": "Originally swapping a meal updated only the Zustand store. The fix calls window.api.swapMeal(userId, mealIndex, alt) before reloading the plan, persisting the swap to the diet_plans table via plan:swapMeal IPC handler.",
       "regression_test": "Swap a meal in the Diet page. Navigate to Training. Navigate back to Diet. The swapped meal must still be shown.",
       "user_impact": "User spends time customising meals, navigates away, and loses all changes."
     }
