@@ -25,7 +25,7 @@ function buildRows(workoutLog: WorkoutLog, sessionExercises?: Exercise[]): SetRo
   const rows: SetRow[] = []
 
   // Add all logged sets
-  for (const s of workoutLog.sets) {
+  for (const s of workoutLog.sets ?? []) {
     rows.push({
       key: `logged-${s.id}`,
       dbId: s.id,
