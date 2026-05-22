@@ -78,7 +78,7 @@ export default function Dashboard() {
           </p>
         </div>
         <Link to="/checkin">
-          <Button size="sm">+ Weekly Check-In</Button>
+          <Button size="sm">+ Check-In</Button>
         </Link>
       </div>
 

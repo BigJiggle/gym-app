@@ -184,6 +184,20 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
   const [summaryStats, setSummaryStats] = useState<{ sets: number; exercises: number; volume: number } | null>(null)
   const [saving, setSaving] = useState(false)
 
+  // ── Rest timer ──────────────────────────────────────────────────────────────
+  const [restSecsLeft, setRestSecsLeft] = useState<number | null>(null)
+  const [restTarget, setRestTarget] = useState(90)
+
+  useEffect(() => {
+    if (restSecsLeft === null || restSecsLeft <= 0) return
+    const id = setInterval(() => setRestSecsLeft((s) => (s !== null && s > 0 ? s - 1 : 0)), 1000)
+    return () => clearInterval(id)
+  }, [restSecsLeft !== null && restSecsLeft > 0])
+
+  const startRest = useCallback(() => {
+    setRestSecsLeft(restTarget)
+  }, [restTarget])
+
   useEffect(() => {
     if (phase === 'summary') return
     const id = setInterval(() => setElapsedSeconds((s) => s + 1), 1000)
@@ -380,7 +394,7 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
             state={exerciseStates.get(ex.name)!}
             isImperial={isImperial}
             onSetUpdate={(setIdx, field, value) => updateSet(ex.name, setIdx, field, value)}
-            onSetDone={(setIdx) => markSetDone(ex.name, setIdx)}
+            onSetDone={(setIdx) => { markSetDone(ex.name, setIdx); startRest() }}
             onRemoveSet={(setIdx) => removeSet(ex.name, setIdx)}
             onSkipExercise={() => skipExercise(ex.name)}
             onAddSet={() => addSet(ex.name)}
@@ -400,6 +414,50 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
             />
           </div>
         </div>
+
+        {/* Rest timer — shows after each set is logged */}
+        {restSecsLeft !== null && restSecsLeft > 0 && (
+          <div className="mb-3 flex items-center justify-between bg-brand-900/30 border border-brand-700/50 rounded-xl px-3 py-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-400 uppercase tracking-wider">Rest</span>
+              <span className={`font-mono font-bold text-lg tabular-nums ${restSecsLeft <= 10 ? 'text-red-400 animate-pulse' : 'text-brand-400'}`}>
+                {formatTime(restSecsLeft)}
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              {[60, 90, 120, 180].map((s) => (
+                <button
+                  key={s}
+                  onClick={() => { setRestTarget(s); setRestSecsLeft(s) }}
+                  className={`text-xs px-2 py-0.5 rounded-lg border transition-colors ${
+                    restTarget === s ? 'border-brand-500 text-brand-400 bg-brand-900/30' : 'border-gray-700 text-gray-500 hover:border-gray-600'
+                  }`}
+                >
+                  {s < 120 ? `${s}s` : `${s / 60}m`}
+                </button>
+              ))}
+              <button
+                onClick={() => setRestSecsLeft(null)}
+                className="ml-1 text-xs text-gray-600 hover:text-gray-400 w-5 h-5 flex items-center justify-center"
+                title="Dismiss timer"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
+        {restSecsLeft === 0 && (
+          <div className="mb-3 flex items-center justify-between bg-green-900/30 border border-green-700/50 rounded-xl px-3 py-2">
+            <span className="text-sm font-semibold text-green-400">Rest done — go!</span>
+            <button
+              onClick={() => setRestSecsLeft(null)}
+              className="text-xs text-gray-500 hover:text-gray-300"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         <button
           onClick={handleComplete}
           disabled={!canComplete || saving}
@@ -407,6 +465,9 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
         >
           {saving ? 'Saving...' : 'Complete Workout ✓'}
         </button>
+        {!canComplete && (
+          <p className="text-center text-xs text-gray-600 mt-1.5">Log at least one set to finish</p>
+        )}
       </div>
 
       {phase === 'summary' && (
