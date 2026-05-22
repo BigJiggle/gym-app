@@ -289,6 +289,66 @@ export default function Training() {
             </div>
           </div>
 
+          {/* Weekly sessions completion tracker */}
+          {(() => {
+            const today = new Date()
+            const jsDay = today.getDay()
+            const daysFromMon = jsDay === 0 ? 6 : jsDay - 1
+            const weekStartStr = new Date(today.getTime() - daysFromMon * 86400000).toLocaleDateString('en-CA')
+            const completedThisWeek = workoutHistory.filter(
+              (log) => log.status === 'completed' && log.date >= weekStartStr && log.date <= todayDateStr
+            )
+            const totalSessions = trainingPlan.sessions?.length ?? 0
+            const completedDows = new Set(
+              completedThisWeek.map((log) => {
+                const d = new Date(log.date + 'T12:00:00')
+                return d.getDay() === 0 ? 7 : d.getDay()
+              })
+            )
+            const doneCount = completedDows.size
+            if (totalSessions === 0) return null
+            return (
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-2.5">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Sessions This Week</p>
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                    doneCount === totalSessions ? 'bg-green-900/30 text-green-400' :
+                    doneCount > 0 ? 'bg-brand-900/20 text-brand-400' :
+                    'bg-gray-800 text-gray-500'
+                  }`}>
+                    {doneCount}/{totalSessions}
+                  </span>
+                </div>
+                <div className="flex gap-1.5">
+                  {[...(trainingPlan.sessions ?? [])].sort((a, b) => a.day_of_week - b.day_of_week).map((session) => {
+                    const dow = session.day_of_week
+                    const done = completedDows.has(dow)
+                    const isToday = dow === todayDow
+                    return (
+                      <div
+                        key={dow}
+                        title={session.session_name}
+                        className={`flex-1 h-9 rounded-lg flex flex-col items-center justify-center text-xs font-semibold transition-colors ${
+                          done
+                            ? 'bg-green-700 text-white'
+                            : isToday
+                              ? 'bg-brand-600/30 border border-brand-500 text-brand-400'
+                              : 'bg-gray-800 text-gray-600'
+                        }`}
+                      >
+                        <span>{done ? '✓' : DAY_NAMES[dow]}</span>
+                        {!done && <span className="text-xs leading-none opacity-60 mt-0.5 truncate max-w-full px-0.5">{session.session_name.split(' ')[0]}</span>}
+                      </div>
+                    )
+                  })}
+                </div>
+                {doneCount === totalSessions && (
+                  <p className="text-xs text-green-400 mt-2 font-medium">All sessions done this week — great prep!</p>
+                )}
+              </div>
+            )
+          })()}
+
           {/* This Week's Muscle Coverage + vs Last Week */}
           {exerciseLibrary.length > 0 && (
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
