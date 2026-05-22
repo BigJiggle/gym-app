@@ -20,6 +20,7 @@ export default function Diet() {
 
   const [tab, setTab] = useState<DietTab>('plan')
   const [swapTarget, setSwapTarget] = useState<{ mealIndex: number; meal: Meal } | null>(null)
+  const [swapping, setSwapping] = useState(false)
   const [excludePending, setExcludePending] = useState<string | null>(null)
   const [aiRefinePrompt, setAiRefinePrompt] = useState('')
   const [aiRefining, setAiRefining] = useState(false)
@@ -832,21 +833,23 @@ export default function Diet() {
         <div className="fixed inset-0 bg-black/60 z-50 flex items-end justify-center">
           <div className="bg-gray-900 border border-gray-800 rounded-t-2xl p-6 w-full max-w-lg">
             <h3 className="font-bold text-gray-100 mb-1">Swap {swapTarget.meal.name}</h3>
-            <p className="text-xs text-gray-500 mb-4">Tap an option to replace your current foods (~{swapTarget.meal.calories} kcal, {swapTarget.meal.protein_g}g protein):</p>
+            <p className="text-xs text-gray-500 mb-4">Tap an option to permanently replace this meal (~{swapTarget.meal.calories} kcal, {swapTarget.meal.protein_g}g protein):</p>
             <div className="space-y-2 mb-4">
-              {getSwapAlternatives(swapTarget.meal, user.dietary_preference).map((alt, i) => (
+              {getSwapAlternatives(swapTarget.meal, user.dietary_preference, user.food_exclusions ?? []).map((alt, i) => (
                 <div
                   key={i}
-                  onClick={() => {
-                    if (dietPlan) {
-                      const updatedMeals = dietPlan.meals?.map((m, idx) =>
-                        idx === swapTarget.mealIndex ? { ...m, foods: alt } : m
-                      )
-                      usePlanStore.setState({ dietPlan: { ...dietPlan, meals: updatedMeals } })
+                  onClick={async () => {
+                    if (swapping) return
+                    setSwapping(true)
+                    try {
+                      await window.api.swapMeal(user.id, swapTarget.mealIndex, alt)
+                      await loadDietPlan(user.id)
+                      setSwapTarget(null)
+                    } finally {
+                      setSwapping(false)
                     }
-                    setSwapTarget(null)
                   }}
-                  className="bg-gray-800 border border-gray-700 rounded-xl p-3 cursor-pointer hover:border-gray-600"
+                  className={`bg-gray-800 border border-gray-700 rounded-xl p-3 transition-colors ${swapping ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-gray-600'}`}
                 >
                   <div className="mb-1">
                     <span className="text-xs text-gray-300 font-medium">Option {i + 1}</span>
@@ -861,9 +864,8 @@ export default function Diet() {
                 </div>
               ))}
             </div>
-            <p className="text-xs text-gray-600 mb-3">Updates your plan view until the plan is regenerated. To permanently exclude a food, tap ✕ on it in the meal card.</p>
-            <Button variant="secondary" onClick={() => setSwapTarget(null)} className="w-full">
-              Cancel
+            <Button variant="secondary" onClick={() => !swapping && setSwapTarget(null)} className="w-full">
+              {swapping ? 'Saving...' : 'Cancel'}
             </Button>
           </div>
         </div>
@@ -872,55 +874,62 @@ export default function Diet() {
   )
 }
 
-// Generates 3 alternative food combos for a given meal slot
-function getSwapAlternatives(meal: Meal, dietary: string): string[][] {
+// Generates alternative food combos for a given meal slot, filtered by exclusions
+function getSwapAlternatives(meal: Meal, dietary: string, exclusions: string[] = []): string[][] {
+  const isExcluded = (foods: string[]) =>
+    foods.some((food) =>
+      exclusions.some((ex) => food.toLowerCase().includes(ex.replace(/_/g, ' ')))
+    )
+
   const isVegan = dietary === 'vegan'
   const isVeg = dietary === 'vegetarian'
   const mealName = meal.name.toLowerCase()
 
+  let candidates: string[][]
+
   if (mealName.includes('breakfast')) {
-    if (isVegan)
-      return [
-        ['Tofu Scramble (200g)', 'Oats (80g dry)', 'Blueberries (100g)'],
-        ['Soy Protein Shake (35g)', 'Banana', 'Almond Butter (32g)'],
-        ['Cream of Rice (50g dry)', 'Pea Protein Shake (35g)', 'Mixed Berries (150g)'],
-      ]
-    return [
-      ['Greek Yogurt (200g)', 'Oats (80g dry)', 'Mixed Berries (150g)'],
-      ['Egg Whites x6', 'Sweet Potato (200g)', 'Spinach (100g)'],
-      ['Whey Protein Shake (35g)', 'Oats (80g dry)', 'Banana'],
-    ]
-  }
-
-  if (mealName.includes('snack')) {
-    if (isVegan)
-      return [
-        ['Rice Cakes x2', 'Pea Protein Shake (35g)'],
-        ['Apple', 'Almond Butter (16g)'],
-        ['Edamame (100g)'],
-      ]
-    return [
-      ['Greek Yogurt (150g)', 'Apple'],
-      ['Cottage Cheese (150g)', 'Rice Cakes x2'],
-      ['Whey Protein Shake (35g)', 'Banana (half)'],
-    ]
-  }
-
-  if (isVegan)
-    return [
+    candidates = isVegan
+      ? [
+          ['Tofu Scramble (200g)', 'Oats (80g dry)', 'Blueberries (100g)'],
+          ['Soy Protein Shake (35g)', 'Banana', 'Almond Butter (32g)'],
+          ['Cream of Rice (50g dry)', 'Pea Protein Shake (35g)', 'Mixed Berries (150g)'],
+        ]
+      : [
+          ['Greek Yogurt (200g)', 'Oats (80g dry)', 'Mixed Berries (150g)'],
+          ['Egg Whites x6', 'Sweet Potato (200g)', 'Spinach (100g)'],
+          ['Whey Protein Shake (35g)', 'Oats (80g dry)', 'Banana'],
+        ]
+  } else if (mealName.includes('snack')) {
+    candidates = isVegan
+      ? [
+          ['Rice Cakes x2', 'Pea Protein Shake (35g)'],
+          ['Apple', 'Almond Butter (16g)'],
+          ['Edamame (100g)'],
+        ]
+      : [
+          ['Greek Yogurt (150g)', 'Apple'],
+          ['Cottage Cheese (150g)', 'Rice Cakes x2'],
+          ['Whey Protein Shake (35g)', 'Banana (half)'],
+        ]
+  } else if (isVegan) {
+    candidates = [
       ['Tempeh (150g)', 'Brown Rice (200g cooked)', 'Broccoli (200g)'],
       ['Tofu (200g)', 'Quinoa (185g cooked)', 'Mixed Veg (200g)'],
       ['Edamame (150g)', 'Sweet Potato (200g)', 'Kale (100g)'],
     ]
-  if (isVeg)
-    return [
+  } else if (isVeg) {
+    candidates = [
       ['Cottage Cheese (200g)', 'Sweet Potato (200g)', 'Green Beans (150g)'],
       ['Greek Yogurt (200g)', 'Quinoa (185g cooked)', 'Spinach (100g)'],
       ['Eggs x3', 'Brown Rice (200g)', 'Broccoli (200g)'],
     ]
-  return [
-    ['Turkey Breast (150g)', 'White Rice (200g cooked)', 'Asparagus (150g)'],
-    ['Salmon Fillet (180g)', 'Sweet Potato (200g)', 'Spinach (100g)'],
-    ['Lean Ground Beef (150g)', 'Quinoa (185g cooked)', 'Bell Pepper (150g)'],
-  ]
+  } else {
+    candidates = [
+      ['Turkey Breast (150g)', 'White Rice (200g cooked)', 'Asparagus (150g)'],
+      ['Salmon Fillet (180g)', 'Sweet Potato (200g)', 'Spinach (100g)'],
+      ['Lean Ground Beef (150g)', 'Quinoa (185g cooked)', 'Bell Pepper (150g)'],
+    ]
+  }
+
+  return candidates.filter((alt) => !isExcluded(alt))
 }

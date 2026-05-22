@@ -862,6 +862,18 @@ Ensure every exercise respects the constraints above while maintaining phase-app
     return { action: 'update', message: result.message, trainingPlan, dietPlan, updatedUser }
   })
 
+  ipcMain.handle('plan:swapMeal', (_event, userId: number, mealIndex: number, newFoods: string[]) => {
+    const db = getDb()
+    const plan = db.prepare('SELECT * FROM diet_plans WHERE user_id = ? ORDER BY id DESC LIMIT 1').get(userId) as Record<string, unknown> | undefined
+    if (!plan) throw new Error('No diet plan found')
+    const meals = JSON.parse(plan.meals as string) as Array<Record<string, unknown>>
+    if (mealIndex < 0 || mealIndex >= meals.length) throw new Error('Invalid meal index')
+    meals[mealIndex] = { ...meals[mealIndex], foods: newFoods }
+    db.prepare('UPDATE diet_plans SET meals = ? WHERE id = ?').run([JSON.stringify(meals), plan.id])
+    const saved = db.prepare('SELECT * FROM diet_plans WHERE id = ?').get(plan.id as number) as Record<string, unknown>
+    return { ...saved, meals: JSON.parse(saved.meals as string) }
+  })
+
   // Sets the user's off-season goal and immediately regenerates diet.
   ipcMain.handle('plan:selectOffSeasonGoal', (_event, userId: number, goal: string) => {
     const db = getDb()

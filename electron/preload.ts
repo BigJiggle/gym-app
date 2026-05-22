@@ -15,6 +15,8 @@ const api = {
   // Diet plans
   generateDietPlan: (userId: number) => ipcRenderer.invoke('plan:generateDiet', userId),
   getDietPlan: (userId: number) => ipcRenderer.invoke('plan:getDiet', userId),
+  swapMeal: (userId: number, mealIndex: number, newFoods: string[]) =>
+    ipcRenderer.invoke('plan:swapMeal', userId, mealIndex, newFoods),
 
   // Check-ins
   submitCheckin: (data: unknown) => ipcRenderer.invoke('checkin:submit', data),

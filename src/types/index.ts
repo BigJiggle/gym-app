@@ -226,6 +226,7 @@ declare global {
       getTrainingSessions: (planId: number, weekNumber: number) => Promise<TrainingSession[]>
       generateDietPlan: (userId: number) => Promise<DietPlan>
       getDietPlan: (userId: number) => Promise<DietPlan | null>
+      swapMeal: (userId: number, mealIndex: number, newFoods: string[]) => Promise<DietPlan>
       submitCheckin: (data: CreateCheckinInput) => Promise<CheckIn>
       updateCheckin: (id: number, data: Partial<CheckIn>) => Promise<CheckIn>
       getCheckinHistory: (userId: number) => Promise<CheckIn[]>
