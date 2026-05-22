@@ -66,6 +66,14 @@ export default function Training() {
     if (matched) setSessionToStart(matched as TrainingSession)
   }, [activeWorkout?.id, trainingPlan?.id])
 
+  // Auto-expand today's session so a returning user immediately sees their workout plan.
+  useEffect(() => {
+    if (!trainingPlan?.sessions) return
+    const dow = new Date().getDay() === 0 ? 7 : new Date().getDay()
+    const todaySession = trainingPlan.sessions.find((s) => s.day_of_week === dow)
+    if (todaySession) setExpandedSession(dow)
+  }, [trainingPlan?.id])
+
   if (!user) return null
 
   const todayDow = new Date().getDay() === 0 ? 7 : new Date().getDay()
@@ -489,7 +497,7 @@ export default function Training() {
                   historyTab === t ? 'bg-brand-600 text-white' : 'text-gray-400 hover:text-gray-200'
                 }`}
               >
-                {t === 'logs' ? 'Workout Logs' : 'Stats & Charts'}
+                {t === 'logs' ? 'Workout Logs' : 'Stats & PRs'}
               </button>
             ))}
           </div>
