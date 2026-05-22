@@ -1,6 +1,7 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import type { TrainingSession, WorkoutLog, Exercise } from '../../types'
 import { useSettingsStore } from '../../store/settingsStore'
+import { usePlanStore } from '../../store/planStore'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -33,10 +34,13 @@ interface ExerciseState {
 
 // ── ExerciseCard ─────────────────────────────────────────────────────────────
 
+interface LastPerf { weight: number; reps: number }
+
 interface ExerciseCardProps {
   exercise: Exercise
   state: ExerciseState
   isImperial: boolean
+  lastPerf?: LastPerf
   onSetUpdate: (setIdx: number, field: keyof Pick<SetEntry, 'reps' | 'weight' | 'rir'>, value: number) => void
   onSetDone: (setIdx: number) => void
   onRemoveSet: (setIdx: number) => void
@@ -44,7 +48,7 @@ interface ExerciseCardProps {
   onAddSet: () => void
 }
 
-function ExerciseCard({ exercise, state, isImperial, onSetUpdate, onSetDone, onRemoveSet, onSkipExercise, onAddSet }: ExerciseCardProps) {
+function ExerciseCard({ exercise, state, isImperial, lastPerf, onSetUpdate, onSetDone, onRemoveSet, onSkipExercise, onAddSet }: ExerciseCardProps) {
   const weightUnit = isImperial ? 'lbs' : 'kg'
   const weightStep = isImperial ? 5 : 2.5
   const allSetsDone = !state.allSkipped && state.sets.length > 0 && state.sets.every((s) => s.done)
@@ -73,6 +77,11 @@ function ExerciseCard({ exercise, state, isImperial, onSetUpdate, onSetDone, onR
             </button>
           </div>
           <p className="text-xs text-gray-500">{exercise.sets} sets × {exercise.reps} @ RIR {exercise.rir}</p>
+          {lastPerf && (
+            <p className="text-xs text-amber-500/70 mt-0.5">
+              Last: {lastPerf.weight}{weightUnit} × {lastPerf.reps}
+            </p>
+          )}
         </div>
         {allSetsDone && <span className="text-xs text-green-400 font-medium">✓ Done</span>}
         {!state.allSkipped && !allSetsDone && (
@@ -155,14 +164,15 @@ interface WorkoutSessionProps {
 
 type Phase = 'active' | 'summary'
 
-function buildInitialStates(session: TrainingSession): Map<string, ExerciseState> {
+function buildInitialStates(session: TrainingSession, lastPerf?: Map<string, LastPerf>): Map<string, ExerciseState> {
   const map = new Map<string, ExerciseState>()
   for (const ex of session.exercises) {
     const count = typeof ex.sets === 'number' ? ex.sets : 1
     const defaultReps = parseRepMidpoint(ex.reps)
+    const last = lastPerf?.get(ex.name)
     const sets: SetEntry[] = Array.from({ length: count }, () => ({
       reps: defaultReps,
-      weight: 0,
+      weight: last?.weight ?? 0,
       rir: ex.rir,
       done: false,
       skipped: false,
@@ -174,12 +184,37 @@ function buildInitialStates(session: TrainingSession): Map<string, ExerciseState
 
 export default function WorkoutSession({ session, workoutLog, onComplete, onClose }: WorkoutSessionProps) {
   const { settings } = useSettingsStore()
+  const { workoutHistory } = usePlanStore()
   const isImperial = settings.units === 'imperial'
+
+  // Build a per-exercise "last session" lookup from the most recent completed log for this session.
+  // Weights are converted to the user's display unit so they match what gets typed into the inputs.
+  const lastPerformance = useMemo<Map<string, LastPerf>>(() => {
+    const result = new Map<string, LastPerf>()
+    const sessionId = (session as unknown as { id?: number }).id
+    if (!sessionId) return result
+    const lastLog = [...workoutHistory]
+      .filter(log => log.status === 'completed' && log.session_id === sessionId)
+      .sort((a, b) => b.date.localeCompare(a.date))[0]
+    if (!lastLog?.sets) return result
+    for (const s of lastLog.sets) {
+      if (s.skipped || !s.weight_kg || s.weight_kg === 0 || !s.reps_actual) continue
+      const displayWeight = isImperial
+        ? Math.round(s.weight_kg * 2.20462 * 10) / 10
+        : Math.round(s.weight_kg * 10) / 10
+      const existing = result.get(s.exercise_name)
+      if (!existing || displayWeight > existing.weight) {
+        result.set(s.exercise_name, { weight: displayWeight, reps: s.reps_actual })
+      }
+    }
+    return result
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])  // intentionally run once at mount — history is already loaded by parent
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [phase, setPhase] = useState<Phase>('active')
   const [exerciseStates, setExerciseStates] = useState<Map<string, ExerciseState>>(
-    () => buildInitialStates(session)
+    () => buildInitialStates(session, lastPerformance)
   )
   const [summaryStats, setSummaryStats] = useState<{ sets: number; exercises: number; volume: number } | null>(null)
   const [saving, setSaving] = useState(false)
@@ -393,6 +428,7 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
             exercise={ex}
             state={exerciseStates.get(ex.name)!}
             isImperial={isImperial}
+            lastPerf={lastPerformance.get(ex.name)}
             onSetUpdate={(setIdx, field, value) => updateSet(ex.name, setIdx, field, value)}
             onSetDone={(setIdx) => { markSetDone(ex.name, setIdx); startRest() }}
             onRemoveSet={(setIdx) => removeSet(ex.name, setIdx)}
