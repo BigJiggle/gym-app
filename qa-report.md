@@ -1,42 +1,80 @@
 # App Health Report — 2026-05-23
 
 ## Phase 1: QA Engineer
-- TypeScript: PASS (0 errors)
-- Unit tests: PASS (84 passing, 0 failing)
-- Bugs fixed: 1
 
-### Feature Audit
-- Onboarding: OK — all 6 steps with validation flow through correctly; createUser + plan generation after step 6 works as expected.
-- Diet page: OK — meal swap, recalculate macros, grocery list quantities, weekly compliance strip, and food preferences panel all function correctly.
-- Training page: OK — start workout, log sets per exercise with rest timer, complete workout and batch-save all work correctly.
-- Check-in page: OK — locked countdown state and open form state both handled; missed check-in panels work; edit-last check-in also works.
-- Education page: OK — all 5 tabs (Prep Timeline, Posing Guide, Show Checklist, Peak Week, First Timer) render; async show data auto-switch to timeline tab is guarded correctly.
-- Progress page: OK — weight chart, measurements chart, and trend projection all display using correct data ordering (progressEntries oldest-first, checkinHistory newest-first).
-- Settings page: OK — unit change takes effect immediately across all display components; check-in schedule changes (day/interval/biweekly) update the locked state instantly.
+### TypeScript
+No errors — `npx tsc --noEmit` exited cleanly.
 
-### Bugs Fixed
-- `src/types/index.ts:249` / `src/store/planStore.ts:165` — `logMealCompletion` was declared as `Promise<void>` but the IPC handler returns the persisted `MealCompletion` row. The store was working around this with an unsafe `as MealCompletion` cast. Fixed the type declaration to `Promise<MealCompletion>` and removed the cast.
+### Unit Tests
+84 tests across 5 test files — all passed.
 
-### Known Issues (not fixed)
-- None. All identified issues were either architectural patterns that work correctly at runtime or theoretical edge cases that cannot occur in practice given how the data is populated.
+### User Flow Traces (7 flows)
+
+| # | Flow | Finding |
+|---|------|---------|
+| 1 | Onboarding → profile creation | Clean. Re-validation in `handleSubmit` is intentional guard on required fields. |
+| 2 | Training plan → start workout → log sets → complete | **BUG FOUND** — see below |
+| 3 | Diet plan → mark meal eaten → today's intake progress | Clean. |
+| 4 | Check-in form → submit → feedback | Clean. |
+| 5 | Progress page → charts → measurements | Clean. |
+| 6 | Settings → edit profile → Save & Regenerate | Clean. |
+| 7 | Education → show prep timeline tabs | Clean. |
+
+### Bug Fixed
+
+**`src/pages/Training/WorkoutSession.tsx` — `setPhase('summary')` outside try/catch**
+
+`setPhase('summary')` and `setSaving(false)` were called unconditionally after the try/catch block. If `saveSetsBatch` or `completeWorkout` threw (network/IPC error), the UI still advanced to the "Workout Complete!" summary screen even though nothing was persisted. The user would believe their workout was saved when it was not.
+
+Fix: moved `setPhase('summary')` inside the try block so it only runs on success; moved `setSaving(false)` into a finally block so the spinner always clears.
+
+**Commit:** `[QA] 2026-05-23: fix WorkoutSession save error — phase('summary') guarded by try block`  
+**Files changed:** `src/pages/Training/WorkoutSession.tsx`
 
 ---
 
 ## Phase 2: Bodybuilder User
-- Status: RAN (Phase 1 fixed 1 bug, which is < 3)
-- Feature added: **Average daily calorie deficit with estimated fat loss rate**
-  - Added to the Diet page's existing "Weekly Macro Totals" section.
-  - Shows avg kcal/day this week vs target, the daily deficit/surplus in kcal, and the estimated weekly weight change (~X lbs/wk or kg/wk) at that rate.
-  - Rationale: A contest prep athlete checks this every day to confirm they're in the right deficit to hit stage weight — the existing weekly total % doesn't give this quick "am I on pace?" read.
-  - Uses: 3,500 kcal/lb (imperial) or 7,700 kcal/kg (metric) fat approximation.
-  - Only shown when at least one meal has been logged this week.
-- Files changed: `src/pages/Diet/index.tsx`
+
+**Condition:** Phase 1 fixed 1 bug (< 3) → Phase 2 runs.
+
+**Persona:** Competitive bodybuilder, 14 weeks out, tracking every macro obsessively.
+
+**Feature identified:** The "Today's Intake" section showed progress bars for calories and protein only. Carbs and fat were completely invisible despite being tracked in the diet plan. A prep athlete on a carb-cycling or fat-ceiling protocol has to do the arithmetic manually every time — a major friction point when hitting specific macro targets daily.
+
+**Feature implemented:** Carbs and fat tracking added to the Today's Intake section.
+- Computed `consumedCarbs` and `consumedFat` from `todayCompletions` + `dietPlan.meals` (values already in store)
+- Computed `carbPct` and `fatPct` (capped at 100%)
+- Added blue progress bar for Carbs and yellow progress bar for Fat (matching the macro distribution bar colours)
+- Updated the "remaining today" line to show `{kcal} kcal · {P}g P · {C}g C · {F}g F remaining`
+
+No new API calls, no new IPC handlers, no DB schema changes — all values already available from existing store state.
+
+**Commit:** `[Feature] 2026-05-23: show consumed carbs and fat in Today's Intake section`  
+**Files changed:** `src/pages/Diet/index.tsx`
 
 ---
 
 ## Phase 3: UX Reviewer
-- Changes made: 2
 
-1. `src/pages/CheckIn/index.tsx` — Shortened the submit button from "Submit Check-In & Get Feedback" to "Submit Check-In →". The feedback screen always appears after submission so advertising it in the button text adds no information — just friction for a tired athlete trying to submit quickly.
+**Pages reviewed:** Dashboard, Diet, Training, CheckIn, Progress, Settings, Education, NavSidebar, WorkoutStats.
 
-2. `src/pages/Training/index.tsx` — Changed collapsed session card button from "▶ Start" to "▶ Start Workout" to match the label already used in the expanded session card view. The bare "Start" with no object was ambiguous; this makes both states say the same thing.
+**Simplification 1 — Swap Meal modal: no error feedback**
+
+When the `swapMeal` API call failed, the modal stayed open with no message. The user could tap alternatives repeatedly with no indication of what was wrong — particularly frustrating on a slow machine or when the plan data is stale. Added `swapError` state, a catch block capturing the error message, and a red error line rendered above the Cancel button. The error also clears when the modal is opened fresh to prevent stale messages from prior failures.
+
+**Simplification 2:** All other pages reviewed (Dashboard, Training, CheckIn, Progress, Settings, Education) — no further surgical changes warranted. The app is already clean and information-dense without unnecessary chrome.
+
+**Commit:** `[UX] 2026-05-23: add error feedback to Swap Meal modal`  
+**Files changed:** `src/pages/Diet/index.tsx`
+
+---
+
+## Summary
+
+| Phase | Result |
+|-------|--------|
+| TypeScript | ✅ 0 errors |
+| Unit tests | ✅ 84/84 passed |
+| Bugs fixed | 1 — WorkoutSession save guard |
+| Feature added | Carbs + fat tracking in Today's Intake |
+| UX changes | 1 — Swap Meal error feedback |
