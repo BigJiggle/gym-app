@@ -21,6 +21,7 @@ export default function Diet() {
   const [tab, setTab] = useState<DietTab>('plan')
   const [swapTarget, setSwapTarget] = useState<{ mealIndex: number; meal: Meal } | null>(null)
   const [swapping, setSwapping] = useState(false)
+  const [swapError, setSwapError] = useState<string | null>(null)
   const [excludePending, setExcludePending] = useState<string | null>(null)
   const [aiRefinePrompt, setAiRefinePrompt] = useState('')
   const [aiRefining, setAiRefining] = useState(false)
@@ -554,7 +555,7 @@ export default function Diet() {
                   </div>
                   <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-800">
                     <button
-                      onClick={() => setSwapTarget({ mealIndex: i, meal })}
+                      onClick={() => { setSwapError(null); setSwapTarget({ mealIndex: i, meal }) }}
                       className="text-xs text-gray-400 hover:text-brand-300 border border-gray-700 hover:border-brand-700 rounded-lg px-2.5 py-1 transition-colors flex items-center gap-1"
                     >
                       &#8635; Swap Meal
@@ -914,10 +915,13 @@ export default function Diet() {
                   onClick={async () => {
                     if (swapping) return
                     setSwapping(true)
+                    setSwapError(null)
                     try {
                       await window.api.swapMeal(user.id, swapTarget.mealIndex, alt)
                       await loadDietPlan(user.id)
                       setSwapTarget(null)
+                    } catch (e: unknown) {
+                      setSwapError(e instanceof Error ? e.message : 'Swap failed — please try again.')
                     } finally {
                       setSwapping(false)
                     }
@@ -939,6 +943,9 @@ export default function Diet() {
                 </div>
               ))}
             </div>
+            {swapError && (
+              <p className="text-xs text-red-400 mb-3">{swapError}</p>
+            )}
             <Button variant="secondary" onClick={() => !swapping && setSwapTarget(null)} className="w-full">
               {swapping ? 'Saving...' : 'Cancel'}
             </Button>
