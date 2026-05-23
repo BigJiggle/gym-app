@@ -1,61 +1,37 @@
-# App Health Report — 2026-05-23 (Session 6)
+# App Health Report — 2026-05-23
 
 ## Phase 1: QA Engineer
 - TypeScript: PASS (0 errors)
 - Unit tests: PASS (84 passing, 0 failing)
-- Bugs fixed: 0
+- Bugs fixed: 1
 
 ### Feature Audit
-- Onboarding: OK — All 6 steps navigate correctly; imperial/metric height/weight conversions handled in Step1Personal; validation guards against blank name, invalid age/height/weight, and missing experience before advancing; handleSubmit re-validates at Step 6.
-- Diet page: OK — Meal swap calls `window.api.swapMeal` (persists to DB), reloads plan; weekly compliance strip, macro progress bars, grocery list, and food preferences panel all functional; swap alternatives correctly named by protein source.
-- Training page: OK — Start workout, log sets with rest timer, mark complete, save via saveSetsBatch + completeWorkout all working; last-session weights pre-filled; exercise PRs, muscle-group volume (this week vs last), weekly session completion tracker, and workout history render correctly.
-- Check-in page: OK — Locked state shows countdown and allows editing last check-in with date correction; open form accepts all fields; missed slot panels surface retroactive fill-in; schedule changes in Settings reflected immediately on next render.
-- Education page: OK — All 5 tabs (Prep Timeline, Posing Guide, Show Checklist, Peak Week, First Timer) functional; timeline auto-expands current week; empty state for no upcoming shows is clear; carb load calculator works.
-- Progress page: OK — Weight chart, measurement changes, weekly adherence bars, weight trend projection (with show countdown and projected show weight), and measurement history table all render correctly; empty state links to check-in.
-- Settings page: OK — Units selector and check-in schedule (day-based + interval-based) work; Edit Profile panel syncs from store on open; shows management (add, cancel, delete) functional; profile summary reflects current data.
-
-### Checked Concerns (all cleared)
-| ID | File | Concern | Verdict |
-|----|------|---------|---------|
-| CHECK-01 | `src/pages/Progress/index.tsx` | Weight change calc divides by 0.453592 — possible unit bug | **False positive** — 1/0.453592 = 2.20462 lbs/kg; result is correct |
-| CHECK-02 | `electron/ipc/progressHandlers.ts` | `progressEntries[0]` used as starting weight | **Correct** — query uses `ORDER BY week_number ASC`; index 0 is oldest entry |
-| CHECK-03 | `electron/ipc/checkinHandlers.ts` | `checkinHistory[0]` used as latest check-in | **Correct** — query uses `ORDER BY check_in_date DESC`; index 0 is newest entry |
-| CHECK-04 | `src/store/planStore.ts` | `logMealCompletion` fire-and-forget | **Intentional** — optimistic UI update is the correct pattern here |
+- Onboarding: BUG FIXED — Snacks row in Step 6 Review used a raw `<p>` tag instead of the shared `<Row>` component, giving it different padding, no bottom border divider, and inconsistent text styling vs every other row.
+- Diet page: OK — Meal plan loads, swap modal works, food exclusions save correctly, preferences panel syncs from user on open.
+- Training page: OK — Plan loads, session cards auto-expand today's session, workout start flow works, history and stats tabs render correctly.
+- Check-in page: OK — Locked countdown renders correctly, schedule label matches settings, missed-slot panel works, edit-last-check-in accordion functions.
+- Education page: OK — All 5 tabs (Prep Timeline, Posing Guide, Show Checklist, Peak Week, First Timer) render; auto-switches to Timeline when shows load asynchronously.
+- Progress page: OK — Weight chart, measurement changes, adherence bars, and empty state all render correctly; progress entries are fetched in ASC order (oldest→newest) matching the `first`/`latest` variable usage.
+- Settings page: OK — Unit toggle, check-in schedule mode, edit profile form, and My Shows section all function correctly.
 
 ### Bugs Fixed
-None. TypeScript compiled clean and all 84 tests passed on first run.
+- `src/pages/Onboarding/steps/Step6Review.tsx:61` — Replaced raw `<p>` Snacks row with `<Row label="Snacks" value={...} />` to give it consistent flex layout, padding, and border-bottom divider matching all other review rows.
+
+### Known Issues (not fixed)
+- None found.
 
 ---
 
 ## Phase 2: Bodybuilder User
-- Status: RAN (Phase 1 fixed 0 bugs, fewer than 3)
-- Feature added: **Session notes on workout completion**
-
-When finishing a workout, users can now enter optional notes (how the session felt, any PRs, tweaks, or observations) in a textarea above the "Complete Workout" button. Notes are stored via the existing `WorkoutLog.notes` DB column and `window.api.completeWorkout(id, notes?)` IPC call — both were already in place but never exposed in the UI. Entered notes appear on the post-workout summary screen and are displayed in workout history cards as italic quoted text.
-
-**Why this matters at 14 weeks out:** Each session tells a story — whether the weights moved cleanly, if fatigue is creeping in, if a carb-up worked. Without somewhere to capture that context in the moment, it's lost by the next check-in. This gives the athlete a lightweight log that surfaces exactly where it's useful: right after completing the session, and visible in history.
-
-- Files changed: `src/pages/Training/WorkoutSession.tsx`, `src/pages/Training/index.tsx`
-- No new IPC handlers, no DB schema changes — frontend only
+- Status: RAN (1 bug fixed in Phase 1, which is < 3)
+- Feature added: **This Week's Volume widget on Dashboard** — shows sessions completed vs. planned, total sets logged, and total weight moved (in the user's preferred unit) for the current week. The card links to the Training stats page and only renders when at least one workout has been completed this week.
+- Files changed: `src/pages/Dashboard/index.tsx`
 
 ---
 
 ## Phase 3: UX Reviewer
 - Changes made: 2
 
-`src/pages/Dashboard/index.tsx` — Renamed "Coach Notes" to "Check-In Feedback". The previous label implied a human coach wrote the content; AI-generated adjustment recommendations under that heading confused the origin of the advice. "Check-In Feedback" accurately describes what the section is.
+**`src/pages/Diet/index.tsx`** — Added a visible "↺ Regenerate" button next to the tab bar. Previously the only way to regenerate a meal plan was to open the "Food Preferences" accordion and click "Save & Regenerate Plan" — a buried action that implies you must change preferences first. The new button is always visible alongside the tabs and makes the intent (regenerate with current settings) immediately clear.
 
-`src/pages/CheckIn/index.tsx` — Added "Last weigh-in" row to the locked check-in screen's info grid, showing the previous recorded weight (in user's preferred units) and the date. Previously, athletes had to expand a separate history accordion or navigate to the Progress page to see their last weight — the single most-referenced number when gauging weekly changes. It now appears without any extra taps.
-
----
-
-## Session History
-
-| Session | Date | Bugs Fixed | Feature | UX Changes |
-|---------|------|-----------|---------|-----------|
-| 1 | 2026-05-21 | 1 (stale meal completions) | Prep Pace card on Dashboard | 2 (diet layout, training nav) |
-| 2 | 2026-05-22 | 1 (WorkoutLogEditor null crash) | Weekly tonnage tracker | 2 (Stats tab rename, auto-expand today) |
-| 3 | 2026-05-22 | 0 | Rest timer in workout session | 2 (check-in button label, complete hint) |
-| 4 | 2026-05-22 | 0 | Last-session weights in workout overlay | 2 (exercise preview in history, named swap options) |
-| 5 | 2026-05-22 | 0 | Weekly session completion tracker on Training Plan tab | 2 (full-row meal tap target on Dashboard, nav button in empty workout history) |
-| 6 | 2026-05-23 | 0 | Session notes on workout completion | 2 (rename 'Coach Notes', show last weigh-in on locked check-in screen) |
+**`src/pages/Training/WorkoutSession.tsx`** — Made the session notes textarea collapsed by default, replaced with a small "+ Add session notes" tap target. The always-visible textarea added clutter between the rest timer and the "Complete Workout" button, making the completion flow feel like a form to fill in. Now the Complete button is the immediate visual focus; athletes who want notes tap once to expand the input.
