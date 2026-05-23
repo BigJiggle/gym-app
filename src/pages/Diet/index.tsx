@@ -252,19 +252,29 @@ export default function Diet() {
         </Badge>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 bg-gray-900 border border-gray-800 rounded-xl p-1 w-fit">
-        {(['plan', 'weekly', 'grocery'] as DietTab[]).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors capitalize ${
-              tab === t ? 'bg-brand-600 text-white' : 'text-gray-400 hover:text-gray-200'
-            }`}
-          >
-            {t === 'plan' ? 'Meal Plan' : t === 'weekly' ? 'Weekly View' : 'Grocery List'}
-          </button>
-        ))}
+      {/* Tabs + Regenerate */}
+      <div className="flex items-center gap-2">
+        <div className="flex gap-1 bg-gray-900 border border-gray-800 rounded-xl p-1 w-fit">
+          {(['plan', 'weekly', 'grocery'] as DietTab[]).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors capitalize ${
+                tab === t ? 'bg-brand-600 text-white' : 'text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              {t === 'plan' ? 'Meal Plan' : t === 'weekly' ? 'Weekly View' : 'Grocery List'}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={() => generateDietPlan(user.id)}
+          disabled={loading}
+          title="Regenerate meal plan with current settings"
+          className="text-xs text-gray-500 hover:text-brand-400 border border-gray-700 hover:border-brand-700 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-40"
+        >
+          {loading ? '...' : '↺ Regenerate'}
+        </button>
       </div>
 
       {/* ─── MEAL PLAN TAB ─── */}

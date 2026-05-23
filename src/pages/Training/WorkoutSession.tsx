@@ -219,6 +219,7 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
   const [summaryStats, setSummaryStats] = useState<{ sets: number; exercises: number; volume: number } | null>(null)
   const [saving, setSaving] = useState(false)
   const [sessionNotes, setSessionNotes] = useState('')
+  const [notesOpen, setNotesOpen] = useState(false)
 
   // ── Rest timer ──────────────────────────────────────────────────────────────
   const [restSecsLeft, setRestSecsLeft] = useState<number | null>(null)
@@ -495,13 +496,23 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
           </div>
         )}
 
-        <textarea
-          value={sessionNotes}
-          onChange={(e) => setSessionNotes(e.target.value)}
-          placeholder="Session notes (optional) — how did it feel? any PRs, injuries, or observations..."
-          rows={2}
-          className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-xs text-gray-300 placeholder-gray-600 resize-none mb-2 focus:outline-none focus:border-brand-600"
-        />
+        {notesOpen ? (
+          <textarea
+            value={sessionNotes}
+            onChange={(e) => setSessionNotes(e.target.value)}
+            placeholder="How did it feel? Any PRs, injuries, or observations..."
+            rows={2}
+            autoFocus
+            className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-xs text-gray-300 placeholder-gray-600 resize-none mb-2 focus:outline-none focus:border-brand-600"
+          />
+        ) : (
+          <button
+            onClick={() => setNotesOpen(true)}
+            className="w-full text-left text-xs text-gray-600 hover:text-gray-400 px-1 py-1 mb-2 transition-colors"
+          >
+            + Add session notes
+          </button>
+        )}
         <button
           onClick={handleComplete}
           disabled={!canComplete || saving}
