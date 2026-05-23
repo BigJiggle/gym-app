@@ -862,7 +862,7 @@ export default function CheckIn() {
               Processing...
             </>
           ) : (
-            'Submit Check-In & Get Feedback'
+            'Submit Check-In →'
           )}
         </Button>
       </form>

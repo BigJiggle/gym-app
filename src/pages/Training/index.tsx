@@ -469,7 +469,7 @@ export default function Training() {
                             : 'border border-gray-700 text-gray-400 hover:border-brand-700 hover:text-brand-400'
                         }`}
                       >
-                        ▶ Start
+                        ▶ Start Workout
                       </button>
                       <span className="text-xs text-gray-500">{session.exercises.length} ex</span>
                       <span className="text-gray-600 text-xs">{isExpanded ? '▲' : '▼'}</span>
