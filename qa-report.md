@@ -6,32 +6,37 @@
 - Bugs fixed: 1
 
 ### Feature Audit
-- Onboarding: BUG FIXED — Snacks row in Step 6 Review used a raw `<p>` tag instead of the shared `<Row>` component, giving it different padding, no bottom border divider, and inconsistent text styling vs every other row.
-- Diet page: OK — Meal plan loads, swap modal works, food exclusions save correctly, preferences panel syncs from user on open.
-- Training page: OK — Plan loads, session cards auto-expand today's session, workout start flow works, history and stats tabs render correctly.
-- Check-in page: OK — Locked countdown renders correctly, schedule label matches settings, missed-slot panel works, edit-last-check-in accordion functions.
-- Education page: OK — All 5 tabs (Prep Timeline, Posing Guide, Show Checklist, Peak Week, First Timer) render; auto-switches to Timeline when shows load asynchronously.
-- Progress page: OK — Weight chart, measurement changes, adherence bars, and empty state all render correctly; progress entries are fetched in ASC order (oldest→newest) matching the `first`/`latest` variable usage.
-- Settings page: OK — Unit toggle, check-in schedule mode, edit profile form, and My Shows section all function correctly.
+- Onboarding: OK — all 6 steps with validation flow through correctly; createUser + plan generation after step 6 works as expected.
+- Diet page: OK — meal swap, recalculate macros, grocery list quantities, weekly compliance strip, and food preferences panel all function correctly.
+- Training page: OK — start workout, log sets per exercise with rest timer, complete workout and batch-save all work correctly.
+- Check-in page: OK — locked countdown state and open form state both handled; missed check-in panels work; edit-last check-in also works.
+- Education page: OK — all 5 tabs (Prep Timeline, Posing Guide, Show Checklist, Peak Week, First Timer) render; async show data auto-switch to timeline tab is guarded correctly.
+- Progress page: OK — weight chart, measurements chart, and trend projection all display using correct data ordering (progressEntries oldest-first, checkinHistory newest-first).
+- Settings page: OK — unit change takes effect immediately across all display components; check-in schedule changes (day/interval/biweekly) update the locked state instantly.
 
 ### Bugs Fixed
-- `src/pages/Onboarding/steps/Step6Review.tsx:61` — Replaced raw `<p>` Snacks row with `<Row label="Snacks" value={...} />` to give it consistent flex layout, padding, and border-bottom divider matching all other review rows.
+- `src/types/index.ts:249` / `src/store/planStore.ts:165` — `logMealCompletion` was declared as `Promise<void>` but the IPC handler returns the persisted `MealCompletion` row. The store was working around this with an unsafe `as MealCompletion` cast. Fixed the type declaration to `Promise<MealCompletion>` and removed the cast.
 
 ### Known Issues (not fixed)
-- None found.
+- None. All identified issues were either architectural patterns that work correctly at runtime or theoretical edge cases that cannot occur in practice given how the data is populated.
 
 ---
 
 ## Phase 2: Bodybuilder User
-- Status: RAN (1 bug fixed in Phase 1, which is < 3)
-- Feature added: **This Week's Volume widget on Dashboard** — shows sessions completed vs. planned, total sets logged, and total weight moved (in the user's preferred unit) for the current week. The card links to the Training stats page and only renders when at least one workout has been completed this week.
-- Files changed: `src/pages/Dashboard/index.tsx`
+- Status: RAN (Phase 1 fixed 1 bug, which is < 3)
+- Feature added: **Average daily calorie deficit with estimated fat loss rate**
+  - Added to the Diet page's existing "Weekly Macro Totals" section.
+  - Shows avg kcal/day this week vs target, the daily deficit/surplus in kcal, and the estimated weekly weight change (~X lbs/wk or kg/wk) at that rate.
+  - Rationale: A contest prep athlete checks this every day to confirm they're in the right deficit to hit stage weight — the existing weekly total % doesn't give this quick "am I on pace?" read.
+  - Uses: 3,500 kcal/lb (imperial) or 7,700 kcal/kg (metric) fat approximation.
+  - Only shown when at least one meal has been logged this week.
+- Files changed: `src/pages/Diet/index.tsx`
 
 ---
 
 ## Phase 3: UX Reviewer
 - Changes made: 2
 
-**`src/pages/Diet/index.tsx`** — Added a visible "↺ Regenerate" button next to the tab bar. Previously the only way to regenerate a meal plan was to open the "Food Preferences" accordion and click "Save & Regenerate Plan" — a buried action that implies you must change preferences first. The new button is always visible alongside the tabs and makes the intent (regenerate with current settings) immediately clear.
+1. `src/pages/CheckIn/index.tsx` — Shortened the submit button from "Submit Check-In & Get Feedback" to "Submit Check-In →". The feedback screen always appears after submission so advertising it in the button text adds no information — just friction for a tired athlete trying to submit quickly.
 
-**`src/pages/Training/WorkoutSession.tsx`** — Made the session notes textarea collapsed by default, replaced with a small "+ Add session notes" tap target. The always-visible textarea added clutter between the rest timer and the "Complete Workout" button, making the completion flow feel like a form to fill in. Now the Complete button is the immediate visual focus; athletes who want notes tap once to expand the input.
+2. `src/pages/Training/index.tsx` — Changed collapsed session card button from "▶ Start" to "▶ Start Workout" to match the label already used in the expanded session card view. The bare "Start" with no object was ambiguous; this makes both states say the same thing.
