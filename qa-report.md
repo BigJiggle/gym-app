@@ -1,80 +1,90 @@
-# App Health Report — 2026-05-23
+# PrepCoach QA & UX Review — 2026-05-23
 
-## Phase 1: QA Engineer
+## Phase 1: QA Engineering
 
-### TypeScript
-No errors — `npx tsc --noEmit` exited cleanly.
+### TypeScript Health
 
-### Unit Tests
-84 tests across 5 test files — all passed.
+| Check | Result |
+|-------|--------|
+| `tsc --project tsconfig.web.json --noEmit` (renderer) | **0 errors** (was 8 before fixes) |
+| `npx vitest run` | **84/84 tests passed** |
+| `tsc --project tsconfig.node.json --noEmit` (main process) | 164 lines of pre-existing errors — all SQLite JSValue binding issues in IPC handlers; unchanged by this review |
 
-### User Flow Traces (7 flows)
+### Bugs Fixed (5)
 
-| # | Flow | Finding |
-|---|------|---------|
-| 1 | Onboarding → profile creation | Clean. Re-validation in `handleSubmit` is intentional guard on required fields. |
-| 2 | Training plan → start workout → log sets → complete | **BUG FOUND** — see below |
-| 3 | Diet plan → mark meal eaten → today's intake progress | Clean. |
-| 4 | Check-in form → submit → feedback | Clean. |
-| 5 | Progress page → charts → measurements | Clean. |
-| 6 | Settings → edit profile → Save & Regenerate | Clean. |
-| 7 | Education → show prep timeline tabs | Clean. |
+#### 1. `ExerciseLogUpdate` missing `skipped` field — `src/types/index.ts`
+**Severity:** Medium (runtime type mismatch, TypeScript error TS2353)
+The `toggleRow` function in `WorkoutLogEditor.tsx` called `window.api.updateWorkoutSet(id, { skipped: newSkipped })`. The `ExerciseLogUpdate` interface lacked `skipped?`. The IPC handler already accepted it; only the TypeScript type was missing.
+**Fix:** Added `skipped?: boolean` to `ExerciseLogUpdate`.
 
-### Bug Fixed
+#### 2. `null` assigned to `number | undefined` in `autoSave` — `src/pages/Training/WorkoutLogEditor.tsx`
+**Severity:** Medium (TypeScript error TS2322, incorrect values sent to IPC)
+`autoSave` passed `null` for missing weight/reps/rir, but `ExerciseLogUpdate` uses `undefined` for optional fields. Passing `null` would serialise and potentially overwrite stored values.
+**Fix:** Changed `null` → `undefined` for `weight_kg`, `reps_actual`, and `rir_actual`.
 
-**`src/pages/Training/WorkoutSession.tsx` — `setPhase('summary')` outside try/catch**
+#### 3. Duplicate `const fatPct` declaration — `src/pages/Diet/index.tsx`
+**Severity:** High (TypeScript error TS2451, compilation failure)
+`fatPct` was declared twice in the same function scope: once for macro distribution percentages and once for today's fat intake progress bar.
+**Fix:** Renamed the intake-progress variable to `fatIntakePct` and updated its 3 usages.
 
-`setPhase('summary')` and `setSaving(false)` were called unconditionally after the try/catch block. If `saveSetsBatch` or `completeWorkout` threw (network/IPC error), the UI still advanced to the "Workout Complete!" summary screen even though nothing was persisted. The user would believe their workout was saved when it was not.
+#### 4. `user` possibly null inside nested `trendStatus` — `src/pages/Progress/index.tsx`
+**Severity:** Low (TypeScript error TS18047)
+The outer `if (!user) return null` guard cannot narrow `user` inside the nested `trendStatus()` function under strict mode.
+**Fix:** Added `user!.goal` non-null assertions for the two inner references.
 
-Fix: moved `setPhase('summary')` inside the try block so it only runs on success; moved `setSaving(false)` into a finally block so the spinner always clears.
+#### 5. Cross-project TypeScript import (TS6307) — `src/pages/CheckIn/index.tsx`
+**Severity:** High (compilation failure)
+`CheckIn/index.tsx` imported `computeMissedSlots` from `../../../electron/services/checkinSchedule`, which is outside the `src/**/*` include boundary of `tsconfig.web.json`. This causes TS6307 ("File is not under 'rootDir'") and breaks incremental builds.
+**Fix:** Created `src/utils/checkinSchedule.ts` containing the pure `computeMissedSlots` function and `MissedSlot` interface within the web project boundary. Updated the import in `CheckIn/index.tsx`.
 
-**Commit:** `[QA] 2026-05-23: fix WorkoutSession save error — phase('summary') guarded by try block`  
-**Files changed:** `src/pages/Training/WorkoutSession.tsx`
+### User Flow Traces
+
+Seven flows were walked end-to-end against the source code:
+
+| Flow | Status | Notes |
+|------|--------|-------|
+| 1. Onboarding (6-step wizard → plan generation) | Pass | All steps guarded; createUser → generateTrainingPlan → generateDietPlan sequence correct |
+| 2. Diet tab — view plan, mark meals eaten, swap meal | Pass | toggleMealEaten / logMealCompletion / swapMeal wired correctly |
+| 3. Training — start session, log sets, complete workout | Pass | startWorkout → logSet → completeWorkout; unit conversion in WorkoutSession correct |
+| 4. Workout log editor — edit past sets, toggle skipped, delete | Pass (after fixes 1+2) | updateWorkoutSet type now accepts skipped; undefined passed for missing fields |
+| 5. Check-in submission | Pass | Unit conversion to kg/cm before submit; schedule gating via getNextCheckinDate |
+| 6. Progress page — weight trend, measurements chart | Pass (after fix 4) | trendStatus no longer emits TS error; chart data pipeline intact |
+| 7. Settings — unit toggle, check-in schedule, API key | Pass | setSetting persists each field; unit label reactivity via useSettingsStore |
 
 ---
 
-## Phase 2: Bodybuilder User
+## Phase 2: Bodybuilder User Feature
 
-**Condition:** Phase 1 fixed 1 bug (< 3) → Phase 2 runs.
-
-**Persona:** Competitive bodybuilder, 14 weeks out, tracking every macro obsessively.
-
-**Feature identified:** The "Today's Intake" section showed progress bars for calories and protein only. Carbs and fat were completely invisible despite being tracked in the diet plan. A prep athlete on a carb-cycling or fat-ceiling protocol has to do the arithmetic manually every time — a major friction point when hitting specific macro targets daily.
-
-**Feature implemented:** Carbs and fat tracking added to the Today's Intake section.
-- Computed `consumedCarbs` and `consumedFat` from `todayCompletions` + `dietPlan.meals` (values already in store)
-- Computed `carbPct` and `fatPct` (capped at 100%)
-- Added blue progress bar for Carbs and yellow progress bar for Fat (matching the macro distribution bar colours)
-- Updated the "remaining today" line to show `{kcal} kcal · {P}g P · {C}g C · {F}g F remaining`
-
-No new API calls, no new IPC handlers, no DB schema changes — all values already available from existing store state.
-
-**Commit:** `[Feature] 2026-05-23: show consumed carbs and fat in Today's Intake section`  
-**Files changed:** `src/pages/Diet/index.tsx`
+**SKIPPED** — Phase 1 fixed 5 bugs (threshold is ≥ 3), so Phase 2 is skipped per the automation rules.
 
 ---
 
-## Phase 3: UX Reviewer
+## Phase 3: UX Simplifications
 
-**Pages reviewed:** Dashboard, Diet, Training, CheckIn, Progress, Settings, Education, NavSidebar, WorkoutStats.
+### Change 1 — Diet page: promote Meals list above analytics
 
-**Simplification 1 — Swap Meal modal: no error feedback**
+**Before:** Scroll order on the Plan tab: Macro summary → Today's intake → Weekly compliance strip → Weekly macro totals → Macro distribution bar → **Meals** → Disclaimer.
 
-When the `swapMeal` API call failed, the modal stayed open with no message. The user could tap alternatives repeatedly with no indication of what was wrong — particularly frustrating on a slow machine or when the plan data is stale. Added `swapError` state, a catch block capturing the error message, and a red error line rendered above the Cancel button. The error also clears when the modal is opened fresh to prevent stale messages from prior failures.
+**After:** Macro summary → Today's intake → **Meals** → **Disclaimer** → Weekly compliance strip → Weekly macro totals → Macro distribution bar.
 
-**Simplification 2:** All other pages reviewed (Dashboard, Training, CheckIn, Progress, Settings, Education) — no further surgical changes warranted. The app is already clean and information-dense without unnecessary chrome.
+**Rationale:** The primary action on this screen is marking meals eaten and swapping them. Previously the user scrolled past four analytics sections to reach the meal cards. Moving meals up puts the actionable content immediately below the daily intake summary.
 
-**Commit:** `[UX] 2026-05-23: add error feedback to Swap Meal modal`  
-**Files changed:** `src/pages/Diet/index.tsx`
+### Change 2 — Check-in page: pre-fill measurement fields from last check-in
+
+**Before:** `waistDisplay`, `chestDisplay`, `hipDisplay`, `armDisplay`, `thighDisplay` all initialised to `''`.
+
+**After:** Each field is pre-filled from `latestCheckin`'s corresponding value with imperial/metric conversion, matching the existing `weightDisplay` pre-fill pattern.
+
+**Rationale:** Body measurements change slowly. Pre-filling last known values means users only update fields that changed, reducing form friction on every check-in.
 
 ---
 
 ## Summary
 
-| Phase | Result |
-|-------|--------|
-| TypeScript | ✅ 0 errors |
-| Unit tests | ✅ 84/84 passed |
-| Bugs fixed | 1 — WorkoutSession save guard |
-| Feature added | Carbs + fat tracking in Today's Intake |
-| UX changes | 1 — Swap Meal error feedback |
+| Category | Count |
+|----------|-------|
+| TypeScript errors fixed (web project) | 5 |
+| Tests passing after changes | 84 / 84 |
+| UX improvements shipped | 2 |
+| New files created | 1 (`src/utils/checkinSchedule.ts`) |
+| Files modified | 5 |
