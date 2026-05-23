@@ -368,11 +368,12 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
     try {
       await window.api.saveSetsBatch(workoutLog.id, setsToSave)
       await window.api.completeWorkout(workoutLog.id, sessionNotes.trim() || undefined)
+      setPhase('summary')
     } catch (err) {
       console.error('Complete workout error:', err)
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
-    setPhase('summary')
   }, [workoutLog.id, exerciseStates, session.exercises, isImperial, sessionNotes])
 
   // ── end early = cancel entirely, no history entry ─────────────────────────
