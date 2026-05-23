@@ -263,7 +263,7 @@ export default function Dashboard() {
 
         {/* Latest check-in feedback */}
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-          <h2 className="font-semibold text-gray-100 mb-3">Coach Notes</h2>
+          <h2 className="font-semibold text-gray-100 mb-3">Check-In Feedback</h2>
           {latestCheckin ? (
             <div className="space-y-2">
               <div className="flex gap-2 text-sm">

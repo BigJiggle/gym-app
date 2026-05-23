@@ -503,6 +503,17 @@ export default function CheckIn() {
             <p className="text-gray-500 text-sm mt-0.5">{timeLabel} from now</p>
           </div>
           <div className="bg-gray-800/60 rounded-lg px-4 py-2 text-xs text-gray-500 text-left space-y-1">
+            {lastCheckin && (
+              <div className="flex justify-between border-b border-gray-700/50 pb-1 mb-1">
+                <span>Last weigh-in</span>
+                <span className="text-brand-300 font-semibold">
+                  {isImperial
+                    ? `${Math.round(lastCheckin.weight_kg / 0.453592 * 10) / 10} lbs`
+                    : `${lastCheckin.weight_kg} kg`}
+                  <span className="text-gray-500 font-normal ml-1">· {lastCheckin.check_in_date}</span>
+                </span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span>Schedule</span><span className="text-gray-300">{scheduleLabel}</span>
             </div>
