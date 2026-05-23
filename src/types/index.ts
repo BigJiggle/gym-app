@@ -246,7 +246,7 @@ declare global {
       getWorkoutSummary: (workoutLogId: number) => Promise<WorkoutLog>
       getNextCheckinDate: (userId: number) => Promise<string | null>
       submitMissedCheckin: (data: CreateCheckinInput & { check_in_date: string }) => Promise<CheckIn>
-      logMealCompletion: (userId: number, date: string, mealIndex: number, mealName: string) => Promise<void>
+      logMealCompletion: (userId: number, date: string, mealIndex: number, mealName: string) => Promise<MealCompletion>
       unlogMealCompletion: (userId: number, date: string, mealIndex: number) => Promise<void>
       getMealCompletions: (userId: number, startDate: string, endDate: string) => Promise<MealCompletion[]>
       openExternal: (url: string) => Promise<void>

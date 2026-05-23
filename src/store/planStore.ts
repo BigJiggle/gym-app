@@ -162,7 +162,7 @@ export const usePlanStore = create<PlanStore>((set) => ({
   logMealCompletion: async (userId, date, mealIndex, mealName) => {
     // Handler now returns the persisted DB record — use the real id so there
     // are no duplicate-key collisions if the same meal is logged twice quickly.
-    const record = await window.api.logMealCompletion(userId, date, mealIndex, mealName) as MealCompletion
+    const record = await window.api.logMealCompletion(userId, date, mealIndex, mealName)
     set((s) => ({
       mealCompletions: [
         ...s.mealCompletions.filter((c) => !(c.date === date && c.meal_index === mealIndex)),
