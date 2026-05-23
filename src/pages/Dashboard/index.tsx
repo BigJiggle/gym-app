@@ -20,11 +20,13 @@ export default function Dashboard() {
     latestCheckin,
     checkinHistory,
     mealCompletions,
+    workoutHistory,
     lastRefreshMessage,
     loadTrainingPlan,
     loadDietPlan,
     loadCheckinHistory,
     loadMealCompletions,
+    loadWorkoutHistory,
     logMealCompletion,
     unlogMealCompletion,
     clearRefreshMessage,
@@ -38,6 +40,7 @@ export default function Dashboard() {
     loadDietPlan(user.id)
     loadCheckinHistory(user.id)
     loadMealCompletions(user.id, todayStr, todayStr)
+    loadWorkoutHistory(user.id)
   }, [user?.id])
 
   if (!user) return null
@@ -392,6 +395,57 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* This Week's Volume */}
+      {(() => {
+        const isImperial = settings.units === 'imperial'
+        const wUnit = isImperial ? 'lbs' : 'kg'
+        const jsDay = new Date().getDay()
+        const daysFromMon = jsDay === 0 ? 6 : jsDay - 1
+        const weekStartStr = new Date(Date.now() - daysFromMon * 86400000).toLocaleDateString('en-CA')
+        const thisWeekLogs = workoutHistory.filter(
+          (log) => log.status === 'completed' && log.date >= weekStartStr && log.date <= todayStr
+        )
+        if (thisWeekLogs.length === 0) return null
+        const totalSets = thisWeekLogs.reduce((acc, log) =>
+          acc + (log.sets?.filter((s) => !s.skipped && s.reps_actual != null).length ?? 0), 0
+        )
+        const totalVolumeKg = thisWeekLogs.reduce((acc, log) =>
+          acc + (log.sets?.reduce((s, set) =>
+            s + (!set.skipped && set.weight_kg != null && set.reps_actual != null
+              ? set.weight_kg * set.reps_actual : 0), 0) ?? 0), 0
+        )
+        const displayVol = isImperial
+          ? Math.round(totalVolumeKg * 2.20462).toLocaleString()
+          : Math.round(totalVolumeKg).toLocaleString()
+        const totalPlanned = trainingPlan?.sessions?.length ?? 0
+        return (
+          <Link to="/training" className="block">
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 hover:border-gray-700 transition-colors">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs text-gray-500 uppercase tracking-wider">This Week's Volume</p>
+                <span className="text-xs text-brand-400 hover:text-brand-300">View Stats →</span>
+              </div>
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div>
+                  <p className="text-xl font-bold text-gray-100">
+                    {thisWeekLogs.length}{totalPlanned > 0 ? `/${totalPlanned}` : ''}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">sessions</p>
+                </div>
+                <div>
+                  <p className="text-xl font-bold text-gray-100">{totalSets}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">sets logged</p>
+                </div>
+                <div>
+                  <p className="text-xl font-bold text-brand-400">{displayVol}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{wUnit} moved</p>
+                </div>
+              </div>
+            </div>
+          </Link>
+        )
+      })()}
 
       {/* Quick links */}
       <div className="flex flex-wrap gap-x-6 gap-y-2 px-1">
