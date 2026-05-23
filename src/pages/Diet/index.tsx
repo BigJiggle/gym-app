@@ -199,8 +199,12 @@ export default function Diet() {
   const totalMeals = dietPlan.meals?.length ?? 0
   const consumedCalories = todayCompletions.reduce((acc, c) => acc + (dietPlan.meals?.[c.meal_index]?.calories ?? 0), 0)
   const consumedProtein = todayCompletions.reduce((acc, c) => acc + (dietPlan.meals?.[c.meal_index]?.protein_g ?? 0), 0)
+  const consumedCarbs = todayCompletions.reduce((acc, c) => acc + (dietPlan.meals?.[c.meal_index]?.carbs_g ?? 0), 0)
+  const consumedFat = todayCompletions.reduce((acc, c) => acc + (dietPlan.meals?.[c.meal_index]?.fat_g ?? 0), 0)
   const calPct = Math.min(100, dietPlan.calories_target > 0 ? Math.round((consumedCalories / dietPlan.calories_target) * 100) : 0)
   const protPct = Math.min(100, dietPlan.protein_g > 0 ? Math.round((consumedProtein / dietPlan.protein_g) * 100) : 0)
+  const carbPct = Math.min(100, dietPlan.carbs_g > 0 ? Math.round((consumedCarbs / dietPlan.carbs_g) * 100) : 0)
+  const fatPct = Math.min(100, dietPlan.fat_g > 0 ? Math.round((consumedFat / dietPlan.fat_g) * 100) : 0)
 
   function isMealEaten(mealIndex: number) {
     return todayCompletions.some((c) => c.meal_index === mealIndex)
@@ -325,6 +329,34 @@ export default function Diet() {
                   />
                 </div>
               </div>
+              <div>
+                <div className="flex justify-between text-xs mb-1.5">
+                  <span className="text-gray-500">Carbs</span>
+                  <span className={carbPct >= 100 ? 'text-green-400' : 'text-blue-400'}>
+                    {consumedCarbs}g / {dietPlan.carbs_g}g
+                  </span>
+                </div>
+                <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-300 ${carbPct >= 100 ? 'bg-green-500' : 'bg-blue-500'}`}
+                    style={{ width: `${carbPct}%` }}
+                  />
+                </div>
+              </div>
+              <div>
+                <div className="flex justify-between text-xs mb-1.5">
+                  <span className="text-gray-500">Fat</span>
+                  <span className={fatPct >= 100 ? 'text-green-400' : 'text-yellow-400'}>
+                    {consumedFat}g / {dietPlan.fat_g}g
+                  </span>
+                </div>
+                <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-300 ${fatPct >= 100 ? 'bg-green-500' : 'bg-yellow-500'}`}
+                    style={{ width: `${fatPct}%` }}
+                  />
+                </div>
+              </div>
               {mealsEaten === totalMeals && (
                 <p className="text-xs text-green-400 font-medium">All meals hit today — great work!</p>
               )}
@@ -332,8 +364,12 @@ export default function Diet() {
                 <p className="text-xs text-gray-400 font-medium">
                   <span className="text-brand-400">{dietPlan.calories_target - consumedCalories} kcal</span>
                   {' · '}
-                  <span className="text-green-300">{Math.max(0, dietPlan.protein_g - consumedProtein)}g protein</span>
-                  {' remaining today'}
+                  <span className="text-green-300">{Math.max(0, dietPlan.protein_g - consumedProtein)}g P</span>
+                  {' · '}
+                  <span className="text-blue-400">{Math.max(0, dietPlan.carbs_g - consumedCarbs)}g C</span>
+                  {' · '}
+                  <span className="text-yellow-400">{Math.max(0, dietPlan.fat_g - consumedFat)}g F</span>
+                  {' remaining'}
                 </p>
               )}
             </div>
