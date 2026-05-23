@@ -218,6 +218,7 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
   )
   const [summaryStats, setSummaryStats] = useState<{ sets: number; exercises: number; volume: number } | null>(null)
   const [saving, setSaving] = useState(false)
+  const [sessionNotes, setSessionNotes] = useState('')
 
   // ── Rest timer ──────────────────────────────────────────────────────────────
   const [restSecsLeft, setRestSecsLeft] = useState<number | null>(null)
@@ -365,13 +366,13 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
 
     try {
       await window.api.saveSetsBatch(workoutLog.id, setsToSave)
-      await window.api.completeWorkout(workoutLog.id)
+      await window.api.completeWorkout(workoutLog.id, sessionNotes.trim() || undefined)
     } catch (err) {
       console.error('Complete workout error:', err)
     }
     setSaving(false)
     setPhase('summary')
-  }, [workoutLog.id, exerciseStates, session.exercises, isImperial])
+  }, [workoutLog.id, exerciseStates, session.exercises, isImperial, sessionNotes])
 
   // ── end early = cancel entirely, no history entry ─────────────────────────
 
@@ -494,6 +495,13 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
           </div>
         )}
 
+        <textarea
+          value={sessionNotes}
+          onChange={(e) => setSessionNotes(e.target.value)}
+          placeholder="Session notes (optional) — how did it feel? any PRs, injuries, or observations..."
+          rows={2}
+          className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-xs text-gray-300 placeholder-gray-600 resize-none mb-2 focus:outline-none focus:border-brand-600"
+        />
         <button
           onClick={handleComplete}
           disabled={!canComplete || saving}
@@ -533,6 +541,12 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
               <p className="text-xs text-gray-500 mt-1">Volume ({isImperial ? 'lbs' : 'kg'})</p>
             </div>
           </div>
+          {sessionNotes.trim() && (
+            <div className="w-full max-w-sm bg-gray-900 border border-gray-800 rounded-xl p-3 mb-4 text-left">
+              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Session Notes</p>
+              <p className="text-sm text-gray-300">{sessionNotes.trim()}</p>
+            </div>
+          )}
           <button
             onClick={onComplete}
             className="w-full max-w-sm py-3 rounded-xl font-bold text-white bg-brand-600 hover:bg-brand-500"

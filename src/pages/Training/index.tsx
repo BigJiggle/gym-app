@@ -633,6 +633,11 @@ export default function Training() {
                               {loggedExercises.length > 4 && ` +${loggedExercises.length - 4} more`}
                             </p>
                           )}
+                          {log.notes && (
+                            <p className="text-xs text-gray-500 mt-1.5 italic border-t border-gray-800/60 pt-1.5">
+                              "{log.notes}"
+                            </p>
+                          )}
                         </div>
                         <div className="flex items-center gap-1.5 flex-shrink-0">
                           <span
