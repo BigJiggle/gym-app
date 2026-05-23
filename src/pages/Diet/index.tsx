@@ -438,6 +438,33 @@ export default function Diet() {
                     <div className={`h-full rounded-full transition-all duration-300 ${weekProtPct >= 90 ? 'bg-green-500' : 'bg-green-600'}`} style={{ width: `${weekProtPct}%` }} />
                   </div>
                 </div>
+                {/* Average daily deficit/surplus — only shown once there are logged meals this week */}
+                {weekCals > 0 && pastDays.length > 0 && (() => {
+                  const avgDailyCals = Math.round(weekCals / pastDays.length)
+                  const dailyDelta = avgDailyCals - dietPlan.calories_target
+                  const isImperial = settings.units === 'imperial'
+                  // 1 lb fat ≈ 3500 kcal, 1 kg fat ≈ 7700 kcal
+                  const weeklyChange = Math.abs(dailyDelta) * 7 / (isImperial ? 3500 : 7700)
+                  const isDeficit = dailyDelta < 0
+                  const isSurplus = dailyDelta > 0
+                  return (
+                    <div className="pt-2 border-t border-gray-800">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-gray-500">Avg daily calories</span>
+                        <div className="text-right">
+                          <span className={isDeficit ? 'text-green-400' : isSurplus ? 'text-amber-400' : 'text-gray-400'}>
+                            {avgDailyCals.toLocaleString()} kcal/day
+                          </span>
+                          {dailyDelta !== 0 && (
+                            <span className="text-gray-600 ml-1.5">
+                              ({isDeficit ? '−' : '+'}{Math.abs(dailyDelta)} kcal → ~{weeklyChange.toFixed(1)} {isImperial ? 'lbs' : 'kg'}/wk)
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })()}
               </div>
             )
           })()}
