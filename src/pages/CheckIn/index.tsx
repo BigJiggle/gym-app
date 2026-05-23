@@ -8,7 +8,7 @@ import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import type { CheckIn } from '../../types'
 import { localDateStr } from '../../utils/dates'
-import { computeMissedSlots } from '../../../electron/services/checkinSchedule'
+import { computeMissedSlots } from '../../utils/checkinSchedule'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -326,11 +326,13 @@ export default function CheckIn() {
     : defaultWeightKg
 
   const [weightDisplay, setWeightDisplay] = useState(String(defaultWeight))
-  const [waistDisplay, setWaistDisplay] = useState('')
-  const [chestDisplay, setChestDisplay] = useState('')
-  const [hipDisplay, setHipDisplay] = useState('')
-  const [armDisplay, setArmDisplay] = useState('')
-  const [thighDisplay, setThighDisplay] = useState('')
+  const prefillCm = (cm: number | null | undefined) =>
+    cm != null ? (isImperial ? String(Math.round(cm / 2.54 * 10) / 10) : String(cm)) : ''
+  const [waistDisplay, setWaistDisplay] = useState(prefillCm(latestCheckin?.waist_cm))
+  const [chestDisplay, setChestDisplay] = useState(prefillCm(latestCheckin?.chest_cm))
+  const [hipDisplay, setHipDisplay] = useState(prefillCm(latestCheckin?.hip_cm))
+  const [armDisplay, setArmDisplay] = useState(prefillCm(latestCheckin?.arm_cm))
+  const [thighDisplay, setThighDisplay] = useState(prefillCm(latestCheckin?.thigh_cm))
   const [trainingAdherence, setTrainingAdherence] = useState(90)
   const [dietAdherence, setDietAdherence] = useState(90)
   const [energyLevel, setEnergyLevel] = useState(3)

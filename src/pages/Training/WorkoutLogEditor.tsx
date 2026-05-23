@@ -102,13 +102,13 @@ export default function WorkoutLogEditor({ workoutLog, sessionExercises, onClose
       const row = prev.find((r) => r.key === key)
       if (!row || row.dbId === null || row.isSkipped || row.saving) return prev
       const displayWeight = row.weight ? parseFloat(row.weight) : null
-      const weightKg = displayWeight === null ? null
+      const weightKg = displayWeight === null ? undefined
         : isImperial ? Math.round(displayWeight * 0.453592 * 100) / 100
         : displayWeight
       window.api.updateWorkoutSet(row.dbId, {
         weight_kg: weightKg,
-        reps_actual: row.reps ? parseInt(row.reps) : null,
-        rir_actual: row.rir !== '' ? parseInt(row.rir) : null,
+        reps_actual: row.reps ? parseInt(row.reps) : undefined,
+        rir_actual: row.rir !== '' ? parseInt(row.rir) : undefined,
       }).catch((e: unknown) => console.error('Auto-save failed:', e))
       return prev
     })

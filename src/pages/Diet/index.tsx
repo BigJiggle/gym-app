@@ -205,7 +205,7 @@ export default function Diet() {
   const calPct = Math.min(100, dietPlan.calories_target > 0 ? Math.round((consumedCalories / dietPlan.calories_target) * 100) : 0)
   const protPct = Math.min(100, dietPlan.protein_g > 0 ? Math.round((consumedProtein / dietPlan.protein_g) * 100) : 0)
   const carbPct = Math.min(100, dietPlan.carbs_g > 0 ? Math.round((consumedCarbs / dietPlan.carbs_g) * 100) : 0)
-  const fatPct = Math.min(100, dietPlan.fat_g > 0 ? Math.round((consumedFat / dietPlan.fat_g) * 100) : 0)
+  const fatIntakePct = Math.min(100, dietPlan.fat_g > 0 ? Math.round((consumedFat / dietPlan.fat_g) * 100) : 0)
 
   function isMealEaten(mealIndex: number) {
     return todayCompletions.some((c) => c.meal_index === mealIndex)
@@ -347,14 +347,14 @@ export default function Diet() {
               <div>
                 <div className="flex justify-between text-xs mb-1.5">
                   <span className="text-gray-500">Fat</span>
-                  <span className={fatPct >= 100 ? 'text-green-400' : 'text-yellow-400'}>
+                  <span className={fatIntakePct >= 100 ? 'text-green-400' : 'text-yellow-400'}>
                     {consumedFat}g / {dietPlan.fat_g}g
                   </span>
                 </div>
                 <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
                   <div
-                    className={`h-full rounded-full transition-all duration-300 ${fatPct >= 100 ? 'bg-green-500' : 'bg-yellow-500'}`}
-                    style={{ width: `${fatPct}%` }}
+                    className={`h-full rounded-full transition-all duration-300 ${fatIntakePct >= 100 ? 'bg-green-500' : 'bg-yellow-500'}`}
+                    style={{ width: `${fatIntakePct}%` }}
                   />
                 </div>
               </div>
@@ -375,6 +375,66 @@ export default function Diet() {
               )}
             </div>
           )}
+
+          {/* Meals */}
+          <div>
+            <h2 className="text-lg font-semibold text-gray-100 mb-3">Daily Meals ({dietPlan.meal_count} meals)</h2>
+            <div className="space-y-3">
+              {dietPlan.meals?.map((meal, i) => (
+                <div key={i} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-600 font-mono">{meal.time}</span>
+                      <h3 className="text-sm font-semibold text-gray-200">{meal.name}</h3>
+                    </div>
+                    <div className="flex gap-3 text-xs text-gray-500">
+                      <span className="text-brand-400 font-medium">{meal.calories} kcal</span>
+                      <span className="text-green-400">P {meal.protein_g}g</span>
+                      <span className="text-blue-400">C {meal.carbs_g}g</span>
+                      <span className="text-yellow-400">F {meal.fat_g}g</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {meal.foods.map((food, fi) => (
+                      <span key={fi} className="group flex items-center gap-1 text-xs bg-gray-800 text-gray-400 px-2 py-1 rounded-md">
+                        {food}
+                        <button
+                          onClick={() => setExcludePending(food)}
+                          className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition-opacity ml-0.5"
+                          title="Exclude this food"
+                        >
+                          &#10005;
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-800">
+                    <button
+                      onClick={() => { setSwapError(null); setSwapTarget({ mealIndex: i, meal }) }}
+                      className="text-xs text-gray-400 hover:text-brand-300 border border-gray-700 hover:border-brand-700 rounded-lg px-2.5 py-1 transition-colors flex items-center gap-1"
+                    >
+                      &#8635; Swap Meal
+                    </button>
+                    <button
+                      onClick={() => toggleMealEaten(i, meal.name)}
+                      className={`text-xs font-medium rounded-lg px-2.5 py-1 transition-colors flex items-center gap-1 ${
+                        isMealEaten(i)
+                          ? 'bg-green-900/30 border border-green-800/50 text-green-400'
+                          : 'bg-brand-900/20 border border-brand-700 text-brand-400 hover:bg-brand-900/40'
+                      }`}
+                    >
+                      {isMealEaten(i) ? '✓ Eaten' : 'Mark Eaten'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Disclaimer */}
+          <div className="bg-amber-900/10 border border-amber-800/30 rounded-lg p-3 text-xs text-amber-600">
+            <strong className="text-amber-500">Note:</strong> Food items are examples. Weigh portions for accuracy. Click &#10005; on any food to exclude it from future plans.
+          </div>
 
           {/* Weekly meal compliance strip */}
           {totalMeals > 0 && (
@@ -519,66 +579,6 @@ export default function Diet() {
               <span className="text-xs text-blue-400"><span className="font-medium">Carbs</span> {carbsPct}%</span>
               <span className="text-xs text-yellow-400"><span className="font-medium">Fat</span> {fatPct}%</span>
             </div>
-          </div>
-
-          {/* Meals */}
-          <div>
-            <h2 className="text-lg font-semibold text-gray-100 mb-3">Daily Meals ({dietPlan.meal_count} meals)</h2>
-            <div className="space-y-3">
-              {dietPlan.meals?.map((meal, i) => (
-                <div key={i} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-600 font-mono">{meal.time}</span>
-                      <h3 className="text-sm font-semibold text-gray-200">{meal.name}</h3>
-                    </div>
-                    <div className="flex gap-3 text-xs text-gray-500">
-                      <span className="text-brand-400 font-medium">{meal.calories} kcal</span>
-                      <span className="text-green-400">P {meal.protein_g}g</span>
-                      <span className="text-blue-400">C {meal.carbs_g}g</span>
-                      <span className="text-yellow-400">F {meal.fat_g}g</span>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {meal.foods.map((food, fi) => (
-                      <span key={fi} className="group flex items-center gap-1 text-xs bg-gray-800 text-gray-400 px-2 py-1 rounded-md">
-                        {food}
-                        <button
-                          onClick={() => setExcludePending(food)}
-                          className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition-opacity ml-0.5"
-                          title="Exclude this food"
-                        >
-                          &#10005;
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                  <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-800">
-                    <button
-                      onClick={() => { setSwapError(null); setSwapTarget({ mealIndex: i, meal }) }}
-                      className="text-xs text-gray-400 hover:text-brand-300 border border-gray-700 hover:border-brand-700 rounded-lg px-2.5 py-1 transition-colors flex items-center gap-1"
-                    >
-                      &#8635; Swap Meal
-                    </button>
-                    <button
-                      onClick={() => toggleMealEaten(i, meal.name)}
-                      className={`text-xs font-medium rounded-lg px-2.5 py-1 transition-colors flex items-center gap-1 ${
-                        isMealEaten(i)
-                          ? 'bg-green-900/30 border border-green-800/50 text-green-400'
-                          : 'bg-brand-900/20 border border-brand-700 text-brand-400 hover:bg-brand-900/40'
-                      }`}
-                    >
-                      {isMealEaten(i) ? '✓ Eaten' : 'Mark Eaten'}
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Disclaimer */}
-          <div className="bg-amber-900/10 border border-amber-800/30 rounded-lg p-3 text-xs text-amber-600">
-            <strong className="text-amber-500">Note:</strong> Food items are examples. Weigh portions for accuracy. Click &#10005; on any food to exclude it from future plans.
           </div>
 
           {/* ── Food Preferences Panel ── */}

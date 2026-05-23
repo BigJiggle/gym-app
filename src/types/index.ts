@@ -192,6 +192,7 @@ export interface ExerciseLogUpdate {
   weight_kg?: number
   rir_actual?: number
   notes?: string
+  skipped?: boolean
 }
 
 export interface ExerciseLibraryItem {

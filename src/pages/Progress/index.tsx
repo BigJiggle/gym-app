@@ -67,13 +67,13 @@ export default function Progress() {
   function trendStatus(): TrendStatus {
     if (weeklyRateKg === null) return 'neutral'
     const pctPerWeek = Math.abs(weeklyRateKg) / currentWeightKg
-    if (user.goal === 'cut') {
+    if (user!.goal === 'cut') {
       if (weeklyRateKg >= 0) return 'gaining'
       if (pctPerWeek > 0.012) return 'too_fast'
       if (pctPerWeek < 0.003) return 'too_slow'
       return 'on_track'
     }
-    if (user.goal === 'bulk') {
+    if (user!.goal === 'bulk') {
       if (weeklyRateKg <= 0) return 'too_slow'
       if (pctPerWeek > 0.01) return 'too_fast'
       return 'on_track'
