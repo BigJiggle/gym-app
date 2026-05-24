@@ -46,7 +46,7 @@ export default function Progress() {
 
   const first = progressEntries[0]
   const latest = progressEntries[progressEntries.length - 1]
-  const totalChange = first && latest ? (latest.weight_kg - first.weight_kg).toFixed(1) : null
+  const totalChange = progressEntries.length >= 2 ? (latest.weight_kg - first.weight_kg).toFixed(1) : null
   const weeksCompleted = checkinHistory.length
 
   // Trend computation

@@ -41,7 +41,7 @@ function buildRows(workoutLog: WorkoutLog, sessionExercises?: Exercise[]): SetRo
 
   // Add empty rows for exercises not yet logged (from the session plan)
   if (sessionExercises) {
-    const loggedNames = new Set(workoutLog.sets.map((s) => s.exercise_name))
+    const loggedNames = new Set((workoutLog.sets ?? []).map((s) => s.exercise_name))
     for (const ex of sessionExercises) {
       if (!loggedNames.has(ex.name)) {
         const count = typeof ex.sets === 'number' ? ex.sets : 1
