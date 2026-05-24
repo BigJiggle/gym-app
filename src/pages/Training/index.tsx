@@ -482,7 +482,7 @@ export default function Training() {
                       {session.exercises.slice(0, 3).map((ex, i) => (
                         <span key={i} className="text-xs text-gray-600">
                           {ex.name}
-                          {i < 2 && session.exercises.length > i + 1 ? ',' : i === 2 ? '...' : ''}
+                          {i < 2 && session.exercises.length > i + 1 ? ',' : i === 2 && session.exercises.length > 3 ? '...' : ''}
                         </span>
                       ))}
                     </div>
