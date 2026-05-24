@@ -1,101 +1,44 @@
-# PrepCoach QA & UX Review — 2026-05-24
+# App Health Report — 2026-05-24
 
-## Phase 1: QA Engineering
+## Phase 1: QA Engineer
+- TypeScript: PASS (0 errors)
+- Unit tests: PASS (84 passing, 0 failing)
+- Bugs fixed: 2
 
-### TypeScript Health
+### Feature Audit
+- Onboarding: OK — all 6 steps flow correctly; step 1 validation fires on Next, final step validates step 1 data defensively before submit.
+- Diet page: OK — meal swap, recalculate, food exclusions, and AI refine all flow correctly; null guards on `meals?.[index]` prevent NaN in progress bars.
+- Training page: BUG FIXED — WorkoutLogEditor null guard on `workoutLog.sets` (see Bugs Fixed).
+- Check-in page: OK — locked/unlocked states behave correctly; missed-slot fill-in and edit-last-checkin flows are intact; unit conversion helpers are consistent.
+- Education page: OK — all 5 tabs (Prep Timeline, Posing Guide, Show Checklist, Peak Week, First Timer) render correctly; timeline auto-expands current week; shared `expandedChecklist` state uses key prefixes to avoid cross-tab collision.
+- Progress page: BUG FIXED — `totalChange` stat now requires ≥ 2 entries (see Bugs Fixed).
+- Settings page: OK — unit toggle, check-in schedule (day/interval modes), shows management, and profile edit all behave correctly.
 
-| Check | Result |
-|-------|--------|
-| `npx tsc --noEmit` | **0 errors** |
-| `npm test` | **84/84 tests passed** |
+### Bugs Fixed
 
-### User Flow Traces
+`src/pages/Training/WorkoutLogEditor.tsx:44` — `workoutLog.sets.map(...)` had no null guard in the branch that builds placeholder rows for unlogged exercises. If `sets` arrived as undefined, this would throw at runtime. Changed to `(workoutLog.sets ?? []).map(...)` to match the defensive guard already present at line 28.
 
-Seven flows were walked end-to-end against the source code:
+`src/pages/Progress/index.tsx:49` — `totalChange` was computed as `first && latest ? ...` which evaluates to `true` when there is exactly one progress entry (since `first === latest`), showing a misleading "0.0 kg" delta. Changed guard to `progressEntries.length >= 2` so the stat only appears when there is actual change to report.
 
-| Flow | Status | Notes |
-|------|--------|-------|
-| 1. Onboarding (6-step wizard → plan generation) | Pass | createUser → generateTrainingPlan → generateDietPlan sequence correct |
-| 2. Diet tab — view plan, mark meals eaten, swap meal | **Bug found → fixed** | Swap modal showed blank list when all alternatives filtered by food exclusions |
-| 3. Training — start session, log sets, complete workout | Pass | startWorkout → saveSetsBatch → completeWorkout pipeline intact |
-| 4. Check-in form submit | Pass | Unit conversion to kg/cm before submit; schedule gating via getNextCheckinDate correct |
-| 5. Dashboard load (user, plans, checkin, workout history) | Pass | All async loads guarded; volume stats correctly scoped to current ISO week |
-| 6. Progress page — weight trend, measurements chart | Pass | Chart data ordered oldest-first (ORDER BY week_number ASC) matches left→right axis |
-| 7. Settings — unit toggle, check-in schedule, API key | Pass | setSetting persists each field; unit label reactivity via useSettingsStore correct |
-
-### Bugs Fixed (1)
-
-#### 1. Diet / Swap Meal modal — empty alternatives state
-
-**File:** `src/pages/Diet/index.tsx`  
-**Severity:** Medium (confusing blank UI, no guidance)
-
-When all swap alternatives were filtered out by the user's food exclusions, the Swap Meal modal rendered a title, blank space, and Cancel button with no explanation. Users had no indication why the list was empty or what to do.
-
-**Fix:** Wrapped the alternatives `.map()` in an IIFE that checks `alternatives.length === 0` and renders an explanatory message: *"No alternatives available — remove some food exclusions in Food Preferences to see options."*
-
-**Commit:** `af2a87c`
-
-### False Positives Investigated and Ruled Out
-
-- **Claude API key `??` check** — handles both `null` and empty string correctly; no bug.
-- **`progressEntries` ordering** — `ORDER BY week_number ASC` matches chart's left→right chronology; no bug.
-- **`setPrimaryShow` apparently unused in UI** — backend `syncPrimaryToNearest()` auto-assigns primary; redundant but harmless.
-- **`planStore.logSet` sets access** — store method is never called from any component (WorkoutSession uses `window.api.saveSetsBatch` directly); non-issue.
+### Known Issues (not fixed)
+- `WorkoutSession.tsx:232` — dependency array uses a boolean expression (`[restSecsLeft !== null && restSecsLeft > 0]`) instead of the raw state variable. This is a React hooks lint violation but functions correctly for this timer use case; changing it to `[restSecsLeft]` would re-create the interval every second. Left as-is to avoid unintended side effects.
+- `Step2Goals.tsx:100` — competition history is a multi-select that allows contradictory choices (e.g. "No shows" + "3–5 shows"). UX issue only; no crash risk.
 
 ---
 
-## Phase 2: Bodybuilder User Feature
-
-**Triggered** (1 bug fixed < 3 threshold).
-
-### Estimated weekly training kcal burned — Dashboard volume card
-
-**File:** `src/pages/Dashboard/index.tsx`  
-**Commit:** `741835c`
-
-A new row appears below the existing "This Week's Volume" grid (sessions / sets / tonnage) whenever at least one completed workout has duration data. It shows:
-
-- **`~N kcal` burned** — calculated using the MET formula: MET 5.5 × bodyweight_kg × hours per session, summed across the week. Bodyweight uses the latest check-in weight when available, falling back to the profile weight.
-- **`· net ~N kcal/day`** — diet calorie target minus average daily training burn, giving prep athletes a direct read on true net intake without leaving the dashboard.
-
-**Constraints respected:** Frontend-only calculation; uses only existing `WorkoutLog` fields (`started_at`, `ended_at`) and `DietPlan.calories_target`. No new IPC calls, no DB schema changes, no Electron main process changes.
+## Phase 2: Bodybuilder User
+- Status: RAN (Phase 1 fixed 2 bugs, fewer than 3)
+- Feature added: **Projected show-day trendline on weight chart**
+- Description: The `WeightChart` component now accepts `projectedWeightKg` and `weeksToShow` props. When the user has a show date set and at least 2 check-ins, a dashed blue line extends from the last actual data point to a "Show Day" endpoint showing the extrapolated weight at the current loss rate. A legend (Actual / Projected to show) and a distinctive blue endpoint dot make the projection scannable at a glance. The `Progress` page passes the already-computed `projectedWeightKg` and `weeksToShow` values straight through — no new DB schema or IPC calls required.
+- Files changed:
+  - `src/components/charts/WeightChart.tsx` — added `projectedWeightKg` / `weeksToShow` props, projected `Line` with `strokeDasharray`, custom dot for show-day endpoint, legend row
+  - `src/pages/Progress/index.tsx` — passed new props to `WeightChart`
 
 ---
 
-## Phase 3: UX Simplicity Review
+## Phase 3: UX Reviewer
+- Changes made: 2
 
-### Change 1 — Workout abort button relabelled "End Early"
+`src/pages/Training/index.tsx:382` — Volume grid showed `5s` for set counts. The single-letter suffix is ambiguous (reads as "5 seconds" on tired eyes). Changed to `5 sets` / `sets↓` so the unit is unambiguous without any extra thought.
 
-**File:** `src/pages/Training/WorkoutSession.tsx` line 422  
-**Commit:** `201415e`
-
-| | Before | After |
-|-|--------|-------|
-| Button label | `Cancel` | `End Early` |
-
-`Cancel` implies navigation cancellation ("go back without saving"). The button actually discards the entire in-progress workout. `End Early` matches the destructive intent and sets correct expectations before the confirmation dialog.
-
-### Change 2 — Session card exercise preview ellipsis logic
-
-**File:** `src/pages/Training/index.tsx` line 485  
-**Commit:** `201415e`
-
-| | Before | After |
-|-|--------|-------|
-| Condition | `i === 2 ? '...' : ''` | `i === 2 && session.exercises.length > 3 ? '...' : ''` |
-
-Previously, a session with exactly 3 exercises showed `Exercise A, Exercise B, Exercise C...` — implying more exercises existed when none did. The fix gates the ellipsis on `session.exercises.length > 3` so it only appears when exercises are genuinely truncated.
-
----
-
-## Summary
-
-| Category | Count |
-|----------|-------|
-| TypeScript errors | 0 (clean) |
-| Tests passing | 84 / 84 |
-| Bugs fixed (Phase 1) | 1 |
-| Feature added (Phase 2) | 1 (kcal burn estimate on dashboard volume card) |
-| UX improvements (Phase 3) | 2 (button label, ellipsis logic) |
-| Commits this session | 3 |
+`src/pages/Training/index.tsx:466` — The "Start Workout" button on today's session card used `text-xs px-3 py-1` — the same small size as every other session's button. Starting today's workout is the app's primary daily action; its button now uses `text-sm px-4 py-2` when `isToday`, making it noticeably larger and easier to tap after a hard training session.
