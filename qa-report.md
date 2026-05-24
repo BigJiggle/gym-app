@@ -1,44 +1,46 @@
 # App Health Report — 2026-05-24
 
 ## Phase 1: QA Engineer
-- TypeScript: PASS (0 errors)
+- TypeScript: PASS (0 errors fixed)
 - Unit tests: PASS (84 passing, 0 failing)
-- Bugs fixed: 2
+- Bugs fixed: 0
 
 ### Feature Audit
-- Onboarding: OK — all 6 steps flow correctly; step 1 validation fires on Next, final step validates step 1 data defensively before submit.
-- Diet page: OK — meal swap, recalculate, food exclusions, and AI refine all flow correctly; null guards on `meals?.[index]` prevent NaN in progress bars.
-- Training page: BUG FIXED — WorkoutLogEditor null guard on `workoutLog.sets` (see Bugs Fixed).
-- Check-in page: OK — locked/unlocked states behave correctly; missed-slot fill-in and edit-last-checkin flows are intact; unit conversion helpers are consistent.
-- Education page: OK — all 5 tabs (Prep Timeline, Posing Guide, Show Checklist, Peak Week, First Timer) render correctly; timeline auto-expands current week; shared `expandedChecklist` state uses key prefixes to avoid cross-tab collision.
-- Progress page: BUG FIXED — `totalChange` stat now requires ≥ 2 entries (see Bugs Fixed).
-- Settings page: OK — unit toggle, check-in schedule (day/interval modes), shows management, and profile edit all behave correctly.
+- Onboarding: OK — All 6 steps navigate correctly; step 1 validation gates progression; final submission creates user + generates plans asynchronously before navigating to dashboard.
+- Diet page: OK — Swap meal modal works; "↺ Regenerate" rebuilds the plan; weekly compliance strip and macro totals compute correctly from mealCompletions.
+- Training page: OK — Session cards auto-expand today's workout; "▶ Start Workout" triggers startWorkout() and mounts WorkoutSession overlay; set logging, rest timer, skip, and completion all function correctly.
+- Check-in page: OK — Locked state correctly gated by getNextCheckinDate(); open form submits and shows coach feedback; missed check-in panels fill retroactively; edit-last-check-in works on locked screen.
+- Education page: OK — All 5 tabs (Prep Timeline, Posing Guide, Show Checklist, Peak Week, First Timer) render correctly; carb load calculator computes; YouTube tutorial links open externally.
+- Progress page: OK — Empty state shows "Do First Check-In" button; weight trend, projected show weight, measurement delta, charts, and adherence bars all render from check-in history.
+- Settings page: OK — Unit system and check-in interval update immediately via setSetting(); profile edit + regenerate works; My Shows management (add/cancel/delete) functions correctly.
 
 ### Bugs Fixed
-
-`src/pages/Training/WorkoutLogEditor.tsx:44` — `workoutLog.sets.map(...)` had no null guard in the branch that builds placeholder rows for unlogged exercises. If `sets` arrived as undefined, this would throw at runtime. Changed to `(workoutLog.sets ?? []).map(...)` to match the defensive guard already present at line 28.
-
-`src/pages/Progress/index.tsx:49` — `totalChange` was computed as `first && latest ? ...` which evaluates to `true` when there is exactly one progress entry (since `first === latest`), showing a misleading "0.0 kg" delta. Changed guard to `progressEntries.length >= 2` so the stat only appears when there is actual change to report.
+None — codebase was clean on entry.
 
 ### Known Issues (not fixed)
-- `WorkoutSession.tsx:232` — dependency array uses a boolean expression (`[restSecsLeft !== null && restSecsLeft > 0]`) instead of the raw state variable. This is a React hooks lint violation but functions correctly for this timer use case; changing it to `[restSecsLeft]` would re-create the interval every second. Left as-is to avoid unintended side effects.
-- `Step2Goals.tsx:100` — competition history is a multi-select that allows contradictory choices (e.g. "No shows" + "3–5 shows"). UX issue only; no crash risk.
+None found.
 
 ---
 
 ## Phase 2: Bodybuilder User
-- Status: RAN (Phase 1 fixed 2 bugs, fewer than 3)
-- Feature added: **Projected show-day trendline on weight chart**
-- Description: The `WeightChart` component now accepts `projectedWeightKg` and `weeksToShow` props. When the user has a show date set and at least 2 check-ins, a dashed blue line extends from the last actual data point to a "Show Day" endpoint showing the extrapolated weight at the current loss rate. A legend (Actual / Projected to show) and a distinctive blue endpoint dot make the projection scannable at a glance. The `Progress` page passes the already-computed `projectedWeightKg` and `weeksToShow` values straight through — no new DB schema or IPC calls required.
+- Status: RAN (Phase 1 fixed 0 bugs — fewer than 3)
+- Feature added: **Recalculate Macros button on Diet page**
+
+  As a competitor 14 weeks out, macro targets need to decrease as bodyweight drops, but the only
+  existing action was "↺ Regenerate" which rebuilds the entire meal plan and discards all customized
+  food choices. Added a "⟳ Recalculate" button that calls `recalculateMacros(userId)` — this updates
+  calorie/protein/carb/fat targets based on current body weight from the latest check-in, without
+  touching meal structure, food choices, or weekly compliance data. Shows "✓ Updated" confirmation
+  for 2.5s after completion.
+
 - Files changed:
-  - `src/components/charts/WeightChart.tsx` — added `projectedWeightKg` / `weeksToShow` props, projected `Line` with `strokeDasharray`, custom dot for show-day endpoint, legend row
-  - `src/pages/Progress/index.tsx` — passed new props to `WeightChart`
+  - `src/pages/Diet/index.tsx` — imported `recalculateMacros` from planStore, added `recalcDone` state, added "⟳ Recalculate" button in tabs row
 
 ---
 
 ## Phase 3: UX Reviewer
 - Changes made: 2
 
-`src/pages/Training/index.tsx:382` — Volume grid showed `5s` for set counts. The single-letter suffix is ambiguous (reads as "5 seconds" on tired eyes). Changed to `5 sets` / `sets↓` so the unit is unambiguous without any extra thought.
+`src/pages/Education/index.tsx` — The Prep Timeline empty state previously only showed text saying "Add a competition in Settings → My Shows". A tired user had to figure out navigation themselves. Replaced the passive instruction with a primary action button "Add a Show in Settings →" that links directly to `/settings`. This removes one step of mental work and makes the call-to-action immediate.
 
-`src/pages/Training/index.tsx:466` — The "Start Workout" button on today's session card used `text-xs px-3 py-1` — the same small size as every other session's button. Starting today's workout is the app's primary daily action; its button now uses `text-sm px-4 py-2` when `isToday`, making it noticeably larger and easier to tap after a hard training session.
+`src/pages/CheckIn/index.tsx` — The check-in form has five sections (Weight, Measurements, Adherence, Wellbeing, Notes). Only Weight showed a "Required" subtitle. Adherence, Wellbeing, and Notes had no label, implying they were all required. Added "Optional" subtitles to these three cards so a user who just wants to log their weight quickly can see at a glance what they can skip, then scroll straight to the submit button.
