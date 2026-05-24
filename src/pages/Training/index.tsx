@@ -379,14 +379,14 @@ export default function Training() {
                         <span className={`capitalize ${trained ? 'text-brand-300' : 'text-gray-600'}`}>{group}</span>
                       </div>
                       <div className="flex items-center gap-1">
-                        {trained && <span className="font-bold text-brand-400">{sets}s</span>}
+                        {trained && <span className="font-bold text-brand-400">{sets} sets</span>}
                         {hasLastWeek && trained && delta !== 0 && (
                           <span className={`text-xs font-medium ${delta > 0 ? 'text-green-400' : 'text-red-400'}`}>
                             {delta > 0 ? `+${delta}` : delta}
                           </span>
                         )}
                         {hasLastWeek && !trained && lastSets > 0 && (
-                          <span className="text-xs text-gray-600">{lastSets}s↓</span>
+                          <span className="text-xs text-gray-600">{lastSets} sets↓</span>
                         )}
                       </div>
                     </div>
@@ -463,10 +463,10 @@ export default function Training() {
                     <div className="flex items-center gap-2">
                       <button
                         onClick={(e) => { e.stopPropagation(); handleStartWorkout(session) }}
-                        className={`text-xs px-3 py-1 rounded-lg font-bold transition-colors ${
+                        className={`font-bold transition-colors rounded-lg ${
                           isToday
-                            ? 'bg-brand-600 hover:bg-brand-500 text-white'
-                            : 'border border-gray-700 text-gray-400 hover:border-brand-700 hover:text-brand-400'
+                            ? 'bg-brand-600 hover:bg-brand-500 text-white text-sm px-4 py-2'
+                            : 'text-xs px-3 py-1 border border-gray-700 text-gray-400 hover:border-brand-700 hover:text-brand-400'
                         }`}
                       >
                         ▶ Start Workout
