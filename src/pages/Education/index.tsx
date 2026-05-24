@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import { useUserStore } from '../../store/userStore'
 import { useSettingsStore } from '../../store/settingsStore'
 import { DIVISIONS } from '../../data/posing'
@@ -119,7 +120,12 @@ export default function Education() {
           {!nearestShow ? (
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center space-y-3">
               <p className="text-gray-300 font-semibold">No upcoming shows</p>
-              <p className="text-gray-500 text-sm">Add a competition in Settings → My Shows to unlock your personalised prep timeline.</p>
+              <p className="text-gray-500 text-sm">Add a competition to unlock your personalised week-by-week prep timeline.</p>
+              <Link to="/settings">
+                <button className="mt-1 px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold transition-colors">
+                  Add a Show in Settings →
+                </button>
+              </Link>
             </div>
           ) : (
             <>

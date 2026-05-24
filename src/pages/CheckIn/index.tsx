@@ -825,7 +825,7 @@ export default function CheckIn() {
         </Card>
 
         {/* Adherence */}
-        <Card title="Adherence">
+        <Card title="Adherence" subtitle="Optional">
           <div className="space-y-4">
             <AdherenceSlider label="Training Adherence" value={trainingAdherence} onChange={setTrainingAdherence} />
             <AdherenceSlider label="Diet Adherence"     value={dietAdherence}     onChange={setDietAdherence}     />
@@ -833,7 +833,7 @@ export default function CheckIn() {
         </Card>
 
         {/* Wellbeing */}
-        <Card title="How are you feeling?">
+        <Card title="How are you feeling?" subtitle="Optional">
           <div className="space-y-4">
             <RatingBar label="Energy Level"  value={energyLevel}  onChange={setEnergyLevel}  lowLabel="Exhausted" highLabel="Excellent"   />
             <RatingBar label="Sleep Quality" value={sleepQuality} onChange={setSleepQuality} lowLabel="Very poor"  highLabel="Excellent"   />
@@ -842,7 +842,7 @@ export default function CheckIn() {
         </Card>
 
         {/* Notes */}
-        <Card title="Notes">
+        <Card title="Notes" subtitle="Optional">
           <Textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
