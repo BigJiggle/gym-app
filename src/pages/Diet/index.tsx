@@ -410,12 +410,12 @@ export default function Diet() {
                   </div>
                   <div className="flex flex-wrap gap-1.5 mt-2">
                     {meal.foods.map((food, fi) => (
-                      <span key={fi} className="group flex items-center gap-1 text-xs bg-gray-800 text-gray-400 px-2 py-1 rounded-md">
+                      <span key={fi} className="flex items-center gap-1 text-xs bg-gray-800 text-gray-400 px-2 py-1 rounded-md">
                         {food}
                         <button
                           onClick={() => setExcludePending(food)}
-                          className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition-opacity ml-0.5"
-                          title="Exclude this food"
+                          className="opacity-40 hover:opacity-100 text-gray-500 hover:text-red-400 transition-opacity ml-0.5 flex-shrink-0"
+                          title="Exclude this food from future plans"
                         >
                           &#10005;
                         </button>

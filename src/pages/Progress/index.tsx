@@ -44,6 +44,23 @@ export default function Progress() {
 
   if (!user) return null
 
+  if (checkinHistory.length === 0) {
+    return (
+      <div className="p-6 max-w-5xl mx-auto space-y-6">
+        <h1 className="text-2xl font-bold text-gray-100">Progress Tracking</h1>
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-10 text-center space-y-3">
+          <p className="text-gray-300 font-semibold">No check-ins yet</p>
+          <p className="text-gray-500 text-sm">Complete your first weekly check-in to start tracking weight, measurements, and trends.</p>
+          <Link to="/checkin">
+            <button className="mt-2 px-6 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold transition-colors">
+              Go to Check-In →
+            </button>
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
   const first = progressEntries[0]
   const latest = progressEntries[progressEntries.length - 1]
   const totalChange = progressEntries.length >= 2 ? (latest.weight_kg - first.weight_kg).toFixed(1) : null
