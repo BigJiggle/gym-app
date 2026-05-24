@@ -234,7 +234,13 @@ export default function Progress() {
       {progressEntries.length > 0 && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <h2 className="font-semibold text-gray-100 mb-4">Weight Over Time</h2>
-          <WeightChart entries={progressEntries} startWeight={user.weight_kg} units={settings.units} />
+          <WeightChart
+            entries={progressEntries}
+            startWeight={user.weight_kg}
+            units={settings.units}
+            projectedWeightKg={projectedWeightKg ?? undefined}
+            weeksToShow={weeksToShow}
+          />
         </div>
       )}
 
