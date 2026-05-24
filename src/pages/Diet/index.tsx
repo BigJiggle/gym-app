@@ -191,9 +191,10 @@ export default function Diet() {
     )
   }
 
-  const proteinPct = Math.round((dietPlan.protein_g * 4 / dietPlan.calories_target) * 100)
-  const carbsPct = Math.round((dietPlan.carbs_g * 4 / dietPlan.calories_target) * 100)
-  const fatPct = Math.round((dietPlan.fat_g * 9 / dietPlan.calories_target) * 100)
+  const _macroKcal = dietPlan.protein_g * 4 + dietPlan.carbs_g * 4 + dietPlan.fat_g * 9
+  const proteinPct = _macroKcal > 0 ? Math.round((dietPlan.protein_g * 4 / _macroKcal) * 100) : 0
+  const carbsPct = _macroKcal > 0 ? Math.round((dietPlan.carbs_g * 4 / _macroKcal) * 100) : 0
+  const fatPct = 100 - proteinPct - carbsPct
 
   // Today's intake progress
   const todayCompletions = mealCompletions.filter((c) => c.date === todayStr)
