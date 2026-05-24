@@ -419,6 +419,18 @@ export default function Dashboard() {
           ? Math.round(totalVolumeKg * 2.20462).toLocaleString()
           : Math.round(totalVolumeKg).toLocaleString()
         const totalPlanned = trainingPlan?.sessions?.length ?? 0
+
+        // Estimated kcal burned: MET 5.5 for resistance training × bodyweight × hours
+        // Uses actual session duration from started_at / ended_at when available
+        const currentWeightKg = latestCheckin?.weight_kg ?? user.weight_kg
+        const MET = 5.5
+        const totalKcalBurned = thisWeekLogs.reduce((acc, log) => {
+          if (!log.started_at || !log.ended_at) return acc
+          const durationHours = (new Date(log.ended_at).getTime() - new Date(log.started_at).getTime()) / (1000 * 60 * 60)
+          return acc + Math.round(durationHours * MET * currentWeightKg)
+        }, 0)
+        const sessionsWithDuration = thisWeekLogs.filter(l => l.started_at && l.ended_at).length
+
         return (
           <Link to="/training" className="block">
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 hover:border-gray-700 transition-colors">
@@ -442,6 +454,19 @@ export default function Dashboard() {
                   <p className="text-xs text-gray-500 mt-0.5">{wUnit} moved</p>
                 </div>
               </div>
+              {sessionsWithDuration > 0 && (
+                <div className="mt-3 pt-3 border-t border-gray-800 flex items-center justify-between">
+                  <span className="text-xs text-gray-500">Est. training kcal burned</span>
+                  <span className="text-sm font-bold text-orange-400">
+                    ~{totalKcalBurned.toLocaleString()} kcal
+                    {dietPlan && (
+                      <span className="text-xs font-normal text-gray-500 ml-1.5">
+                        · net ~{Math.round(dietPlan.calories_target - totalKcalBurned / thisWeekLogs.length).toLocaleString()} kcal/day
+                      </span>
+                    )}
+                  </span>
+                </div>
+              )}
             </div>
           </Link>
         )
