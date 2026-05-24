@@ -15,7 +15,7 @@ type DietTab = 'plan' | 'weekly' | 'grocery'
 
 export default function Diet() {
   const { user, updateUser } = useUserStore()
-  const { dietPlan, loadDietPlan, generateDietPlan, loading, mealCompletions, loadMealCompletions, logMealCompletion, unlogMealCompletion } = usePlanStore()
+  const { dietPlan, loadDietPlan, generateDietPlan, recalculateMacros, loading, mealCompletions, loadMealCompletions, logMealCompletion, unlogMealCompletion } = usePlanStore()
   const { settings } = useSettingsStore()
 
   const [tab, setTab] = useState<DietTab>('plan')
@@ -28,6 +28,7 @@ export default function Diet() {
   const [aiRefineError, setAiRefineError] = useState<string | null>(null)
   const [aiRefineSuccess, setAiRefineSuccess] = useState<string | null>(null)
   const [aiRefineInfo, setAiRefineInfo] = useState<string | null>(null)
+  const [recalcDone, setRecalcDone] = useState(false)
 
   // Food preferences panel state
   const [prefsOpen, setPrefsOpen] = useState(false)
@@ -272,6 +273,18 @@ export default function Diet() {
             </button>
           ))}
         </div>
+        <button
+          onClick={async () => {
+            await recalculateMacros(user.id)
+            setRecalcDone(true)
+            setTimeout(() => setRecalcDone(false), 2500)
+          }}
+          disabled={loading}
+          title="Recalculate macro targets from current body weight — keeps your meal structure"
+          className="text-xs text-gray-500 hover:text-green-400 border border-gray-700 hover:border-green-700 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-40"
+        >
+          {recalcDone ? '✓ Updated' : '⟳ Recalculate'}
+        </button>
         <button
           onClick={() => generateDietPlan(user.id)}
           disabled={loading}
