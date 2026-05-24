@@ -1,4 +1,4 @@
-# PrepCoach QA & UX Review — 2026-05-23
+# PrepCoach QA & UX Review — 2026-05-24
 
 ## Phase 1: QA Engineering
 
@@ -6,36 +6,8 @@
 
 | Check | Result |
 |-------|--------|
-| `tsc --project tsconfig.web.json --noEmit` (renderer) | **0 errors** (was 8 before fixes) |
-| `npx vitest run` | **84/84 tests passed** |
-| `tsc --project tsconfig.node.json --noEmit` (main process) | 164 lines of pre-existing errors — all SQLite JSValue binding issues in IPC handlers; unchanged by this review |
-
-### Bugs Fixed (5)
-
-#### 1. `ExerciseLogUpdate` missing `skipped` field — `src/types/index.ts`
-**Severity:** Medium (runtime type mismatch, TypeScript error TS2353)
-The `toggleRow` function in `WorkoutLogEditor.tsx` called `window.api.updateWorkoutSet(id, { skipped: newSkipped })`. The `ExerciseLogUpdate` interface lacked `skipped?`. The IPC handler already accepted it; only the TypeScript type was missing.
-**Fix:** Added `skipped?: boolean` to `ExerciseLogUpdate`.
-
-#### 2. `null` assigned to `number | undefined` in `autoSave` — `src/pages/Training/WorkoutLogEditor.tsx`
-**Severity:** Medium (TypeScript error TS2322, incorrect values sent to IPC)
-`autoSave` passed `null` for missing weight/reps/rir, but `ExerciseLogUpdate` uses `undefined` for optional fields. Passing `null` would serialise and potentially overwrite stored values.
-**Fix:** Changed `null` → `undefined` for `weight_kg`, `reps_actual`, and `rir_actual`.
-
-#### 3. Duplicate `const fatPct` declaration — `src/pages/Diet/index.tsx`
-**Severity:** High (TypeScript error TS2451, compilation failure)
-`fatPct` was declared twice in the same function scope: once for macro distribution percentages and once for today's fat intake progress bar.
-**Fix:** Renamed the intake-progress variable to `fatIntakePct` and updated its 3 usages.
-
-#### 4. `user` possibly null inside nested `trendStatus` — `src/pages/Progress/index.tsx`
-**Severity:** Low (TypeScript error TS18047)
-The outer `if (!user) return null` guard cannot narrow `user` inside the nested `trendStatus()` function under strict mode.
-**Fix:** Added `user!.goal` non-null assertions for the two inner references.
-
-#### 5. Cross-project TypeScript import (TS6307) — `src/pages/CheckIn/index.tsx`
-**Severity:** High (compilation failure)
-`CheckIn/index.tsx` imported `computeMissedSlots` from `../../../electron/services/checkinSchedule`, which is outside the `src/**/*` include boundary of `tsconfig.web.json`. This causes TS6307 ("File is not under 'rootDir'") and breaks incremental builds.
-**Fix:** Created `src/utils/checkinSchedule.ts` containing the pure `computeMissedSlots` function and `MissedSlot` interface within the web project boundary. Updated the import in `CheckIn/index.tsx`.
+| `npx tsc --noEmit` | **0 errors** |
+| `npm test` | **84/84 tests passed** |
 
 ### User Flow Traces
 
@@ -43,39 +15,77 @@ Seven flows were walked end-to-end against the source code:
 
 | Flow | Status | Notes |
 |------|--------|-------|
-| 1. Onboarding (6-step wizard → plan generation) | Pass | All steps guarded; createUser → generateTrainingPlan → generateDietPlan sequence correct |
-| 2. Diet tab — view plan, mark meals eaten, swap meal | Pass | toggleMealEaten / logMealCompletion / swapMeal wired correctly |
-| 3. Training — start session, log sets, complete workout | Pass | startWorkout → logSet → completeWorkout; unit conversion in WorkoutSession correct |
-| 4. Workout log editor — edit past sets, toggle skipped, delete | Pass (after fixes 1+2) | updateWorkoutSet type now accepts skipped; undefined passed for missing fields |
-| 5. Check-in submission | Pass | Unit conversion to kg/cm before submit; schedule gating via getNextCheckinDate |
-| 6. Progress page — weight trend, measurements chart | Pass (after fix 4) | trendStatus no longer emits TS error; chart data pipeline intact |
-| 7. Settings — unit toggle, check-in schedule, API key | Pass | setSetting persists each field; unit label reactivity via useSettingsStore |
+| 1. Onboarding (6-step wizard → plan generation) | Pass | createUser → generateTrainingPlan → generateDietPlan sequence correct |
+| 2. Diet tab — view plan, mark meals eaten, swap meal | **Bug found → fixed** | Swap modal showed blank list when all alternatives filtered by food exclusions |
+| 3. Training — start session, log sets, complete workout | Pass | startWorkout → saveSetsBatch → completeWorkout pipeline intact |
+| 4. Check-in form submit | Pass | Unit conversion to kg/cm before submit; schedule gating via getNextCheckinDate correct |
+| 5. Dashboard load (user, plans, checkin, workout history) | Pass | All async loads guarded; volume stats correctly scoped to current ISO week |
+| 6. Progress page — weight trend, measurements chart | Pass | Chart data ordered oldest-first (ORDER BY week_number ASC) matches left→right axis |
+| 7. Settings — unit toggle, check-in schedule, API key | Pass | setSetting persists each field; unit label reactivity via useSettingsStore correct |
+
+### Bugs Fixed (1)
+
+#### 1. Diet / Swap Meal modal — empty alternatives state
+
+**File:** `src/pages/Diet/index.tsx`  
+**Severity:** Medium (confusing blank UI, no guidance)
+
+When all swap alternatives were filtered out by the user's food exclusions, the Swap Meal modal rendered a title, blank space, and Cancel button with no explanation. Users had no indication why the list was empty or what to do.
+
+**Fix:** Wrapped the alternatives `.map()` in an IIFE that checks `alternatives.length === 0` and renders an explanatory message: *"No alternatives available — remove some food exclusions in Food Preferences to see options."*
+
+**Commit:** `af2a87c`
+
+### False Positives Investigated and Ruled Out
+
+- **Claude API key `??` check** — handles both `null` and empty string correctly; no bug.
+- **`progressEntries` ordering** — `ORDER BY week_number ASC` matches chart's left→right chronology; no bug.
+- **`setPrimaryShow` apparently unused in UI** — backend `syncPrimaryToNearest()` auto-assigns primary; redundant but harmless.
+- **`planStore.logSet` sets access** — store method is never called from any component (WorkoutSession uses `window.api.saveSetsBatch` directly); non-issue.
 
 ---
 
 ## Phase 2: Bodybuilder User Feature
 
-**SKIPPED** — Phase 1 fixed 5 bugs (threshold is ≥ 3), so Phase 2 is skipped per the automation rules.
+**Triggered** (1 bug fixed < 3 threshold).
+
+### Estimated weekly training kcal burned — Dashboard volume card
+
+**File:** `src/pages/Dashboard/index.tsx`  
+**Commit:** `741835c`
+
+A new row appears below the existing "This Week's Volume" grid (sessions / sets / tonnage) whenever at least one completed workout has duration data. It shows:
+
+- **`~N kcal` burned** — calculated using the MET formula: MET 5.5 × bodyweight_kg × hours per session, summed across the week. Bodyweight uses the latest check-in weight when available, falling back to the profile weight.
+- **`· net ~N kcal/day`** — diet calorie target minus average daily training burn, giving prep athletes a direct read on true net intake without leaving the dashboard.
+
+**Constraints respected:** Frontend-only calculation; uses only existing `WorkoutLog` fields (`started_at`, `ended_at`) and `DietPlan.calories_target`. No new IPC calls, no DB schema changes, no Electron main process changes.
 
 ---
 
-## Phase 3: UX Simplifications
+## Phase 3: UX Simplicity Review
 
-### Change 1 — Diet page: promote Meals list above analytics
+### Change 1 — Workout abort button relabelled "End Early"
 
-**Before:** Scroll order on the Plan tab: Macro summary → Today's intake → Weekly compliance strip → Weekly macro totals → Macro distribution bar → **Meals** → Disclaimer.
+**File:** `src/pages/Training/WorkoutSession.tsx` line 422  
+**Commit:** `201415e`
 
-**After:** Macro summary → Today's intake → **Meals** → **Disclaimer** → Weekly compliance strip → Weekly macro totals → Macro distribution bar.
+| | Before | After |
+|-|--------|-------|
+| Button label | `Cancel` | `End Early` |
 
-**Rationale:** The primary action on this screen is marking meals eaten and swapping them. Previously the user scrolled past four analytics sections to reach the meal cards. Moving meals up puts the actionable content immediately below the daily intake summary.
+`Cancel` implies navigation cancellation ("go back without saving"). The button actually discards the entire in-progress workout. `End Early` matches the destructive intent and sets correct expectations before the confirmation dialog.
 
-### Change 2 — Check-in page: pre-fill measurement fields from last check-in
+### Change 2 — Session card exercise preview ellipsis logic
 
-**Before:** `waistDisplay`, `chestDisplay`, `hipDisplay`, `armDisplay`, `thighDisplay` all initialised to `''`.
+**File:** `src/pages/Training/index.tsx` line 485  
+**Commit:** `201415e`
 
-**After:** Each field is pre-filled from `latestCheckin`'s corresponding value with imperial/metric conversion, matching the existing `weightDisplay` pre-fill pattern.
+| | Before | After |
+|-|--------|-------|
+| Condition | `i === 2 ? '...' : ''` | `i === 2 && session.exercises.length > 3 ? '...' : ''` |
 
-**Rationale:** Body measurements change slowly. Pre-filling last known values means users only update fields that changed, reducing form friction on every check-in.
+Previously, a session with exactly 3 exercises showed `Exercise A, Exercise B, Exercise C...` — implying more exercises existed when none did. The fix gates the ellipsis on `session.exercises.length > 3` so it only appears when exercises are genuinely truncated.
 
 ---
 
@@ -83,8 +93,9 @@ Seven flows were walked end-to-end against the source code:
 
 | Category | Count |
 |----------|-------|
-| TypeScript errors fixed (web project) | 5 |
-| Tests passing after changes | 84 / 84 |
-| UX improvements shipped | 2 |
-| New files created | 1 (`src/utils/checkinSchedule.ts`) |
-| Files modified | 5 |
+| TypeScript errors | 0 (clean) |
+| Tests passing | 84 / 84 |
+| Bugs fixed (Phase 1) | 1 |
+| Feature added (Phase 2) | 1 (kcal burn estimate on dashboard volume card) |
+| UX improvements (Phase 3) | 2 (button label, ellipsis logic) |
+| Commits this session | 3 |
