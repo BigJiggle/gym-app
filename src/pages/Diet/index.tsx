@@ -909,39 +909,49 @@ export default function Diet() {
             <h3 className="font-bold text-gray-100 mb-1">Swap {swapTarget.meal.name}</h3>
             <p className="text-xs text-gray-500 mb-4">Tap an option to permanently replace this meal (~{swapTarget.meal.calories} kcal, {swapTarget.meal.protein_g}g protein):</p>
             <div className="space-y-2 mb-4">
-              {getSwapAlternatives(swapTarget.meal, user.dietary_preference, user.food_exclusions ?? []).map((alt, i) => (
-                <div
-                  key={i}
-                  onClick={async () => {
-                    if (swapping) return
-                    setSwapping(true)
-                    setSwapError(null)
-                    try {
-                      await window.api.swapMeal(user.id, swapTarget.mealIndex, alt)
-                      await loadDietPlan(user.id)
-                      setSwapTarget(null)
-                    } catch (e: unknown) {
-                      setSwapError(e instanceof Error ? e.message : 'Swap failed — please try again.')
-                    } finally {
-                      setSwapping(false)
-                    }
-                  }}
-                  className={`bg-gray-800 border border-gray-700 rounded-xl p-3 transition-colors ${swapping ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-gray-600'}`}
-                >
-                  <div className="mb-1">
-                    <span className="text-xs text-gray-300 font-medium">
-                      {alt[0]?.replace(/\s*\(.*?\)/g, '').replace(/\s*x\d+/g, '').trim() ?? `Option ${i + 1}`}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {alt.map((food, fi) => (
-                      <span key={fi} className="text-xs bg-gray-700 text-gray-400 px-2 py-0.5 rounded-md">
-                        {food}
+              {(() => {
+                const alternatives = getSwapAlternatives(swapTarget.meal, user.dietary_preference, user.food_exclusions ?? [])
+                if (alternatives.length === 0) {
+                  return (
+                    <p className="text-xs text-gray-500 text-center py-4">
+                      No alternatives available — remove some food exclusions in Food Preferences to see options.
+                    </p>
+                  )
+                }
+                return alternatives.map((alt, i) => (
+                  <div
+                    key={i}
+                    onClick={async () => {
+                      if (swapping) return
+                      setSwapping(true)
+                      setSwapError(null)
+                      try {
+                        await window.api.swapMeal(user.id, swapTarget.mealIndex, alt)
+                        await loadDietPlan(user.id)
+                        setSwapTarget(null)
+                      } catch (e: unknown) {
+                        setSwapError(e instanceof Error ? e.message : 'Swap failed — please try again.')
+                      } finally {
+                        setSwapping(false)
+                      }
+                    }}
+                    className={`bg-gray-800 border border-gray-700 rounded-xl p-3 transition-colors ${swapping ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-gray-600'}`}
+                  >
+                    <div className="mb-1">
+                      <span className="text-xs text-gray-300 font-medium">
+                        {alt[0]?.replace(/\s*\(.*?\)/g, '').replace(/\s*x\d+/g, '').trim() ?? `Option ${i + 1}`}
                       </span>
-                    ))}
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {alt.map((food, fi) => (
+                        <span key={fi} className="text-xs bg-gray-700 text-gray-400 px-2 py-0.5 rounded-md">
+                          {food}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))
+              })()}
             </div>
             {swapError && (
               <p className="text-xs text-red-400 mb-3">{swapError}</p>
