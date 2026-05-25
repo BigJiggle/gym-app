@@ -1,48 +1,43 @@
 # App Health Report — 2026-05-25
 
 ## Phase 1: QA Engineer
-
 - TypeScript: PASS (0 errors)
 - Unit tests: PASS (84 passing, 0 failing)
-- Bugs fixed: **0**
+- Bugs fixed: 0
 
-### User-flow audit (7 flows traced)
+### Feature Audit
+- Onboarding: OK — all 6 steps render correctly; step 1 validation enforced; sensible defaults for all other steps
+- Diet page: OK — swap meal flow calls window.api.swapMeal with correct args and reloads plan; weekly macro totals computed from mealCompletions
+- Training page: OK — workout start/set-log/complete flow uses saveSetsBatch + completeWorkout with proper null guards; summary screen shown after completion
+- Check-in page: OK — locked state shows countdown and next unlock date; open form validates weight input; missed check-in fill-in available on both states
+- Education page: OK — all 5 tabs (Posing Guide, Prep Timeline, Show Checklist, Peak Week, First Timer) render without errors; auto-switches to Prep Timeline when user has upcoming shows
+- Progress page: OK — empty state links to Check-In; weight chart, measurement deltas, and adherence history all guarded against empty data
+- Settings page: OK — units and check-in schedule changes persist via settingsStore; profile edit panel re-syncs from store on open
 
-- Onboarding: OK — 6-step wizard writes user/trainingPlan/dietPlan to DB; all validation paths correct.
-- Dashboard: OK — Weekly muscle coverage widget, next check-in card, macro ring; all data paths correct.
-- Diet: OK — Meal swap, food exclusions, grocery list generation; no issues found.
-- Training session: OK — Start → log sets → complete; `saveSetsBatch` + `completeWorkout` IPC calls correct.
-- Check-in: OK — Countdown gate, form submission, schedule advance; all correct.
-- Progress: OK — Weight chart from `progressEntries`, check-in timeline; no issues found.
-- Settings: OK — Theme, zoom, check-in schedule, AI key, shows management; no issues found.
+### Bugs Fixed
+None found.
 
-Phase 1 fixed **< 3 bugs** so Phase 2 ran.
+### Known Issues (not fixed)
+None identified.
 
 ---
 
 ## Phase 2: Bodybuilder User
-
-- Status: RAN (Phase 1 fixed 0 bugs, below the 3-bug skip threshold)
-- Feature added: **Auto-fill training adherence from logged workouts on check-in form**
-- File changed: `src/pages/CheckIn/index.tsx`
-- Description: When a user opens the check-in form the Training Adherence slider is pre-populated from actual workout session logs since the last check-in. The calculation compares completed sessions to the number expected for the elapsed period (proportional to training plan frequency), caps at 100%, and shows a note ("Auto-filled: X of ~Y planned sessions logged — adjust if needed") so athletes can see the source value and override it. No new DB schema — uses existing `workoutHistory` and `trainingPlan` already in the Zustand store.
+- Status: RAN (Phase 1 fixed 0 bugs, under threshold of 3)
+- Feature added: **6-Week Volume Load Trend Chart** — a bar chart in Training → History → Stats showing weekly training tonnage (weight × reps) for the past 6 weeks. Lets a prep athlete instantly see if progressive overload has been consistent or if volume is tapering/stalling. Purple bar = current week. Uses existing workoutHistory data via recharts (already in the bundle).
+- Files changed:
+  - `src/pages/Training/WorkoutStats.tsx` — added sixWeekTonnageData useMemo + BarChart section between "Weekly Tonnage" and "4-Week Muscle Volume" blocks
 
 ---
 
 ## Phase 3: UX Reviewer
-
 - Changes made: 2
 
-### Changes
+`src/pages/Dashboard/index.tsx` — Moved "▶ Start Today's Workout" button to appear immediately after the session name, before the exercise list. A tired user opening the app on a training day no longer needs to scroll past up to 5 exercises to reach the primary CTA.
 
-- `src/pages/Training/WorkoutSession.tsx` — The button that discards an in-progress workout was labelled "End Early", implying a partial save. The actual handler calls `window.api.cancelWorkout()` — no data is written. Renamed to "Cancel" so the label matches the real consequence and prevents accidental data loss.
-
-- `src/pages/Education/index.tsx` — "Posing Guide" is the default active tab for users without an upcoming show but was the second tab visually, with "Prep Timeline" appearing first. First-time visitors saw the leading tab display a blank empty state (Prep Timeline requires a show entry), making the page look broken. Moved "Posing Guide" to position 1 so the default active tab is the leftmost tab.
+`src/pages/Training/index.tsx` — Moved "▶ Start Workout" button to the top of the expanded session card (before the exercise list), same principle. Exercise details remain visible below the button as reference, not as a barrier to starting.
 
 ---
 
 ## Push
-
-- Branch: `master`
-- Remote: `origin` (github.com/BigJiggle/gym-app)
-- Status: PUSHED — commits aadd121 (UX) and d3d07ee (FEATURE) on top of previous run baseline.
+- Status: SUCCESS
