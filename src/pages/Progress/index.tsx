@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useUserStore } from '../../store/userStore'
 import { usePlanStore } from '../../store/planStore'
@@ -8,6 +8,7 @@ import MeasurementsChart from '../../components/charts/MeasurementsChart'
 import { StatCard } from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import { displayWeight, displayLength, weightLabel, lengthLabel } from '../../utils/units'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import type { CheckIn } from '../../types'
 
 function computeWeeklyRate(checkins: CheckIn[]): number | null {
@@ -34,13 +35,47 @@ function weeksUntil(dateStr: string): number | null {
 export default function Progress() {
   const { user } = useUserStore()
   const { settings } = useSettingsStore()
-  const { progressEntries, checkinHistory, loadProgressEntries, loadCheckinHistory } = usePlanStore()
+  const { progressEntries, checkinHistory, loadProgressEntries, loadCheckinHistory, dietPlan } = usePlanStore()
+
+  // 8-week diet consistency data
+  interface WeekConsistency { week: string; pct: number; meals: number; target: number }
+  const [dietConsistency, setDietConsistency] = useState<WeekConsistency[]>([])
 
   useEffect(() => {
     if (!user?.id) return
     loadProgressEntries(user.id)
     loadCheckinHistory(user.id)
   }, [user?.id])
+
+  useEffect(() => {
+    if (!user?.id || !dietPlan?.meals?.length) return
+    const mealCount = dietPlan.meals.length
+    const today = new Date()
+    const jsDay = today.getDay()
+    const daysFromMon = jsDay === 0 ? 6 : jsDay - 1
+    const thisMonday = new Date(today.getTime() - daysFromMon * 86400000)
+    thisMonday.setHours(0, 0, 0, 0)
+    const startMonday = new Date(thisMonday.getTime() - 7 * 7 * 86400000)
+    const startDate = startMonday.toLocaleDateString('en-CA')
+    const endDate = today.toLocaleDateString('en-CA')
+    window.api.getMealCompletions(user.id, startDate, endDate).then((completions) => {
+      const weeks: WeekConsistency[] = []
+      for (let off = -7; off <= 0; off++) {
+        const weekMon = new Date(thisMonday.getTime() + off * 7 * 86400000)
+        const weekSun = new Date(weekMon.getTime() + 6 * 86400000)
+        const weekMonStr = weekMon.toLocaleDateString('en-CA')
+        const weekSunStr = weekSun.toLocaleDateString('en-CA')
+        const actualEnd = off === 0 ? endDate : weekSunStr
+        const daysElapsed = off === 0 ? daysFromMon + 1 : 7
+        const target = mealCount * daysElapsed
+        const logged = completions.filter(c => c.date >= weekMonStr && c.date <= actualEnd).length
+        const pct = target > 0 ? Math.min(100, Math.round((logged / target) * 100)) : 0
+        const label = `${weekMon.getMonth() + 1}/${weekMon.getDate()}`
+        weeks.push({ week: label, pct, meals: logged, target })
+      }
+      setDietConsistency(weeks)
+    }).catch(() => {})
+  }, [user?.id, dietPlan?.id])
 
   if (!user) return null
 
@@ -258,6 +293,51 @@ export default function Progress() {
             projectedWeightKg={projectedWeightKg ?? undefined}
             weeksToShow={weeksToShow}
           />
+        </div>
+      )}
+
+      {/* 8-week diet consistency chart — shown when there is any logged meal data */}
+      {dietConsistency.some(d => d.meals > 0) && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-semibold text-gray-100">8-Week Diet Consistency</h2>
+            {(() => {
+              const streak = [...dietConsistency].reverse().findIndex(d => d.pct < 80)
+              const streakCount = streak === -1 ? dietConsistency.length : streak
+              return streakCount >= 2 ? (
+                <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-green-900/30 text-green-400 border border-green-800/40">
+                  {streakCount}-wk streak
+                </span>
+              ) : null
+            })()}
+          </div>
+          <ResponsiveContainer width="100%" height={120}>
+            <BarChart data={dietConsistency} margin={{ top: 0, right: 0, left: -28, bottom: 0 }}>
+              <XAxis dataKey="week" tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} />
+              <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${v}%`} />
+              <Tooltip
+                formatter={(val: number, _: string, entry: { payload: WeekConsistency }) =>
+                  [`${val}% (${entry.payload.meals}/${entry.payload.target} meals)`, 'Diet adherence']
+                }
+                contentStyle={{ background: '#111827', border: '1px solid #1f2937', borderRadius: 8, fontSize: 11 }}
+                labelStyle={{ color: '#9ca3af' }}
+                cursor={{ fill: '#1f2937' }}
+              />
+              <Bar dataKey="pct" radius={[3, 3, 0, 0]} maxBarSize={36}>
+                {dietConsistency.map((entry, i) => (
+                  <Cell
+                    key={i}
+                    fill={entry.pct >= 80 ? '#22c55e' : entry.pct >= 50 ? '#7c3aed' : entry.pct > 0 ? '#ef4444' : '#374151'}
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <div className="flex items-center gap-3 mt-2 text-xs text-gray-600">
+            <span><span className="text-green-400">■</span> ≥80% on track</span>
+            <span><span className="text-brand-400">■</span> 50–79% moderate</span>
+            <span><span className="text-red-400">■</span> &lt;50% missed</span>
+          </div>
         </div>
       )}
 
