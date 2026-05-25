@@ -22,7 +22,7 @@ export default function Education() {
   const [selectedDivisionId, setSelectedDivisionId] = useState<string>(() => {
     if (user?.division) {
       const match = DIVISIONS.find((d) =>
-        d.name.toLowerCase().includes(user.division!.toLowerCase().split(' ')[0])
+        d.name.toLowerCase() === user.division!.toLowerCase()
       )
       if (match) return match.id
     }
