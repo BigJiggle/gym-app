@@ -285,7 +285,7 @@ function MissedSlotPanel({ slot, userId, isImperial, onFilled }: MissedSlotPanel
 
 export default function CheckIn() {
   const { user } = useUserStore()
-  const { submitCheckin, checkinHistory, latestCheckin, loadCheckinHistory, loading } = usePlanStore()
+  const { submitCheckin, checkinHistory, latestCheckin, loadCheckinHistory, loading, workoutHistory, trainingPlan, loadWorkoutHistory } = usePlanStore()
   const { settings } = useSettingsStore()
 
   const isImperial = settings.units === 'imperial'
@@ -335,6 +335,7 @@ export default function CheckIn() {
   const [thighDisplay, setThighDisplay] = useState(prefillCm(latestCheckin?.thigh_cm))
   const [trainingAdherence, setTrainingAdherence] = useState(90)
   const [dietAdherence, setDietAdherence] = useState(90)
+  const [autoFillSessions, setAutoFillSessions] = useState<{ actual: number; expected: number } | null>(null)
   const [energyLevel, setEnergyLevel] = useState(3)
   const [sleepQuality, setSleepQuality] = useState(3)
   const [stressLevel, setStressLevel] = useState(2)
@@ -358,6 +359,7 @@ export default function CheckIn() {
     if (!user) return
     setCheckingInterval(true)
     loadCheckinHistory(user.id)
+    loadWorkoutHistory(user.id)
     window.api.getNextCheckinDate(user.id)
       .then((iso) => {
         setNextAllowed(iso && new Date(iso) > new Date() ? new Date(iso) : null)
@@ -371,6 +373,24 @@ export default function CheckIn() {
     settings.checkin_interval_days,
     settings.checkin_biweekly,
   ])
+
+  // Auto-fill training adherence from actual logged workout sessions since last check-in
+  useEffect(() => {
+    if (!workoutHistory.length || !trainingPlan?.sessions?.length || !latestCheckin) return
+    const periodStart = latestCheckin.check_in_date
+    const today = new Date().toLocaleDateString('en-CA')
+    const completedSessions = workoutHistory.filter(
+      (log) => log.status === 'completed' && log.date > periodStart && log.date <= today
+    ).length
+    const daysSince = Math.max(1, Math.ceil(
+      (Date.now() - new Date(periodStart + 'T12:00:00').getTime()) / (1000 * 60 * 60 * 24)
+    ))
+    const weeksSince = daysSince / 7
+    const expectedSessions = Math.max(1, Math.round(trainingPlan.sessions.length * weeksSince))
+    const adherence = Math.min(100, Math.round((completedSessions / expectedSessions) * 100))
+    setTrainingAdherence(adherence)
+    setAutoFillSessions({ actual: completedSessions, expected: expectedSessions })
+  }, [workoutHistory.length, trainingPlan?.id, latestCheckin?.id])
 
   if (!user) return null
   if (checkingInterval) {
@@ -827,7 +847,14 @@ export default function CheckIn() {
         {/* Adherence */}
         <Card title="Adherence" subtitle="Optional">
           <div className="space-y-4">
-            <AdherenceSlider label="Training Adherence" value={trainingAdherence} onChange={setTrainingAdherence} />
+            <div>
+              <AdherenceSlider label="Training Adherence" value={trainingAdherence} onChange={setTrainingAdherence} />
+              {autoFillSessions !== null && (
+                <p className="text-xs text-gray-600 mt-1">
+                  Auto-filled: {autoFillSessions.actual} of ~{autoFillSessions.expected} planned sessions logged — adjust if needed
+                </p>
+              )}
+            </div>
             <AdherenceSlider label="Diet Adherence"     value={dietAdherence}     onChange={setDietAdherence}     />
           </div>
         </Card>
