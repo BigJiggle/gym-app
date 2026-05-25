@@ -1,5 +1,13 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { Meal } from '../../types'
+
+function isoWeekKey(): string {
+  const d = new Date()
+  const day = d.getDay() === 0 ? 7 : d.getDay()
+  const monday = new Date(d)
+  monday.setDate(d.getDate() - (day - 1))
+  return monday.toLocaleDateString('en-CA')
+}
 
 interface GroceryItem {
   food: string
@@ -80,11 +88,31 @@ const CATEGORY_CONFIG = [
 
 interface Props {
   meals: Meal[]
+  planId: number
 }
 
-export default function GroceryList({ meals }: Props) {
-  const [items, setItems] = useState<GroceryItem[]>(() => buildGroceryItems(meals))
+export default function GroceryList({ meals, planId }: Props) {
+  const storageKey = `grocery_checked_${planId}_${isoWeekKey()}`
+
+  const [items, setItems] = useState<GroceryItem[]>(() => {
+    const base = buildGroceryItems(meals)
+    try {
+      const saved = localStorage.getItem(storageKey)
+      if (saved) {
+        const checkedSet: string[] = JSON.parse(saved)
+        return base.map(item => ({ ...item, checked: checkedSet.includes(item.baseName) }))
+      }
+    } catch { /* ignore corrupt storage */ }
+    return base
+  })
   const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    const checkedNames = items.filter(i => i.checked).map(i => i.baseName)
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(checkedNames))
+    } catch { /* ignore storage errors */ }
+  }, [items, storageKey])
 
   function toggleItem(baseName: string) {
     setItems((prev) =>

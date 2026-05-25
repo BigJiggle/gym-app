@@ -896,7 +896,7 @@ export default function Diet() {
 
       {/* ─── GROCERY LIST TAB ─── */}
       {tab === 'grocery' && (
-        <GroceryList key={dietPlan.id} meals={dietPlan.meals ?? []} />
+        <GroceryList key={dietPlan.id} planId={dietPlan.id} meals={dietPlan.meals ?? []} />
       )}
 
       {/* Exclude confirmation modal */}
