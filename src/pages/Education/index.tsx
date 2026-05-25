@@ -43,8 +43,8 @@ export default function Education() {
   }
 
   const TABS: { id: Tab; label: string }[] = [
-    { id: 'timeline', label: 'Prep Timeline' },
     { id: 'posing', label: 'Posing Guide' },
+    { id: 'timeline', label: 'Prep Timeline' },
     { id: 'prep', label: 'Show Checklist' },
     { id: 'peakweek', label: 'Peak Week' },
     { id: 'firsttimer', label: 'First Timer' },
