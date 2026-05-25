@@ -232,7 +232,12 @@ export default function Dashboard() {
           {todaySession ? (
             <div className="space-y-2">
               <p className="text-sm font-medium text-brand-400">{todaySession.session_name}</p>
-              <div className="space-y-1">
+              <Link to="/training">
+                <Button className="w-full">
+                  ▶ Start Today's Workout
+                </Button>
+              </Link>
+              <div className="space-y-1 pt-1">
                 {todaySession.exercises.slice(0, 5).map((ex, i) => (
                   <div key={i} className="flex justify-between text-sm">
                     <span className="text-gray-300">{ex.name}</span>
@@ -243,11 +248,6 @@ export default function Dashboard() {
                   <p className="text-xs text-gray-600">+{todaySession.exercises.length - 5} more exercises</p>
                 )}
               </div>
-              <Link to="/training">
-                <Button size="sm" className="w-full mt-2">
-                  ▶ Start Today's Workout
-                </Button>
-              </Link>
             </div>
           ) : (
             <div className="py-2">

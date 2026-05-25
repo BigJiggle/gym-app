@@ -491,6 +491,15 @@ export default function Training() {
                   {/* Full exercise list when expanded */}
                   {isExpanded && (
                     <div className="mt-3 space-y-1.5 border-t border-gray-800 pt-3">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleStartWorkout(session)
+                        }}
+                        className="w-full py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-sm font-bold transition-colors"
+                      >
+                        ▶ Start Workout
+                      </button>
                       {session.exercises.map((ex, i) => {
                         const pr = exercisePRs.get(ex.name)
                         const prDisplay = pr
@@ -511,15 +520,6 @@ export default function Training() {
                           </div>
                         )
                       })}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleStartWorkout(session)
-                        }}
-                        className="w-full mt-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-sm font-bold transition-colors"
-                      >
-                        ▶ Start Workout
-                      </button>
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
