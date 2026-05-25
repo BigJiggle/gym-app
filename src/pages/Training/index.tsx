@@ -425,6 +425,10 @@ export default function Training() {
             </div>
           )}
 
+          <div className="bg-amber-900/10 border border-amber-800/30 rounded-lg p-3 text-xs text-amber-600">
+            <strong className="text-amber-500">RIR:</strong> Reps In Reserve — stop each set with the indicated reps still in the tank. e.g. RIR 2 = 2 reps left before failure.
+          </div>
+
           {/* Session cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {trainingPlan.sessions?.map((session) => {
@@ -541,9 +545,6 @@ export default function Training() {
             })}
           </div>
 
-          <div className="bg-amber-900/10 border border-amber-800/30 rounded-lg p-3 text-xs text-amber-600">
-            <strong className="text-amber-500">RIR:</strong> Reps In Reserve — stop each set with the indicated reps still in the tank.
-          </div>
         </>
       )}
 
