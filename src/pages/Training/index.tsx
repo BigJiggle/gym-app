@@ -464,12 +464,14 @@ export default function Training() {
                       <button
                         onClick={(e) => { e.stopPropagation(); handleStartWorkout(session) }}
                         className={`font-bold transition-colors rounded-lg ${
-                          isToday
-                            ? 'bg-brand-600 hover:bg-brand-500 text-white text-sm px-4 py-2'
-                            : 'text-xs px-3 py-1 border border-gray-700 text-gray-400 hover:border-brand-700 hover:text-brand-400'
+                          isDoneToday
+                            ? 'text-xs px-3 py-1 border border-gray-700 text-gray-500 hover:border-gray-600 hover:text-gray-400'
+                            : isToday
+                              ? 'bg-brand-600 hover:bg-brand-500 text-white text-sm px-4 py-2'
+                              : 'text-xs px-3 py-1 border border-gray-700 text-gray-400 hover:border-brand-700 hover:text-brand-400'
                         }`}
                       >
-                        ▶ Start Workout
+                        {isDoneToday ? '↺ Redo' : '▶ Start Workout'}
                       </button>
                       <span className="text-xs text-gray-500">{session.exercises.length} ex</span>
                       <span className="text-gray-600 text-xs">{isExpanded ? '▲' : '▼'}</span>

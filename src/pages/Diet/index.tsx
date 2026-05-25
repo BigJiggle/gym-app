@@ -287,7 +287,10 @@ export default function Diet() {
           {recalcDone ? '✓ Updated' : '⟳ Recalculate'}
         </button>
         <button
-          onClick={() => generateDietPlan(user.id)}
+          onClick={() => {
+            if (!window.confirm('Regenerate your meal plan? This replaces all current meals and any swaps you have made.')) return
+            generateDietPlan(user.id)
+          }}
           disabled={loading}
           title="Regenerate meal plan with current settings"
           className="text-xs text-gray-500 hover:text-brand-400 border border-gray-700 hover:border-brand-700 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-40"
