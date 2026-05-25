@@ -275,6 +275,27 @@ export default function WorkoutStats({ history, sessionsPerWeek, units = 'metric
     ? Math.round(((thisWeekTonnageKg - lastWeekTonnageKg) / lastWeekTonnageKg) * 100)
     : null
 
+  // 6-week tonnage trend for the bar chart (oldest → newest)
+  const sixWeekTonnageData = useMemo(() => {
+    return Array.from({ length: 6 }, (_, i) => {
+      const offsetWeeks = 5 - i // 5, 4, 3, 2, 1, 0
+      const mon = getMondayOfWeek(offsetWeeks)
+      const sun = new Date(mon)
+      sun.setDate(mon.getDate() + 6)
+      const from = dateToStr(mon)
+      const to = dateToStr(sun)
+      const tonnageKg = computeTonnageKg(from, to)
+      const label = offsetWeeks === 0 ? 'Now'
+        : offsetWeeks === 1 ? '-1w'
+        : `-${offsetWeeks}w`
+      return {
+        label,
+        tonnage: Math.round(toDisplay(tonnageKg)),
+        isCurrent: offsetWeeks === 0,
+      }
+    })
+  }, [history, units])
+
   if (completedLogs.length === 0) {
     return (
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center space-y-2">
@@ -340,6 +361,40 @@ export default function WorkoutStats({ history, sessionsPerWeek, units = 'metric
             )}
           </div>
           <p className="text-xs text-gray-700 mt-2">Aim for 5–10% increase per week during hypertrophy phases.</p>
+        </div>
+      )}
+
+      {/* 6-week volume load trend chart */}
+      {sixWeekTonnageData.some((d) => d.tonnage > 0) && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">6-Week Volume Trend</p>
+            <span className="text-xs text-gray-600">{weightUnit} moved (wt × reps)</span>
+          </div>
+          <ResponsiveContainer width="100%" height={110}>
+            <BarChart data={sixWeekTonnageData} margin={{ top: 0, right: 0, left: -28, bottom: 0 }}>
+              <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false}
+                tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} />
+              <Tooltip
+                formatter={(val: number) => [val.toLocaleString() + ' ' + weightUnit, 'Volume']}
+                contentStyle={{ background: '#111827', border: '1px solid #1f2937', borderRadius: 8, fontSize: 11 }}
+                labelStyle={{ color: '#9ca3af' }}
+                cursor={{ fill: '#1f2937' }}
+              />
+              <Bar dataKey="tonnage" radius={[3, 3, 0, 0]} maxBarSize={40}>
+                {sixWeekTonnageData.map((entry, i) => (
+                  <Cell
+                    key={i}
+                    fill={entry.isCurrent ? '#7c3aed' : entry.tonnage === 0 ? '#374151' : '#4b5563'}
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <p className="text-xs text-gray-700 mt-1">
+            Purple bar = this week. Consistent upward trend indicates progressive overload.
+          </p>
         </div>
       )}
 
