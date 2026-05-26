@@ -8,7 +8,7 @@ import MeasurementsChart from '../../components/charts/MeasurementsChart'
 import { StatCard } from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import { displayWeight, displayLength, weightLabel, lengthLabel } from '../../utils/units'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LineChart, Line, CartesianGrid, Legend } from 'recharts'
 import type { CheckIn } from '../../types'
 
 function computeWeeklyRate(checkins: CheckIn[]): number | null {
@@ -428,6 +428,71 @@ export default function Progress() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Wellness trends — energy, sleep, stress over time */}
+      {checkinHistory.length >= 2 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="font-semibold text-gray-100">Wellness Trends</h2>
+            <span className="text-xs text-gray-600">1 = low · 5 = high</span>
+          </div>
+          <p className="text-xs text-gray-600 mb-4">Energy and sleep higher is better. Stress lower is better.</p>
+          {(() => {
+            const wellnessData = [...checkinHistory].reverse().map((c) => ({
+              label: `Wk ${c.week_number}`,
+              energy: c.energy_level,
+              sleep: c.sleep_quality,
+              stress: c.stress_level,
+            }))
+            const latest = checkinHistory[0]
+            const avgEnergy = Math.round(checkinHistory.reduce((a, c) => a + c.energy_level, 0) / checkinHistory.length * 10) / 10
+            const avgSleep = Math.round(checkinHistory.reduce((a, c) => a + c.sleep_quality, 0) / checkinHistory.length * 10) / 10
+            const avgStress = Math.round(checkinHistory.reduce((a, c) => a + c.stress_level, 0) / checkinHistory.length * 10) / 10
+            return (
+              <>
+                <div className="grid grid-cols-3 gap-2 mb-4">
+                  <div className="bg-gray-800/60 rounded-xl p-3 text-center">
+                    <p className="text-xs text-gray-500 mb-1">Energy</p>
+                    <p className={`text-lg font-bold ${latest.energy_level >= 4 ? 'text-green-400' : latest.energy_level <= 2 ? 'text-red-400' : 'text-yellow-400'}`}>
+                      {latest.energy_level}/5
+                    </p>
+                    <p className="text-xs text-gray-600 mt-0.5">avg {avgEnergy}</p>
+                  </div>
+                  <div className="bg-gray-800/60 rounded-xl p-3 text-center">
+                    <p className="text-xs text-gray-500 mb-1">Sleep</p>
+                    <p className={`text-lg font-bold ${latest.sleep_quality >= 4 ? 'text-blue-400' : latest.sleep_quality <= 2 ? 'text-red-400' : 'text-yellow-400'}`}>
+                      {latest.sleep_quality}/5
+                    </p>
+                    <p className="text-xs text-gray-600 mt-0.5">avg {avgSleep}</p>
+                  </div>
+                  <div className="bg-gray-800/60 rounded-xl p-3 text-center">
+                    <p className="text-xs text-gray-500 mb-1">Stress</p>
+                    <p className={`text-lg font-bold ${latest.stress_level <= 2 ? 'text-green-400' : latest.stress_level >= 4 ? 'text-red-400' : 'text-yellow-400'}`}>
+                      {latest.stress_level}/5
+                    </p>
+                    <p className="text-xs text-gray-600 mt-0.5">avg {avgStress}</p>
+                  </div>
+                </div>
+                <ResponsiveContainer width="100%" height={200}>
+                  <LineChart data={wellnessData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                    <XAxis dataKey="label" tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={{ stroke: '#374151' }} tickLine={false} />
+                    <YAxis domain={[1, 5]} ticks={[1, 2, 3, 4, 5]} tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={{ stroke: '#374151' }} tickLine={false} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px', fontSize: '12px' }}
+                      labelStyle={{ color: '#9ca3af' }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
+                    <Line type="monotone" dataKey="energy" name="Energy" stroke="#4ade80" strokeWidth={2} dot={{ r: 3, fill: '#4ade80', strokeWidth: 0 }} activeDot={{ r: 5 }} />
+                    <Line type="monotone" dataKey="sleep" name="Sleep" stroke="#60a5fa" strokeWidth={2} dot={{ r: 3, fill: '#60a5fa', strokeWidth: 0 }} activeDot={{ r: 5 }} />
+                    <Line type="monotone" dataKey="stress" name="Stress" stroke="#f87171" strokeWidth={2} dot={{ r: 3, fill: '#f87171', strokeWidth: 0 }} activeDot={{ r: 5 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </>
+            )
+          })()}
         </div>
       )}
 
