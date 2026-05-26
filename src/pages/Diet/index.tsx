@@ -924,7 +924,7 @@ export default function Diet() {
         <div className="fixed inset-0 bg-black/60 z-50 flex items-end justify-center">
           <div className="bg-gray-900 border border-gray-800 rounded-t-2xl p-6 w-full max-w-lg">
             <h3 className="font-bold text-gray-100 mb-1">Swap {swapTarget.meal.name}</h3>
-            <p className="text-xs text-gray-500 mb-4">Tap an option to permanently replace this meal (~{swapTarget.meal.calories} kcal, {swapTarget.meal.protein_g}g protein):</p>
+            <p className="text-xs text-gray-500 mb-4">Choose a replacement meal (~{swapTarget.meal.calories} kcal, {swapTarget.meal.protein_g}g protein). You can swap again anytime.</p>
             <div className="space-y-2 mb-4">
               {(() => {
                 const alternatives = getSwapAlternatives(swapTarget.meal, user.dietary_preference, user.food_exclusions ?? [])

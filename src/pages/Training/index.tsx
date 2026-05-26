@@ -429,9 +429,13 @@ export default function Training() {
             <strong className="text-amber-500">RIR:</strong> Reps In Reserve — stop each set with the indicated reps still in the tank. e.g. RIR 2 = 2 reps left before failure.
           </div>
 
-          {/* Session cards */}
+          {/* Session cards — today's session first, then remaining in day order */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {trainingPlan.sessions?.map((session) => {
+            {[...(trainingPlan.sessions ?? [])].sort((a, b) => {
+              if (a.day_of_week === todayDow) return -1
+              if (b.day_of_week === todayDow) return 1
+              return a.day_of_week - b.day_of_week
+            }).map((session) => {
               const isToday = session.day_of_week === todayDow
               const isExpanded = expandedSession === session.day_of_week
               const isDoneToday = workoutHistory.some(
