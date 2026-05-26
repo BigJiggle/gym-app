@@ -284,7 +284,7 @@ export default function Diet() {
           title="Recalculate macro targets from current body weight — keeps your meal structure"
           className="text-xs text-gray-500 hover:text-green-400 border border-gray-700 hover:border-green-700 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-40"
         >
-          {recalcDone ? '✓ Updated' : '⟳ Recalculate'}
+          {recalcDone ? '✓ Updated' : '⟳ Update Macros'}
         </button>
         <button
           onClick={() => {

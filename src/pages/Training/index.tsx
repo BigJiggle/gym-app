@@ -609,14 +609,34 @@ export default function Training() {
                     (s) => s.id === log.session_id
                   ) as any | undefined
 
-                  const loggedExercises = [...new Set(
-                    log.sets?.filter(s => !s.skipped).map(s => s.exercise_name) ?? []
-                  )]
+                  // Top set (max weight) per exercise for this log
+                  const topSets = new Map<string, { weightKg: number; reps: number }>()
+                  for (const s of log.sets ?? []) {
+                    if (s.skipped || !s.weight_kg || !s.reps_actual) continue
+                    const ex = topSets.get(s.exercise_name)
+                    if (!ex || s.weight_kg > ex.weightKg) {
+                      topSets.set(s.exercise_name, { weightKg: s.weight_kg, reps: s.reps_actual })
+                    }
+                  }
+                  // Previous completed log for the same session (for progression arrows)
+                  const prevLog = workoutHistory.find(
+                    (h) => h.id !== log.id && h.status === 'completed' && h.session_id === log.session_id && h.date < log.date
+                  )
+                  const prevTopSets = new Map<string, number>()
+                  if (prevLog) {
+                    for (const s of prevLog.sets ?? []) {
+                      if (s.skipped || !s.weight_kg) continue
+                      const prev = prevTopSets.get(s.exercise_name)
+                      if (!prev || s.weight_kg > prev) prevTopSets.set(s.exercise_name, s.weight_kg)
+                    }
+                  }
+                  const topSetsArr = [...topSets.entries()].slice(0, 5)
+                  const extraExCount = topSets.size > 5 ? topSets.size - 5 : 0
 
                   return (
                     <div key={log.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
                       <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <p className="text-sm font-semibold text-gray-200">
                             {parseLocalDate(log.date).toLocaleDateString('en-US', {
                               weekday: 'short',
@@ -634,11 +654,27 @@ export default function Training() {
                             {skippedExercises > 0 && ` · ${skippedExercises} exercises skipped`}
                             {duration !== null && ` · ${duration} min`}
                           </p>
-                          {loggedExercises.length > 0 && (
-                            <p className="text-xs text-gray-600 mt-1 truncate">
-                              {loggedExercises.slice(0, 4).join(' · ')}
-                              {loggedExercises.length > 4 && ` +${loggedExercises.length - 4} more`}
-                            </p>
+                          {topSetsArr.length > 0 && (
+                            <div className="mt-2 space-y-0.5">
+                              {topSetsArr.map(([name, { weightKg, reps }]) => {
+                                const displayW = isImperial ? Math.round(weightKg * 2.20462 * 10) / 10 : weightKg
+                                const prevW = prevTopSets.get(name)
+                                const delta = prevW != null ? weightKg - prevW : null
+                                return (
+                                  <div key={name} className="flex items-center justify-between text-xs">
+                                    <span className="text-gray-500 truncate mr-2">{name}</span>
+                                    <span className="flex items-center gap-1 flex-shrink-0 font-medium tabular-nums">
+                                      <span className="text-gray-300">{displayW}{isImperial ? 'lbs' : 'kg'}×{reps}</span>
+                                      {delta !== null && delta > 0 && <span className="text-green-400">↑</span>}
+                                      {delta !== null && delta < 0 && <span className="text-red-400">↓</span>}
+                                    </span>
+                                  </div>
+                                )
+                              })}
+                              {extraExCount > 0 && (
+                                <p className="text-xs text-gray-700">+{extraExCount} more exercises</p>
+                              )}
+                            </div>
                           )}
                           {log.notes && (
                             <p className="text-xs text-gray-500 mt-1.5 italic border-t border-gray-800/60 pt-1.5">
@@ -664,7 +700,7 @@ export default function Training() {
                             }}
                             className="text-xs text-gray-500 hover:text-brand-400 border border-gray-700 hover:border-brand-700 rounded-lg px-2 py-1 transition-colors"
                           >
-                            Edit Log
+                            View Log
                           </button>
                         </div>
                       </div>
