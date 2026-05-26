@@ -8,6 +8,7 @@ import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
 import { localDateStr, getShowCountdown } from '../../utils/dates'
 import { displayWeight } from '../../utils/units'
+import { buildPrepTimeline } from '../../data/competitionPrep'
 import type { ExerciseLibraryItem } from '../../types'
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -19,7 +20,7 @@ const MUSCLE_LABEL: Record<string, string> = {
 }
 
 export default function Dashboard() {
-  const { user } = useUserStore()
+  const { user, shows } = useUserStore()
   const { settings } = useSettingsStore()
   const {
     trainingPlan,
@@ -212,6 +213,67 @@ export default function Dashboard() {
               <span className={`text-xs font-medium px-3 py-1.5 rounded-full border ${STATUS_COLOR[status]}`}>
                 {STATUS_LABEL[status]}
               </span>
+            </div>
+          </Link>
+        )
+      })()}
+
+      {/* This Week in Prep — shown when there's an upcoming show */}
+      {(() => {
+        const today = new Date().toLocaleDateString('en-CA')
+        const nearestShow = [...shows]
+          .filter(s => s.show_date >= today)
+          .sort((a, b) => a.show_date.localeCompare(b.show_date))[0]
+        if (!nearestShow) return null
+        const timeline = buildPrepTimeline(nearestShow.show_date)
+        const currentWeek = timeline.find(w => w.isCurrentWeek)
+        if (!currentWeek) return null
+        const { guidance } = currentWeek
+        const PHASE_BADGE: Record<string, string> = {
+          green:  'bg-green-900/30 text-green-400 border-green-800/50',
+          brand:  'bg-brand-900/30 text-brand-400 border-brand-800/50',
+          blue:   'bg-blue-900/30 text-blue-400 border-blue-800/50',
+          yellow: 'bg-yellow-900/20 text-yellow-400 border-yellow-800/50',
+          orange: 'bg-orange-900/20 text-orange-400 border-orange-800/50',
+          red:    'bg-red-900/20 text-red-400 border-red-800/50',
+        }
+        return (
+          <Link to="/education" className="block">
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 hover:border-gray-700 transition-colors">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs text-gray-500 uppercase tracking-wider">This Week in Prep</p>
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${PHASE_BADGE[guidance.phaseColor]}`}>
+                  {guidance.phase}
+                </span>
+              </div>
+              <p className="text-sm text-gray-300 mb-3 leading-snug">{guidance.focus}</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs mb-3">
+                <div className="bg-gray-800/60 rounded-lg px-3 py-2">
+                  <p className="text-gray-500 mb-1 font-semibold uppercase tracking-wide" style={{ fontSize: 10 }}>Training</p>
+                  <p className="text-gray-300 leading-snug">{guidance.training[0]}</p>
+                </div>
+                <div className="bg-gray-800/60 rounded-lg px-3 py-2">
+                  <p className="text-gray-500 mb-1 font-semibold uppercase tracking-wide" style={{ fontSize: 10 }}>Nutrition</p>
+                  <p className="text-gray-300 leading-snug">{guidance.nutrition[0]}</p>
+                </div>
+                <div className="bg-gray-800/60 rounded-lg px-3 py-2">
+                  <p className="text-blue-500 mb-1 font-semibold uppercase tracking-wide" style={{ fontSize: 10 }}>Cardio</p>
+                  <p className="text-gray-300 leading-snug">{guidance.cardio}</p>
+                </div>
+              </div>
+              {guidance.milestones.length > 0 && (
+                <div className="border-t border-gray-800 pt-2">
+                  <p className="text-xs text-gray-600 mb-1.5">This week's milestones</p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1">
+                    {guidance.milestones.slice(0, 2).map((m, i) => (
+                      <p key={i} className="text-xs text-gray-500 flex items-center gap-1">
+                        <span className="text-gray-700">□</span> {m}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <p className="text-xs text-brand-500 mt-2">View full prep timeline →</p>
             </div>
           </Link>
         )
