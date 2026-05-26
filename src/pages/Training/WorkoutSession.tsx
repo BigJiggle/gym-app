@@ -477,7 +477,7 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
               ))}
               <button
                 onClick={() => setRestSecsLeft(null)}
-                className="ml-1 text-xs text-gray-600 hover:text-gray-400 w-5 h-5 flex items-center justify-center"
+                className="ml-1 text-xs text-gray-400 hover:text-gray-200 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-700/60 transition-colors"
                 title="Dismiss timer"
               >
                 ✕

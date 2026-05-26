@@ -824,12 +824,12 @@ export default function CheckIn() {
         <Card title={`Measurements (${measureUnit})`} subtitle="All optional">
           <div className="grid grid-cols-2 gap-3">
             {[
-              { label: 'Waist', value: waistDisplay, set: setWaistDisplay },
-              { label: 'Chest', value: chestDisplay, set: setChestDisplay },
-              { label: 'Hip',   value: hipDisplay,   set: setHipDisplay   },
-              { label: 'Arm (flexed)', value: armDisplay, set: setArmDisplay },
-              { label: 'Thigh', value: thighDisplay, set: setThighDisplay },
-            ].map(({ label, value, set }) => (
+              { label: 'Waist', value: waistDisplay, set: setWaistDisplay, placeholder: isImperial ? '32' : '80' },
+              { label: 'Chest', value: chestDisplay, set: setChestDisplay, placeholder: isImperial ? '40' : '100' },
+              { label: 'Hip',   value: hipDisplay,   set: setHipDisplay,   placeholder: isImperial ? '37' : '94' },
+              { label: 'Arm (flexed)', value: armDisplay, set: setArmDisplay, placeholder: isImperial ? '15' : '38' },
+              { label: 'Thigh', value: thighDisplay, set: setThighDisplay, placeholder: isImperial ? '23' : '58' },
+            ].map(({ label, value, set, placeholder }) => (
               <div key={label}>
                 <label className="text-xs text-gray-500 mb-1 block">{label}</label>
                 <input
@@ -837,7 +837,7 @@ export default function CheckIn() {
                   step="0.5"
                   value={value}
                   onChange={(e) => set(e.target.value)}
-                  placeholder={isImperial ? '32.0' : '81.0'}
+                  placeholder={placeholder}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-gray-200"
                 />
               </div>
