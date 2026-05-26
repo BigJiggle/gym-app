@@ -519,11 +519,8 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
           disabled={!canComplete || saving}
           className="w-full py-3 rounded-xl font-bold text-white bg-brand-600 hover:bg-brand-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          {saving ? 'Saving...' : 'Complete Workout ✓'}
+          {saving ? 'Saving...' : !canComplete ? 'Log a set to finish' : 'Complete Workout ✓'}
         </button>
-        {!canComplete && (
-          <p className="text-center text-xs text-gray-600 mt-1.5">Log at least one set to finish</p>
-        )}
       </div>
 
       {phase === 'summary' && (

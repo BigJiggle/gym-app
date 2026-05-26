@@ -427,12 +427,6 @@ export default function Diet() {
                   </div>
                   <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-800">
                     <button
-                      onClick={() => { setSwapError(null); setSwapTarget({ mealIndex: i, meal }) }}
-                      className="text-xs text-gray-400 hover:text-brand-300 border border-gray-700 hover:border-brand-700 rounded-lg px-2.5 py-1 transition-colors flex items-center gap-1"
-                    >
-                      &#8635; Swap Meal
-                    </button>
-                    <button
                       onClick={() => toggleMealEaten(i, meal.name)}
                       className={`text-xs font-medium rounded-lg px-2.5 py-1 transition-colors flex items-center gap-1 ${
                         isMealEaten(i)
@@ -441,6 +435,12 @@ export default function Diet() {
                       }`}
                     >
                       {isMealEaten(i) ? '✓ Eaten' : 'Mark Eaten'}
+                    </button>
+                    <button
+                      onClick={() => { setSwapError(null); setSwapTarget({ mealIndex: i, meal }) }}
+                      className="text-xs text-gray-400 hover:text-brand-300 border border-gray-700 hover:border-brand-700 rounded-lg px-2.5 py-1 transition-colors flex items-center gap-1"
+                    >
+                      &#8635; Swap Meal
                     </button>
                   </div>
                 </div>
