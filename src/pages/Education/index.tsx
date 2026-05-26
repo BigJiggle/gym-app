@@ -13,6 +13,188 @@ import { getShowCountdown } from '../../utils/dates'
 
 type Tab = 'posing' | 'prep' | 'peakweek' | 'firsttimer' | 'timeline'
 
+// ── Posing Practice Timer ─────────────────────────────────────────────────────
+
+const POSE_DURATIONS = [30, 45, 60, 90] as const
+type PoseDuration = typeof POSE_DURATIONS[number]
+
+interface PracticeSessionProps {
+  poses: { id: string; name: string; keyPoints: string[] }[]
+  divisionName: string
+  onClose: () => void
+}
+
+function PracticeSession({ poses, divisionName, onClose }: PracticeSessionProps) {
+  const [poseIndex, setPoseIndex] = useState(0)
+  const [duration, setDuration] = useState<PoseDuration>(60)
+  const [secsLeft, setSecsLeft] = useState(60)
+  const [running, setRunning] = useState(false)
+  const [done, setDone] = useState(false)
+
+  const pose = poses[poseIndex]
+
+  // Reset timer when duration or pose changes
+  useEffect(() => {
+    setSecsLeft(duration)
+    setRunning(false)
+  }, [poseIndex, duration])
+
+  useEffect(() => {
+    if (!running || secsLeft <= 0) return
+    const id = setInterval(() => {
+      setSecsLeft((s) => {
+        if (s <= 1) {
+          clearInterval(id)
+          if (poseIndex < poses.length - 1) {
+            setPoseIndex((i) => i + 1)
+          } else {
+            setDone(true)
+            setRunning(false)
+          }
+          return 0
+        }
+        return s - 1
+      })
+    }, 1000)
+    return () => clearInterval(id)
+  }, [running, secsLeft, poseIndex, poses.length])
+
+  function skipToNext() {
+    if (poseIndex < poses.length - 1) {
+      setPoseIndex((i) => i + 1)
+    } else {
+      setDone(true)
+      setRunning(false)
+    }
+  }
+
+  const progress = ((duration - secsLeft) / duration) * 100
+  const mins = Math.floor(secsLeft / 60)
+  const secs = secsLeft % 60
+  const timeLabel = mins > 0
+    ? `${mins}:${String(secs).padStart(2, '0')}`
+    : String(secsLeft)
+
+  if (done) {
+    return (
+      <div className="fixed inset-0 bg-gray-950 z-50 flex flex-col items-center justify-center p-8">
+        <div className="text-5xl mb-4">🏆</div>
+        <h2 className="text-2xl font-black text-gray-100 mb-2">Posing Practice Complete!</h2>
+        <p className="text-gray-400 mb-2">All {poses.length} poses practiced</p>
+        <p className="text-xs text-gray-600 mb-8">{divisionName} · {duration}s per pose</p>
+        <div className="flex gap-3">
+          <button
+            onClick={() => { setPoseIndex(0); setDone(false); setRunning(false) }}
+            className="px-6 py-2.5 rounded-xl border border-brand-700 text-brand-400 hover:bg-brand-900/20 text-sm font-semibold transition-colors"
+          >
+            Practice Again
+          </button>
+          <button
+            onClick={onClose}
+            className="px-6 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold transition-colors"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="fixed inset-0 bg-gray-950 z-50 flex flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-gray-900">
+        <div className="text-xs text-gray-500">
+          {divisionName} · Pose {poseIndex + 1} of {poses.length}
+        </div>
+        <div className="flex gap-1.5">
+          {POSE_DURATIONS.map((d) => (
+            <button
+              key={d}
+              onClick={() => setDuration(d)}
+              className={`text-xs px-2 py-0.5 rounded border transition-colors ${
+                duration === d
+                  ? 'border-brand-500 text-brand-400 bg-brand-900/20'
+                  : 'border-gray-700 text-gray-500 hover:border-gray-600'
+              }`}
+            >
+              {d}s
+            </button>
+          ))}
+        </div>
+        <button onClick={onClose} className="text-gray-500 hover:text-gray-300 text-sm">
+          ✕ Exit
+        </button>
+      </div>
+
+      {/* Pose display */}
+      <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+        <h2 className="text-2xl font-black text-gray-100 mb-2">{pose.name}</h2>
+        <ul className="space-y-1.5 mb-8 max-w-sm">
+          {pose.keyPoints.slice(0, 3).map((kp, i) => (
+            <li key={i} className="flex items-start gap-2 text-sm text-gray-400 text-left">
+              <span className="text-green-500 flex-shrink-0 mt-0.5">✓</span>
+              {kp}
+            </li>
+          ))}
+        </ul>
+
+        {/* Timer circle */}
+        <div className="relative w-36 h-36 mb-6">
+          <svg className="w-36 h-36 -rotate-90" viewBox="0 0 144 144">
+            <circle cx="72" cy="72" r="64" fill="none" stroke="#1f2937" strokeWidth="8" />
+            <circle
+              cx="72" cy="72" r="64" fill="none"
+              stroke={secsLeft <= 10 ? '#ef4444' : '#7c3aed'}
+              strokeWidth="8"
+              strokeDasharray={`${2 * Math.PI * 64}`}
+              strokeDashoffset={`${2 * Math.PI * 64 * (1 - progress / 100)}`}
+              strokeLinecap="round"
+              className="transition-all duration-1000"
+            />
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <span className={`text-4xl font-black tabular-nums ${secsLeft <= 10 ? 'text-red-400 animate-pulse' : 'text-gray-100'}`}>
+              {timeLabel}
+            </span>
+          </div>
+        </div>
+
+        {/* Controls */}
+        <div className="flex gap-3">
+          <button
+            onClick={() => setRunning((r) => !r)}
+            className="px-8 py-3 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm font-bold transition-colors min-w-28"
+          >
+            {running ? '⏸ Pause' : secsLeft === duration ? '▶ Start' : '▶ Resume'}
+          </button>
+          <button
+            onClick={skipToNext}
+            className="px-4 py-3 rounded-xl border border-gray-700 text-gray-400 hover:border-gray-600 hover:text-gray-200 text-sm font-medium transition-colors"
+          >
+            {poseIndex < poses.length - 1 ? 'Next →' : 'Finish ✓'}
+          </button>
+        </div>
+      </div>
+
+      {/* Pose progress dots */}
+      <div className="px-4 pb-6 flex justify-center gap-1.5">
+        {poses.map((_, i) => (
+          <button
+            key={i}
+            onClick={() => setPoseIndex(i)}
+            className={`w-2 h-2 rounded-full transition-colors ${
+              i === poseIndex ? 'bg-brand-500' : i < poseIndex ? 'bg-green-600' : 'bg-gray-700'
+            }`}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Main Education page ───────────────────────────────────────────────────────
+
 export default function Education() {
   const { user, shows } = useUserStore()
   const { settings } = useSettingsStore()
@@ -32,6 +214,7 @@ export default function Education() {
   const [expandedChecklist, setExpandedChecklist] = useState<string | null>(null)
   const [stageCheckDone, setStageCheckDone] = useState<Set<string>>(new Set())
   const [carbWeight, setCarbWeight] = useState('')
+  const [practiceMode, setPracticeMode] = useState(false)
 
   const division = DIVISIONS.find((d) => d.id === selectedDivisionId) ?? DIVISIONS[0]
   const isImperial = settings.units === 'imperial'
@@ -375,8 +558,16 @@ export default function Education() {
 
       {/* ─── POSING GUIDE ─── */}
       {tab === 'posing' && (
+        <>
+        {practiceMode && (
+          <PracticeSession
+            poses={division.mandatoryPoses}
+            divisionName={division.name}
+            onClose={() => setPracticeMode(false)}
+          />
+        )}
         <div className="space-y-4">
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 items-center">
             {DIVISIONS.map((div) => (
               <button
                 key={div.id}
@@ -415,9 +606,17 @@ export default function Education() {
           </div>
 
           <div>
-            <h3 className="font-semibold text-gray-200 mb-3">
-              Mandatory Poses ({division.mandatoryPoses.length})
-            </h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-gray-200">
+                Mandatory Poses ({division.mandatoryPoses.length})
+              </h3>
+              <button
+                onClick={() => setPracticeMode(true)}
+                className="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold transition-colors flex items-center gap-1.5"
+              >
+                ▶ Practice Mode
+              </button>
+            </div>
             <div className="space-y-2">
               {division.mandatoryPoses.map((pose) => (
                 <div
@@ -517,6 +716,7 @@ export default function Education() {
             </ul>
           </div>
         </div>
+        </>
       )}
 
       {/* ─── COMPETITION PREP ─── */}
