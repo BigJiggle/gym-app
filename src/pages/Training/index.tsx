@@ -120,6 +120,12 @@ export default function Training() {
   // All muscle groups in a fixed display order
   const ALL_MUSCLE_GROUPS = ['chest', 'back', 'shoulders', 'triceps', 'biceps', 'quads', 'hamstrings', 'glutes', 'calves', 'core']
 
+  // Minimum effective volume (sets/week) to maintain muscle during a cut
+  const MEV: Record<string, number> = {
+    chest: 8, back: 10, shoulders: 8, triceps: 6, biceps: 6,
+    quads: 8, hamstrings: 6, glutes: 6, calves: 6, core: 6,
+  }
+
   // Personal records: best top-set weight for each exercise across all completed workouts
   const exercisePRs = useMemo(() => {
     const bests = new Map<string, { weightKg: number; reps: number; date: string }>()
@@ -403,11 +409,14 @@ export default function Training() {
             )
           })()}
 
-          {/* This Week's Muscle Coverage + vs Last Week */}
+          {/* This Week's Muscle Coverage + vs Last Week + MEV indicator */}
           {exerciseLibrary.length > 0 && (
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
               <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">This Week's Volume</p>
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">This Week's Volume</p>
+                  <p className="text-xs text-gray-600 mt-0.5">Bar shows progress toward minimum effective volume (MEV)</p>
+                </div>
                 {lastWeekMuscleSets.size > 0 && (
                   <p className="text-xs text-gray-600">vs last week</p>
                 )}
@@ -419,29 +428,41 @@ export default function Training() {
                   const trained = sets > 0
                   const delta = sets - lastSets
                   const hasLastWeek = lastWeekMuscleSets.size > 0
+                  const mev = MEV[group] ?? 6
+                  const pct = Math.min(100, Math.round((sets / mev) * 100))
+                  const barColor = pct >= 100 ? 'bg-green-500' : pct >= 60 ? 'bg-yellow-500' : 'bg-red-500'
                   return (
                     <div
                       key={group}
-                      className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                      className={`px-2.5 py-2 rounded-lg text-xs font-medium transition-colors ${
                         trained
                           ? 'bg-brand-900/40 border border-brand-700/50'
                           : 'bg-gray-800 border border-gray-700'
                       }`}
                     >
-                      <div className="flex items-center gap-1.5">
-                        {trained && <span className="text-green-400">✓</span>}
-                        <span className={`capitalize ${trained ? 'text-brand-300' : 'text-gray-600'}`}>{group}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        {trained && <span className="font-bold text-brand-400">{sets} sets</span>}
-                        {hasLastWeek && trained && delta !== 0 && (
-                          <span className={`text-xs font-medium ${delta > 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {delta > 0 ? `+${delta}` : delta}
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`capitalize ${trained ? 'text-brand-300' : 'text-gray-600'}`}>{group}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className={`font-bold ${trained ? 'text-brand-400' : 'text-gray-700'}`}>
+                            {sets}/{mev}
                           </span>
-                        )}
-                        {hasLastWeek && !trained && lastSets > 0 && (
-                          <span className="text-xs text-gray-600">{lastSets} sets↓</span>
-                        )}
+                          {hasLastWeek && trained && delta !== 0 && (
+                            <span className={`font-medium ${delta > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {delta > 0 ? `+${delta}` : delta}
+                            </span>
+                          )}
+                          {hasLastWeek && !trained && lastSets > 0 && (
+                            <span className="text-gray-600">{lastSets}↓</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-300 ${barColor}`}
+                          style={{ width: `${pct}%` }}
+                        />
                       </div>
                     </div>
                   )
