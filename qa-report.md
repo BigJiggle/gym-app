@@ -24,17 +24,29 @@
 
 ## Phase 2: Bodybuilder User
 - Status: RAN (Phase 1 fixed fewer than 3 bugs)
+
+### Run 1
 - Feature added: **Muscle MEV Progress Bars** — Each muscle group tile in the Training page "This Week's Volume" section now shows a mini progress bar comparing current weekly sets against its Minimum Effective Volume (MEV) threshold. Green = at/above MEV (muscle is maintained), yellow = 60–99% (getting close), red = below 60% (risk of muscle loss during a cut). The set count is displayed as `sets/mev` so a prep athlete can see at a glance which muscles are undertrained for the week.
 - Files changed: `src/pages/Training/index.tsx`
+
+### Run 2
+- Feature added: **Weekly Measurement Rate** — Each measurement site card (waist, chest, hip, arm, thigh) on the Progress page now shows its weekly rate of change (e.g. `−0.3cm/wk` or `+0.2in/wk`). Only shown when ≥1 week of data exists between oldest and newest check-in. Coloured green when measurement is decreasing (good on a cut) and amber when increasing.
+- Files changed: `src/pages/Progress/index.tsx`
 
 ---
 
 ## Phase 3: UX Reviewer
-- Changes made: 2
+- Changes made: 4 total (2 per run)
 
+### Run 1
 1. `src/pages/Diet/index.tsx` — Meal card headers are now clickable to toggle the "Mark Eaten" state. A checkmark circle appears next to the meal name when eaten, and the meal name gets a strikethrough — matching the pattern already used in the Dashboard. Previously the only way to mark a meal eaten was a small `text-xs` button buried at the bottom of the card after the full ingredient list, which required visual scanning for the most-used action on the page.
 
 2. `src/pages/Training/index.tsx` — The empty-state CTA button in the History tab was changed from the passive "View Training Plan →" to "Start Today's Workout →". Both versions switch to the plan tab (where today's session is auto-expanded), but the new label tells a first-time user exactly what to do rather than describing a passive browsing action.
+
+### Run 2
+3. `src/pages/Training/WorkoutStats.tsx` — Moved the Personal Records table from the bottom of the Stats tab (after 6 scrollable sections) to immediately after the all-time summary grid. PRs are the highest-signal data on the page for a competitive athlete and should not require scrolling past weekly tonnage, volume tables, and charts to reach.
+
+4. `src/pages/CheckIn/index.tsx` — Added `lowerIsBetter` prop to the `RatingBar` component. The Stress Level rating bar now uses a green→yellow→red colour ramp (1–2 green, 3 yellow, 4–5 red) instead of the same flat brand-orange used for Energy and Sleep. This signals at a glance that high stress is bad — a user rating their stress at 5 no longer sees it highlighted identically to a top Energy score.
 
 ---
 
