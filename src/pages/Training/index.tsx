@@ -148,6 +148,7 @@ export default function Training() {
           setSessionToStart(null)
           loadWorkoutHistory(user.id)
           loadActiveWorkout(user.id)
+          setTab('history')
         }}
         onClose={() => {
           setSessionToStart(null)
