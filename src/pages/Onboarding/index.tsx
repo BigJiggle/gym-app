@@ -27,7 +27,7 @@ function validateStep(step: number, data: ReturnType<typeof useOnboarding>['data
 
 export default function Onboarding() {
   const { step, totalSteps, data, update, next, back } = useOnboarding()
-  const { createUser } = useUserStore()
+  const { createUser, loadShows } = useUserStore()
   const { generateTrainingPlan, generateDietPlan } = usePlanStore()
   const navigate = useNavigate()
   const [submitting, setSubmitting] = useState(false)
@@ -63,6 +63,7 @@ export default function Onboarding() {
           notes: null,
           is_primary: 1,
         })
+        await loadShows(user.id)
       }
       // Navigate before plan generation so routing isn't blocked by plan errors
       navigate('/dashboard')
