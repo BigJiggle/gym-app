@@ -3,40 +3,38 @@
 ## Phase 1: QA Engineer
 - TypeScript: PASS (0 errors)
 - Unit tests: PASS (84 passing, 0 failing)
-- Bugs fixed: 0
+- Bugs fixed: 1
 
 ### Feature Audit
-- Onboarding: OK — 6 steps validate correctly; imperial unit conversion handled in Step1Personal; defaults prevent empty-submission.
-- Diet page: OK — swap persists to DB via `window.api.swapMeal`, plan refreshes after swap; meal-eaten toggle works via `logMealCompletion` / `unlogMealCompletion`.
-- Training page: OK — `handleStartWorkout` correctly passes session DB id; `WorkoutSession` saves all sets via `saveSetsBatch` on complete; rest timer and set logging work in local state.
-- Check-in page: OK — locked/open/success states handled; auto-fill training adherence from workout history; missed-slot retroactive fill works; edit last check-in works with date recalculation.
-- Education page: OK — 5 tabs all render with proper content; `PracticeSession` timer resets on pose/duration change; auto-expand current timeline week on show load.
-- Progress page: OK — `progressEntries` returned `ORDER BY week_number ASC` so first/latest are correctly oldest/newest; empty state guard at top prevents rendering when no check-ins exist.
-- Settings page: OK — unit system change updates `settingsStore` which all components read; check-in schedule change reactively updates the check-in locked screen via dependency array on `useEffect`.
+- Onboarding: BUG FIXED — shows are now synced to the store after the window.api.addShow() call so the NavSidebar countdown and Education timeline reflect the new show immediately.
+- Diet page: OK — meal swap flow, grocery list, weekly view all work correctly; swap modal has proper error handling and loading state.
+- Training page: OK — workout session start, set logging, completion, rest timer, and history with PRs all function correctly.
+- Check-in page: OK — locked/available states, missed slot fill-in, edit last check-in, and schedule interval all work correctly.
+- Education page: OK — all 5 tabs (Posing Guide, Prep Timeline, Show Checklist, Peak Week, First Timer) render and function correctly; posing timer, carb load calculator, and interactive checklists work.
+- Progress page: OK — weight chart, measurements chart, wellness scores, and empty states all handled correctly.
+- Settings page: OK — unit toggle, check-in schedule (day-based and interval-based), edit profile, and show management all function correctly.
 
 ### Bugs Fixed
-None found.
+- `src/pages/Onboarding/index.tsx:58` — `window.api.addShow()` was called directly, bypassing the `userStore.addShow()` method, so the `shows` state was never populated after onboarding. Added `await loadShows(user.id)` after the API call to sync the store. Consequence was that NavSidebar showed no show countdown and Education page never auto-switched to the Prep Timeline tab for new users.
 
 ### Known Issues (not fixed)
-- If a user abandons a workout without cancelling (app crash / force-quit), the `in_progress` workout log is never cleaned up. The next `workout:start` call creates a new record; the old one remains orphaned in `in_progress` state indefinitely. Not user-visible but accumulates DB clutter. Fix would require a cleanup query on app startup — deferred as it requires a main-process change.
-- `WorkoutStats` "Stats & PRs" sub-tab shows no empty state when `workoutHistory` is empty — charts/lists silently render nothing. Minor and low-impact.
+- None found that warrant a fix; all other suspected issues from static analysis were false positives or already handled by existing guards.
 
 ---
 
 ## Phase 2: Bodybuilder User
-- Status: RAN (Phase 1 fixed 0 bugs, below the 3-bug threshold)
-- Feature added: **Personal Record (PR) detection on workout completion screen**
-  After completing a workout, the summary screen now shows a "🏆 New Personal Records" panel listing any exercise where the top set weight beat the previous best from the same session type. Only displayed when prior session data exists, so first-time users see no noise.
-- Files changed: `src/pages/Training/WorkoutSession.tsx`
+- Status: RAN (Phase 1 fixed fewer than 3 bugs)
+- Feature added: **Muscle MEV Progress Bars** — Each muscle group tile in the Training page "This Week's Volume" section now shows a mini progress bar comparing current weekly sets against its Minimum Effective Volume (MEV) threshold. Green = at/above MEV (muscle is maintained), yellow = 60–99% (getting close), red = below 60% (risk of muscle loss during a cut). The set count is displayed as `sets/mev` so a prep athlete can see at a glance which muscles are undertrained for the week.
+- Files changed: `src/pages/Training/index.tsx`
 
 ---
 
 ## Phase 3: UX Reviewer
 - Changes made: 2
 
-`src/pages/Training/index.tsx` — After clicking "Back to Training" on the workout summary screen, the app now auto-switches to the History tab. Previously the user landed back on the Plan tab and had to manually switch to see their completed workout. A prep athlete finishing a session wants to verify their log, not re-read the plan.
+1. `src/pages/Diet/index.tsx` — Meal card headers are now clickable to toggle the "Mark Eaten" state. A checkmark circle appears next to the meal name when eaten, and the meal name gets a strikethrough — matching the pattern already used in the Dashboard. Previously the only way to mark a meal eaten was a small `text-xs` button buried at the bottom of the card after the full ingredient list, which required visual scanning for the most-used action on the page.
 
-`src/pages/Diet/index.tsx` — Added a one-line explainer below the "⟳ Update Macros" and "↺ Regenerate" buttons: "⟳ adjusts calorie targets only · ↺ replaces all meals". These two buttons sit side-by-side with similar styling; without the hint a tired user cannot tell that one is safe (keeps all meals) and one is destructive (replaces the entire meal plan).
+2. `src/pages/Training/index.tsx` — The empty-state CTA button in the History tab was changed from the passive "View Training Plan →" to "Start Today's Workout →". Both versions switch to the plan tab (where today's session is auto-expanded), but the new label tells a first-time user exactly what to do rather than describing a passive browsing action.
 
 ---
 
