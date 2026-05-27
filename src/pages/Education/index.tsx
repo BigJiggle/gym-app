@@ -216,6 +216,55 @@ export default function Education() {
   const [carbWeight, setCarbWeight] = useState('')
   const [practiceMode, setPracticeMode] = useState(false)
 
+  // Posing practice streak — tracked in localStorage, resets at midnight
+  const POSE_LOG_KEY = 'posing_practice_log'
+  const todayDateStr = new Date().toLocaleDateString('en-CA')
+  const [posedToday, setPosedToday] = useState<boolean>(() => {
+    try {
+      const dates: string[] = JSON.parse(localStorage.getItem(POSE_LOG_KEY) ?? '[]')
+      return dates.includes(todayDateStr)
+    } catch { return false }
+  })
+  const [poseStreak, setPoseStreak] = useState<number>(() => {
+    try {
+      const dates: string[] = JSON.parse(localStorage.getItem(POSE_LOG_KEY) ?? '[]')
+      const set = new Set(dates)
+      let streak = 0
+      for (let i = 0; i < 366; i++) {
+        const d = new Date()
+        d.setDate(d.getDate() - i)
+        if (!set.has(d.toLocaleDateString('en-CA'))) break
+        streak++
+      }
+      return streak
+    } catch { return 0 }
+  })
+
+  function togglePosedToday() {
+    try {
+      const dates: string[] = JSON.parse(localStorage.getItem(POSE_LOG_KEY) ?? '[]')
+      const set = new Set(dates)
+      if (set.has(todayDateStr)) {
+        set.delete(todayDateStr)
+      } else {
+        set.add(todayDateStr)
+      }
+      const updated = Array.from(set)
+      localStorage.setItem(POSE_LOG_KEY, JSON.stringify(updated))
+      const nowPosed = set.has(todayDateStr)
+      setPosedToday(nowPosed)
+      // Recalculate streak
+      let streak = 0
+      for (let i = 0; i < 366; i++) {
+        const d = new Date()
+        d.setDate(d.getDate() - i)
+        if (!set.has(d.toLocaleDateString('en-CA'))) break
+        streak++
+      }
+      setPoseStreak(streak)
+    } catch { /* ignore */ }
+  }
+
   const division = DIVISIONS.find((d) => d.id === selectedDivisionId) ?? DIVISIONS[0]
   const isImperial = settings.units === 'imperial'
 
@@ -581,6 +630,35 @@ export default function Education() {
                 {div.name}
               </button>
             ))}
+          </div>
+
+          {/* Posing practice streak tracker */}
+          <div className={`rounded-xl border p-4 transition-colors ${posedToday ? 'bg-green-900/20 border-green-800/50' : 'bg-gray-900 border-gray-800'}`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">{poseStreak >= 7 ? '🔥' : '📸'}</span>
+                <div>
+                  <p className="font-semibold text-gray-200 text-sm">Daily Posing Practice</p>
+                  {poseStreak > 1 ? (
+                    <p className="text-xs text-green-400 font-medium">{poseStreak}-day streak — keep it up!</p>
+                  ) : poseStreak === 1 ? (
+                    <p className="text-xs text-green-400 font-medium">1-day streak — practice again tomorrow!</p>
+                  ) : (
+                    <p className="text-xs text-gray-500">Practice today to start your streak</p>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={togglePosedToday}
+                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                  posedToday
+                    ? 'bg-green-900/40 border border-green-700/60 text-green-400 hover:bg-green-900/60'
+                    : 'bg-brand-600 hover:bg-brand-500 text-white'
+                }`}
+              >
+                {posedToday ? '✓ Done Today' : 'Mark Done'}
+              </button>
+            </div>
           </div>
 
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
