@@ -50,5 +50,29 @@
 
 ---
 
+---
+
+## Run 3 — 2026-05-27
+
+### Phase 1: QA Engineer
+- TypeScript: PASS (0 errors)
+- Unit tests: PASS (84 passing, 0 failing)
+- Bugs fixed: 0
+
+#### Feature Audit
+- All 7 user flows re-audited; no new bugs introduced by previous runs.
+
+### Phase 2: Bodybuilder User
+- Status: RAN (Phase 1 fixed fewer than 3 bugs)
+- Feature added: **Daily Posing Practice Streak Tracker** — A streak card on the Education → Posing tab lets a contestant mark whether they practiced posing today. Consecutive days are tracked via localStorage. The card turns green when today is marked, shows a fire emoji after 7+ days, and displays the current streak count. Built entirely on frontend state with no IPC or DB changes.
+- Files changed: `src/pages/Education/index.tsx`
+
+### Phase 3: UX Reviewer
+- Changes made: 2
+
+1. `src/pages/Training/index.tsx` — The full-width "▶ Start Workout" button inside expanded session cards now reads "↺ Redo Workout" when that session is already completed today, matching the button already present in the session card header. Previously the header button correctly showed "↺ Redo" but the identical CTA below the exercise list was hardcoded to "▶ Start Workout", creating an inconsistency for users who scroll into the expanded card after completing a workout.
+
+2. `src/pages/Settings/index.tsx` — The Edit Profile section's two save buttons were renamed and given a guidance line. "Save Changes" → "Save Only" and "Save & Regenerate Plans" kept, with a helper sentence above ("Changed weight, age, or body fat? Just save. Changed training days or diet type? Save & regenerate.") and `title` tooltip attributes. This eliminates the ambiguity that caused users to either always pick the wrong button or always regenerate unnecessarily.
+
 ## Push
 - Status: SUCCESS
