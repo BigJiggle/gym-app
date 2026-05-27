@@ -217,6 +217,7 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
     () => buildInitialStates(session, lastPerformance)
   )
   const [summaryStats, setSummaryStats] = useState<{ sets: number; exercises: number; volume: number } | null>(null)
+  const [newPRs, setNewPRs] = useState<{ exerciseName: string; weight: number; reps: number }[]>([])
   const [saving, setSaving] = useState(false)
   const [sessionNotes, setSessionNotes] = useState('')
   const [notesOpen, setNotesOpen] = useState(false)
@@ -323,6 +324,24 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
       total + s.sets.reduce((acc, x) => x.done && x.weight > 0 ? acc + x.weight * x.reps : acc, 0)
     , 0)
     setSummaryStats({ sets: doneSets, exercises: doneExercises, volume: Math.round(volume) })
+
+    // Detect new personal records — only when there's previous session data to compare against
+    if (lastPerformance.size > 0) {
+      const prs: { exerciseName: string; weight: number; reps: number }[] = []
+      for (const [exerciseName, exState] of currentStates) {
+        if (exState.allSkipped) continue
+        const doneSetsForEx = exState.sets.filter((s) => s.done && s.weight > 0)
+        if (doneSetsForEx.length === 0) continue
+        const bestWeight = Math.max(...doneSetsForEx.map((s) => s.weight))
+        const bestReps = doneSetsForEx.find((s) => s.weight === bestWeight)?.reps ?? 0
+        const prev = lastPerformance.get(exerciseName)
+        if (prev && bestWeight > prev.weight) {
+          prs.push({ exerciseName, weight: bestWeight, reps: bestReps })
+        }
+      }
+      setNewPRs(prs)
+    }
+
     setSaving(true)
 
     // Build the full set list to persist
@@ -374,7 +393,7 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
     } finally {
       setSaving(false)
     }
-  }, [workoutLog.id, exerciseStates, session.exercises, isImperial, sessionNotes])
+  }, [workoutLog.id, exerciseStates, session.exercises, isImperial, sessionNotes, lastPerformance])
 
   // ── end early = cancel entirely, no history entry ─────────────────────────
 
@@ -550,6 +569,21 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
               <p className="text-xs text-gray-500 mt-1">Volume ({isImperial ? 'lbs' : 'kg'})</p>
             </div>
           </div>
+          {newPRs.length > 0 && (
+            <div className="w-full max-w-sm bg-brand-900/20 border border-brand-700/40 rounded-xl p-3 mb-4 text-left">
+              <p className="text-xs font-semibold text-brand-400 uppercase tracking-wider mb-2">🏆 New Personal Records</p>
+              <div className="space-y-1">
+                {newPRs.map((pr, i) => (
+                  <div key={i} className="flex items-center justify-between">
+                    <span className="text-sm text-gray-300 truncate mr-2">{pr.exerciseName}</span>
+                    <span className="text-sm font-bold text-brand-300 flex-shrink-0">
+                      {pr.weight}{isImperial ? 'lbs' : 'kg'} × {pr.reps}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {sessionNotes.trim() && (
             <div className="w-full max-w-sm bg-gray-900 border border-gray-800 rounded-xl p-3 mb-4 text-left">
               <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Session Notes</p>
