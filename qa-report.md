@@ -1,4 +1,4 @@
-# App Health Report — 2026-05-26
+# App Health Report — 2026-05-27
 
 ## Phase 1: QA Engineer
 - TypeScript: PASS (0 errors)
@@ -6,26 +6,25 @@
 - Bugs fixed: 0
 
 ### Feature Audit
-- Onboarding: OK — all 6 steps render; step 1 validation guards both Continue and Submit; navigate-then-generate prevents routing blocked by plan errors; unit conversions (lbs/ft) stored as kg/cm
-- Diet page: OK — swap calls `window.api.swapMeal` and reloads plan; today's intake shows consumed vs. target with remaining macros inline; weekly compliance strip and macro totals correct
-- Training page: OK — start workout creates active log, WorkoutSession batch-saves sets then calls `completeWorkout`; auto-resume restores active workout on re-open; history shows sets, duration, session name
-- Check-in page: OK — locked state shows countdown and edit-last-check-in panel with correct unit conversion; open form pre-fills weight from latest check-in; auto-fills training adherence from logged sessions
-- Education page: OK — all 5 tabs (Posing Guide, Prep Timeline, Show Checklist, Peak Week, First Timer) navigate and render; posing practice timer advances through poses; auto-switches to Timeline when a show exists
-- Progress page: OK — empty state with CTA when no check-ins; weight chart, measurement changes, diet consistency chart, wellness trends all guarded for missing data and render correctly when present
-- Settings page: OK — unit system and check-in interval changes propagate via store; schedule type/day/interval/biweekly wire correctly; shows load on mount
+- Onboarding: OK — 6 steps with defaults; step 1 validated (name, age, height, weight); steps 2–5 have sensible defaults; submit creates user and navigates to dashboard before plan generation
+- Diet page: OK — swap calls `window.api.swapMeal` then reloads plan; weekly compliance strip and macro totals compute correctly; grocery list aggregates weekly quantities
+- Training page: OK — WorkoutSession logs sets in local state, batch-saves on complete; rest timer fires correctly; PR lookup works; history shows top sets with progression arrows
+- Check-in page: OK — locked countdown correctly computes time remaining; missed-slot panel available on both locked and open screens; open form pre-fills from latest check-in
+- Education page: OK — 5 tabs (Posing Guide, Prep Timeline, Show Checklist, Peak Week, First Timer) all render; posing practice timer works; carb load calculator correct
+- Progress page: OK — empty state with CTA when no check-ins; weight chart renders when data present; projected show weight displayed when show date set
+- Settings page: OK — unit system and check-in interval persist to settings store; profile edit syncs from store on open; reset data triggers re-onboarding
 
 ### Bugs Fixed
-None found.
+None.
 
 ### Known Issues (not fixed)
-None.
+- `computeWeeklyRate` in Progress/index.tsx uses `new Date(date_string)` (parsed as UTC) rather than `new Date(date_string + 'T12:00:00')` — can slightly skew weekly rate in UTC-offset timezones; impact is minor (≤1 day error over 7–28 days)
 
 ---
 
 ## Phase 2: Bodybuilder User
 - Status: RAN (Phase 1 fixed 0 bugs — below the 3-bug threshold)
-- Feature added: **Per-exercise top-set display with progression arrows in workout log history**
-- Description: In Training → History → Workout Logs, each log card now shows a compact per-exercise summary (max weight × reps for each exercise in that session) instead of a plain exercise name list. ↑/↓ arrows compare each lift against the previous completed log for the same session. Athletes can confirm progressive overload at a glance without opening the log editor. Respects imperial/metric setting; limited to 5 exercises per card with "+N more" overflow text.
+- Feature added: **Weekly Training Calorie Burn** — shows estimated kcal burned from completed workouts this week on the Training plan tab. Uses MET 5.5 × user bodyweight × workout duration (from `started_at`/`ended_at`). Displays total weekly burn, today's session burn with duration, and a per-session date breakdown. Pure frontend computation from existing `workoutHistory` data.
 - Files changed:
   - `src/pages/Training/index.tsx`
 
@@ -34,9 +33,9 @@ None.
 ## Phase 3: UX Reviewer
 - Changes made: 2
 
-`src/pages/Diet/index.tsx` — renamed "⟳ Recalculate" button to "⟳ Update Macros". The previous label was jargon that looked nearly identical to "↺ Regenerate" (same icon style, similar word). A tired user could not distinguish them without reading the tooltip. "Update Macros" immediately conveys that only calorie/macro targets change, not the full meal structure.
+`src/pages/Training/index.tsx` — Added amber **"PR"** badge next to top-set entries in workout history logs when the set matches the athlete's all-time best weight for that exercise. Replaces the ↑ progression arrow when a PR is hit. A competitor reviewing their session immediately sees which lifts were breakthroughs without needing to mentally compare numbers.
 
-`src/pages/Training/index.tsx` — renamed "Edit Log" button to "View Log" on workout history cards. Most users tap this to review what they lifted, not to make corrections. "Edit" implies mandatory modification; "View" matches actual read-first, maybe-edit usage and reduces hesitation to tap.
+`src/pages/Diet/index.tsx` — Replaced the tiny plain-text "remaining" line in Today's Intake with a highlighted box (`bg-brand-900/20` border with "Still to eat:" label). For a hungry athlete who just trained, the remaining calories and macros are the most important number on the page — this makes them visually distinct and unmissable.
 
 ---
 
