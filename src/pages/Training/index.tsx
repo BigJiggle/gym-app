@@ -349,6 +349,59 @@ export default function Training() {
             )
           })()}
 
+          {/* Weekly calorie burn estimate from completed workouts */}
+          {(() => {
+            const today = new Date()
+            const jsDay = today.getDay()
+            const daysFromMon = jsDay === 0 ? 6 : jsDay - 1
+            const weekStartStr = new Date(today.getTime() - daysFromMon * 86400000).toLocaleDateString('en-CA')
+            const weekCompleted = workoutHistory.filter(
+              (log) => log.status === 'completed' && log.date >= weekStartStr && log.date <= todayDateStr && log.started_at && log.ended_at
+            )
+            if (weekCompleted.length === 0) return null
+            // MET 5.5 for vigorous weight training (ACSM standard)
+            const MET = 5.5
+            const weightKg = user.weight_kg
+            let weeklyBurn = 0
+            const burns = weekCompleted.map((log) => {
+              const hrs = (new Date(log.ended_at!).getTime() - new Date(log.started_at).getTime()) / 3600000
+              const kcal = Math.round(MET * weightKg * hrs)
+              weeklyBurn += kcal
+              return { date: log.date, kcal, mins: Math.round(hrs * 60) }
+            })
+            const todayBurn = burns.find(b => b.date === todayDateStr)
+            return (
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">This Week's Calorie Burn</p>
+                  <span className="text-xs text-gray-600">MET 5.5 estimate</span>
+                </div>
+                <div className="flex items-end gap-4 mb-3">
+                  <div>
+                    <p className="text-2xl font-black text-brand-400">~{weeklyBurn.toLocaleString()}</p>
+                    <p className="text-xs text-gray-500">kcal burned training</p>
+                  </div>
+                  {todayBurn && (
+                    <div className="border-l border-gray-700 pl-4">
+                      <p className="text-base font-bold text-green-400">~{todayBurn.kcal}</p>
+                      <p className="text-xs text-gray-500">kcal today ({todayBurn.mins} min)</p>
+                    </div>
+                  )}
+                </div>
+                {burns.length > 1 && (
+                  <div className="flex gap-1.5 flex-wrap">
+                    {burns.map((b, i) => (
+                      <span key={i} className={`text-xs px-2 py-0.5 rounded-full ${b.date === todayDateStr ? 'bg-green-900/30 text-green-400' : 'bg-gray-800 text-gray-500'}`}>
+                        {b.date.slice(5)} ~{b.kcal}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-gray-700 mt-2">Estimated from workout duration × bodyweight. Actual burn varies by intensity and exercise selection.</p>
+              </div>
+            )
+          })()}
+
           {/* This Week's Muscle Coverage + vs Last Week */}
           {exerciseLibrary.length > 0 && (
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
