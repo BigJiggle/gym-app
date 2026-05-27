@@ -402,10 +402,17 @@ export default function Diet() {
             <div className="space-y-3">
               {dietPlan.meals?.map((meal, i) => (
                 <div key={i} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-                  <div className="flex items-center justify-between mb-2">
+                  <div
+                    className="flex items-center justify-between mb-2 cursor-pointer"
+                    onClick={() => toggleMealEaten(i, meal.name)}
+                    title={isMealEaten(i) ? 'Mark as not eaten' : 'Mark as eaten'}
+                  >
                     <div className="flex items-center gap-2">
+                      <div className={`w-5 h-5 rounded-full flex-shrink-0 border-2 flex items-center justify-center transition-colors ${isMealEaten(i) ? 'border-green-500 bg-green-500 text-white' : 'border-gray-600'}`}>
+                        {isMealEaten(i) && <span className="text-xs leading-none">✓</span>}
+                      </div>
                       <span className="text-xs text-gray-600 font-mono">{meal.time}</span>
-                      <h3 className="text-sm font-semibold text-gray-200">{meal.name}</h3>
+                      <h3 className={`text-sm font-semibold ${isMealEaten(i) ? 'text-gray-500 line-through' : 'text-gray-200'}`}>{meal.name}</h3>
                     </div>
                     <div className="flex gap-3 text-xs text-gray-500">
                       <span className="text-brand-400 font-medium">{meal.calories} kcal</span>

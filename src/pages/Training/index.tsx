@@ -662,7 +662,7 @@ export default function Training() {
                   onClick={() => setTab('plan')}
                   className="mt-1 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold transition-colors"
                 >
-                  View Training Plan →
+                  Start Today's Workout →
                 </button>
               </div>
             ) : (
