@@ -713,13 +713,15 @@ export default function Training() {
                                 const displayW = isImperial ? Math.round(weightKg * 2.20462 * 10) / 10 : weightKg
                                 const prevW = prevTopSets.get(name)
                                 const delta = prevW != null ? weightKg - prevW : null
+                                const isPR = exercisePRs.get(name)?.weightKg === weightKg
                                 return (
                                   <div key={name} className="flex items-center justify-between text-xs">
                                     <span className="text-gray-500 truncate mr-2">{name}</span>
                                     <span className="flex items-center gap-1 flex-shrink-0 font-medium tabular-nums">
                                       <span className="text-gray-300">{displayW}{isImperial ? 'lbs' : 'kg'}×{reps}</span>
-                                      {delta !== null && delta > 0 && <span className="text-green-400">↑</span>}
-                                      {delta !== null && delta < 0 && <span className="text-red-400">↓</span>}
+                                      {isPR && <span className="text-amber-400 font-bold">PR</span>}
+                                      {!isPR && delta !== null && delta > 0 && <span className="text-green-400">↑</span>}
+                                      {!isPR && delta !== null && delta < 0 && <span className="text-red-400">↓</span>}
                                     </span>
                                   </div>
                                 )

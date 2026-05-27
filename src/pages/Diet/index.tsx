@@ -379,16 +379,18 @@ export default function Diet() {
                 <p className="text-xs text-green-400 font-medium">All meals hit today — great work!</p>
               )}
               {mealsEaten < totalMeals && calPct < 100 && (
-                <p className="text-xs text-gray-400 font-medium">
-                  <span className="text-brand-400">{dietPlan.calories_target - consumedCalories} kcal</span>
-                  {' · '}
-                  <span className="text-green-300">{Math.max(0, dietPlan.protein_g - consumedProtein)}g P</span>
-                  {' · '}
-                  <span className="text-blue-400">{Math.max(0, dietPlan.carbs_g - consumedCarbs)}g C</span>
-                  {' · '}
-                  <span className="text-yellow-400">{Math.max(0, dietPlan.fat_g - consumedFat)}g F</span>
-                  {' remaining'}
-                </p>
+                <div className="bg-brand-900/20 border border-brand-800/30 rounded-lg px-3 py-2 flex items-center justify-between">
+                  <span className="text-xs text-gray-400 font-medium">Still to eat:</span>
+                  <span className="text-xs font-semibold">
+                    <span className="text-brand-300">{dietPlan.calories_target - consumedCalories} kcal</span>
+                    <span className="text-gray-600 mx-1">·</span>
+                    <span className="text-green-300">{Math.max(0, dietPlan.protein_g - consumedProtein)}g P</span>
+                    <span className="text-gray-600 mx-1">·</span>
+                    <span className="text-blue-400">{Math.max(0, dietPlan.carbs_g - consumedCarbs)}g C</span>
+                    <span className="text-gray-600 mx-1">·</span>
+                    <span className="text-yellow-400">{Math.max(0, dietPlan.fat_g - consumedFat)}g F</span>
+                  </span>
+                </div>
               )}
             </div>
           )}
