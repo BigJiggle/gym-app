@@ -253,6 +253,8 @@ export default function Progress() {
         if (tracked.length === 0) return null
         const mUnit = isImperial ? 'in' : 'cm'
         const toMDisplay = (cm: number) => isImperial ? Math.round(cm / 2.54 * 10) / 10 : Math.round(cm * 10) / 10
+        const daysBetween = (new Date(newest.check_in_date).getTime() - new Date(oldest.check_in_date).getTime()) / (1000 * 60 * 60 * 24)
+        const weeksBetween = daysBetween / 7
         return (
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
             <div className="flex items-center justify-between mb-3">
@@ -266,6 +268,7 @@ export default function Progress() {
                 const delta = Math.round((newVal - oldVal) * 10) / 10
                 const color = delta < 0 ? 'text-green-400' : delta > 0 ? 'text-amber-400' : 'text-gray-500'
                 const arrow = delta < 0 ? '↓' : delta > 0 ? '↑' : '→'
+                const weeklyRate = weeksBetween >= 1 ? Math.round((newVal - oldVal) / weeksBetween * 10) / 10 : null
                 return (
                   <div key={label} className="bg-gray-800/50 rounded-xl p-3 text-center">
                     <p className="text-xs text-gray-500 mb-1">{label}</p>
@@ -274,6 +277,11 @@ export default function Progress() {
                       {arrow} {Math.abs(delta).toFixed(1)}{mUnit}
                     </p>
                     <p className="text-xs text-gray-600 mt-0.5">{oldVal} → {newVal}</p>
+                    {weeklyRate !== null && weeklyRate !== 0 && (
+                      <p className={`text-xs mt-1 font-medium ${weeklyRate < 0 ? 'text-green-500/70' : 'text-amber-500/70'}`}>
+                        {weeklyRate > 0 ? '+' : ''}{weeklyRate.toFixed(1)}{mUnit}/wk
+                      </p>
+                    )}
                   </div>
                 )
               })}
