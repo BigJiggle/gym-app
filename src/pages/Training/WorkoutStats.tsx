@@ -323,6 +323,28 @@ export default function WorkoutStats({ history, sessionsPerWeek, units = 'metric
         </div>
       </div>
 
+      {/* Personal Records — shown first so they're immediately visible */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+        <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Personal Records</p>
+        {prs.length > 0 ? (
+          <div className="space-y-2">
+            {prs.map((pr) => (
+              <div key={pr.exerciseName} className="flex items-center justify-between py-1 border-b border-gray-800 last:border-0">
+                <p className="text-sm text-gray-300 truncate pr-3">{pr.exerciseName}</p>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className="text-sm font-bold text-brand-400">
+                    {toDisplay(pr.weightKg)}{weightUnit} × {pr.reps}
+                  </span>
+                  <span className="text-xs text-gray-600 hidden sm:inline">{pr.date}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-600 text-center py-2">Log workouts with weights to see your records.</p>
+        )}
+      </div>
+
       {/* Weekly tonnage — progressive overload tracker */}
       {(thisWeekTonnage > 0 || lastWeekTonnage > 0) && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
@@ -639,27 +661,6 @@ export default function WorkoutStats({ history, sessionsPerWeek, units = 'metric
         </div>
       )}
 
-      {/* Personal Records */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-        <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Personal Records</p>
-        {prs.length > 0 ? (
-          <div className="space-y-2">
-            {prs.map((pr) => (
-              <div key={pr.exerciseName} className="flex items-center justify-between py-1 border-b border-gray-800 last:border-0">
-                <p className="text-sm text-gray-300 truncate pr-3">{pr.exerciseName}</p>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className="text-sm font-bold text-brand-400">
-                    {toDisplay(pr.weightKg)}{weightUnit} × {pr.reps}
-                  </span>
-                  <span className="text-xs text-gray-600 hidden sm:inline">{pr.date}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-gray-600 text-center py-2">Log workouts with weights to see your records.</p>
-        )}
-      </div>
     </div>
   )
 }

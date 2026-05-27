@@ -17,19 +17,30 @@ function RatingBar({
   value,
   onChange,
   lowLabel,
-  highLabel
+  highLabel,
+  lowerIsBetter,
 }: {
   label: string
   value: number
   onChange: (v: number) => void
   lowLabel?: string
   highLabel?: string
+  lowerIsBetter?: boolean
 }) {
+  function activeColor(n: number) {
+    if (!lowerIsBetter) return 'bg-brand-600 text-white'
+    if (n <= 2) return 'bg-green-600 text-white'
+    if (n === 3) return 'bg-yellow-600 text-white'
+    return 'bg-red-600 text-white'
+  }
+  const valueColor = lowerIsBetter
+    ? value <= 2 ? 'text-green-400' : value === 3 ? 'text-yellow-400' : 'text-red-400'
+    : 'text-brand-400'
   return (
     <div>
       <div className="flex justify-between mb-1.5">
         <span className="text-sm font-medium text-gray-300">{label}</span>
-        <span className="text-sm text-brand-400 font-bold">{value}/5</span>
+        <span className={`text-sm font-bold ${valueColor}`}>{value}/5</span>
       </div>
       <div className="flex gap-1.5">
         {[1, 2, 3, 4, 5].map((n) => (
@@ -38,7 +49,7 @@ function RatingBar({
             type="button"
             onClick={() => onChange(n)}
             className={`flex-1 h-8 rounded transition-colors text-sm font-medium ${
-              n <= value ? 'bg-brand-600 text-white' : 'bg-gray-800 text-gray-600 hover:bg-gray-700'
+              n <= value ? activeColor(n) : 'bg-gray-800 text-gray-600 hover:bg-gray-700'
             }`}
           >
             {n}
@@ -255,7 +266,7 @@ function MissedSlotPanel({ slot, userId, isImperial, onFilled }: MissedSlotPanel
           <div className="space-y-3">
             <RatingBar label="Energy Level"  value={energy} onChange={setEnergy} lowLabel="Exhausted"  highLabel="Excellent"    />
             <RatingBar label="Sleep Quality" value={sleep}  onChange={setSleep}  lowLabel="Poor"        highLabel="Great"        />
-            <RatingBar label="Stress Level"  value={stress} onChange={setStress} lowLabel="Relaxed"     highLabel="Overwhelmed"  />
+            <RatingBar label="Stress Level"  value={stress} onChange={setStress} lowLabel="Relaxed"     highLabel="Overwhelmed" lowerIsBetter  />
           </div>
 
           <Textarea
@@ -630,7 +641,7 @@ export default function CheckIn() {
                 <div className="space-y-3">
                   <RatingBar label="Energy Level"  value={editEnergy} onChange={setEditEnergy} lowLabel="Exhausted"   highLabel="Excellent"   />
                   <RatingBar label="Sleep Quality" value={editSleep}  onChange={setEditSleep}  lowLabel="Poor"         highLabel="Great"        />
-                  <RatingBar label="Stress Level"  value={editStress} onChange={setEditStress} lowLabel="Relaxed"      highLabel="Overwhelmed"  />
+                  <RatingBar label="Stress Level"  value={editStress} onChange={setEditStress} lowLabel="Relaxed"      highLabel="Overwhelmed" lowerIsBetter  />
                 </div>
 
                 <Textarea
@@ -865,7 +876,7 @@ export default function CheckIn() {
           <div className="space-y-4">
             <RatingBar label="Energy Level"  value={energyLevel}  onChange={setEnergyLevel}  lowLabel="Exhausted" highLabel="Excellent"   />
             <RatingBar label="Sleep Quality" value={sleepQuality} onChange={setSleepQuality} lowLabel="Very poor"  highLabel="Excellent"   />
-            <RatingBar label="Stress Level"  value={stressLevel}  onChange={setStressLevel}  lowLabel="None"       highLabel="Very high"   />
+            <RatingBar label="Stress Level"  value={stressLevel}  onChange={setStressLevel}  lowLabel="None"       highLabel="Very high"  lowerIsBetter  />
           </div>
         </Card>
 
