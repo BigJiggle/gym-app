@@ -583,7 +583,7 @@ export default function Training() {
                         }}
                         className="w-full py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-sm font-bold transition-colors"
                       >
-                        ▶ Start Workout
+                        {isDoneToday ? '↺ Redo Workout' : '▶ Start Workout'}
                       </button>
                       {session.exercises.map((ex, i) => {
                         const pr = exercisePRs.get(ex.name)

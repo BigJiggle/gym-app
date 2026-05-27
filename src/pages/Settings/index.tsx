@@ -481,20 +481,23 @@ export default function Settings() {
             </div>
 
             {/* Save buttons */}
-            <div className="flex gap-2 pt-1">
+            <p className="text-xs text-gray-600 pt-1">Changed weight, age, or body fat? Just save. Changed training days or diet type? Save &amp; regenerate.</p>
+            <div className="flex gap-2">
               <button
                 onClick={() => handleSaveProfile(false)}
                 disabled={editSaving}
+                title="Save profile data without regenerating training or nutrition plans"
                 className="flex-1 py-2 rounded-xl border border-gray-700 text-sm text-gray-300 hover:border-gray-600 transition-colors disabled:opacity-50"
               >
-                {editSaving ? 'Saving...' : editSaved ? '✓ Saved' : 'Save Changes'}
+                {editSaving ? 'Saving...' : editSaved ? '✓ Saved' : 'Save Only'}
               </button>
               <button
                 onClick={() => handleSaveProfile(true)}
                 disabled={editSaving}
+                title="Save profile and rebuild your training and nutrition plans from scratch"
                 className="flex-1 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold transition-colors disabled:opacity-50"
               >
-                Save & Regenerate Plans
+                Save &amp; Regenerate Plans
               </button>
             </div>
           </div>
