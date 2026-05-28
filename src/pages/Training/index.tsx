@@ -812,7 +812,7 @@ export default function Training() {
                             }}
                             className="text-xs text-gray-500 hover:text-brand-400 border border-gray-700 hover:border-brand-700 rounded-lg px-2 py-1 transition-colors"
                           >
-                            View Log
+                            Edit Log
                           </button>
                         </div>
                       </div>
