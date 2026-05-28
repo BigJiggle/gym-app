@@ -565,7 +565,7 @@ export default function Training() {
                   {!isExpanded && (
                     <div className="flex flex-wrap gap-1 mt-2">
                       {session.exercises.slice(0, 3).map((ex, i) => (
-                        <span key={i} className="text-xs text-gray-600">
+                        <span key={i} className="text-xs text-gray-500">
                           {ex.name}
                           {i < 2 && session.exercises.length > i + 1 ? ',' : i === 2 && session.exercises.length > 3 ? '...' : ''}
                         </span>

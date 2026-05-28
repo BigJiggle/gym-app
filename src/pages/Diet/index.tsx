@@ -298,7 +298,7 @@ export default function Diet() {
           {loading ? '...' : '↺ Regenerate'}
         </button>
       </div>
-      <p className="text-xs text-gray-600 -mt-3">⟳ adjusts calorie targets only &nbsp;·&nbsp; ↺ replaces all meals</p>
+      <p className="text-xs text-gray-500 -mt-3">⟳ adjusts calorie targets only &nbsp;·&nbsp; <span className="text-amber-600">↺ replaces all meals</span></p>
 
       {/* ─── MEAL PLAN TAB ─── */}
       {tab === 'plan' && (
