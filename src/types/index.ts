@@ -148,6 +148,7 @@ export interface AppSettings {
   ui_zoom?: string
   theme_name?: string
   claude_api_key?: string
+  target_weight_kg?: string
 }
 
 export interface WorkoutLog {

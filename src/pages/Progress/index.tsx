@@ -34,12 +34,14 @@ function weeksUntil(dateStr: string): number | null {
 
 export default function Progress() {
   const { user } = useUserStore()
-  const { settings } = useSettingsStore()
+  const { settings, setSetting } = useSettingsStore()
   const { progressEntries, checkinHistory, loadProgressEntries, loadCheckinHistory, dietPlan } = usePlanStore()
 
   // 8-week diet consistency data
   interface WeekConsistency { week: string; pct: number; meals: number; target: number }
   const [dietConsistency, setDietConsistency] = useState<WeekConsistency[]>([])
+  const [targetEditStr, setTargetEditStr] = useState('')
+  const [editingTarget, setEditingTarget] = useState(false)
 
   useEffect(() => {
     if (!user?.id) return
@@ -108,6 +110,11 @@ export default function Progress() {
   const projectedWeightKg =
     weeklyRateKg !== null && weeksToShow !== null
       ? currentWeightKg + weeklyRateKg * weeksToShow
+      : null
+  const targetKg = settings.target_weight_kg ? parseFloat(settings.target_weight_kg) : null
+  const requiredRateKg =
+    targetKg !== null && weeksToShow !== null && weeksToShow > 0
+      ? (targetKg - currentWeightKg) / weeksToShow
       : null
   const isImperial = settings.units === 'imperial'
   const toDisplay = (kg: number) =>
@@ -226,6 +233,83 @@ export default function Progress() {
                 <p className="text-xs text-gray-500 mb-1">Show Date</p>
                 <p className="text-sm text-gray-500 mt-1">Not set — add a show in Settings to see projection</p>
               </div>
+            )}
+          </div>
+          {/* Target stage weight goal */}
+          <div className="mt-3 border-t border-gray-800/50 pt-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-500 font-medium">Stage Weight Goal</span>
+              {!editingTarget && (
+                <button
+                  onClick={() => {
+                    setTargetEditStr(targetKg !== null ? String(toDisplay(targetKg)) : '')
+                    setEditingTarget(true)
+                  }}
+                  className="text-xs text-brand-400 hover:text-brand-300 transition-colors"
+                >
+                  {targetKg !== null ? 'Edit' : 'Set goal'}
+                </button>
+              )}
+            </div>
+            {editingTarget ? (
+              <div className="flex items-center gap-2 mt-2">
+                <input
+                  type="number"
+                  value={targetEditStr}
+                  onChange={e => setTargetEditStr(e.target.value)}
+                  className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-brand-500"
+                  placeholder={wUnit}
+                  autoFocus
+                />
+                <span className="text-xs text-gray-500">{wUnit}</span>
+                <button
+                  onClick={() => {
+                    const v = parseFloat(targetEditStr)
+                    if (!isNaN(v) && v > 0) {
+                      const kg = isImperial ? Math.round(v / 2.20462 * 100) / 100 : v
+                      setSetting('target_weight_kg', String(kg))
+                    }
+                    setEditingTarget(false)
+                  }}
+                  className="text-xs bg-brand-600 hover:bg-brand-500 text-white px-2.5 py-1 rounded-lg transition-colors"
+                >
+                  Save
+                </button>
+                {targetKg !== null && (
+                  <button
+                    onClick={() => { setSetting('target_weight_kg', ''); setEditingTarget(false) }}
+                    className="text-xs text-gray-500 hover:text-gray-400 transition-colors"
+                  >
+                    Clear
+                  </button>
+                )}
+                <button
+                  onClick={() => setEditingTarget(false)}
+                  className="text-xs text-gray-500 hover:text-gray-400 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : targetKg !== null ? (
+              <div className="mt-1">
+                <p className="text-lg font-bold text-gray-100">{toDisplay(targetKg)} {wUnit}</p>
+                {requiredRateKg !== null && weeklyRateKg !== null && (
+                  <p className={`text-xs mt-0.5 ${
+                    (requiredRateKg < 0 ? weeklyRateKg <= requiredRateKg : weeklyRateKg >= requiredRateKg)
+                      ? 'text-green-400'
+                      : 'text-amber-400'
+                  }`}>
+                    Need {requiredRateKg > 0 ? '+' : ''}{toDisplay(requiredRateKg)} {wUnit}/wk · current {weeklyRateKg > 0 ? '+' : ''}{toDisplay(weeklyRateKg)} {wUnit}/wk
+                  </p>
+                )}
+                {requiredRateKg !== null && weeklyRateKg === null && (
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Need {requiredRateKg > 0 ? '+' : ''}{toDisplay(requiredRateKg)} {wUnit}/wk to reach goal
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-600 mt-1">Not set — tap "Set goal" to track your target stage weight</p>
             )}
           </div>
           {user.goal === 'cut' && weeklyRateKg !== null && (
