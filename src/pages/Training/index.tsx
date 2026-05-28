@@ -142,6 +142,33 @@ export default function Training() {
     return bests
   }, [workoutHistory])
 
+  // Strength trend: compare top-set weight across last 3 completed sessions per exercise
+  // workoutHistory is newest-first; we collect up to 3 distinct log entries per exercise
+  const exerciseTrend = useMemo(() => {
+    const workoutsPerExercise = new Map<string, number[]>()
+    for (const log of workoutHistory) {
+      if (log.status !== 'completed') continue
+      const logBest = new Map<string, number>()
+      for (const s of log.sets ?? []) {
+        if (s.skipped || !s.weight_kg || s.weight_kg === 0) continue
+        const cur = logBest.get(s.exercise_name) ?? 0
+        if (s.weight_kg > cur) logBest.set(s.exercise_name, s.weight_kg)
+      }
+      for (const [name, best] of logBest) {
+        if (!workoutsPerExercise.has(name)) workoutsPerExercise.set(name, [])
+        const arr = workoutsPerExercise.get(name)!
+        if (arr.length < 3) arr.push(best)
+      }
+    }
+    const result = new Map<string, 'up' | 'down' | 'stable'>()
+    for (const [name, weights] of workoutsPerExercise) {
+      if (weights.length < 2) continue
+      const diff = weights[0] - weights[weights.length - 1]
+      result.set(name, diff > 0 ? 'up' : diff < 0 ? 'down' : 'stable')
+    }
+    return result
+  }, [workoutHistory])
+
   const isImperial = settings.units === 'imperial'
 
   // If there is an active workout and a session to track, show the overlay
@@ -588,13 +615,23 @@ export default function Training() {
                         const prDisplay = pr
                           ? `${isImperial ? Math.round(pr.weightKg * 2.20462 * 10) / 10 : pr.weightKg}${isImperial ? 'lbs' : 'kg'} × ${pr.reps}`
                           : null
+                        const trend = exerciseTrend.get(ex.name)
+                        const trendSymbol = trend === 'up' ? '↑' : trend === 'down' ? '↓' : trend === 'stable' ? '→' : null
+                        const trendColor = trend === 'up' ? 'text-green-400' : trend === 'down' ? 'text-red-400' : 'text-gray-500'
                         return (
                           <div key={i} className="flex justify-between items-start text-sm">
                             <div>
                               <span className="text-gray-200">{ex.name}</span>
                               {ex.notes && <p className="text-xs text-gray-600 mt-0.5">{ex.notes}</p>}
                               {prDisplay && (
-                                <p className="text-xs text-amber-400/80 mt-0.5">PR: {prDisplay}</p>
+                                <p className="text-xs text-amber-400/80 mt-0.5 flex items-center gap-1">
+                                  PR: {prDisplay}
+                                  {trendSymbol && (
+                                    <span className={`font-bold ${trendColor}`} title={`Strength trend (last 3 sessions): ${trend}`}>
+                                      {trendSymbol}
+                                    </span>
+                                  )}
+                                </p>
                               )}
                             </div>
                             <span className="text-gray-400 font-mono text-xs ml-3 flex-shrink-0">
