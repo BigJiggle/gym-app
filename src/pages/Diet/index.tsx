@@ -517,7 +517,7 @@ export default function Diet() {
             </div>
           )}
 
-          {/* Weekly macro totals — calories and protein hit across all logged days this week */}
+          {/* Weekly macro totals — calories, protein, carbs, and fat hit across all logged days this week */}
           {totalMeals > 0 && (() => {
             const pastDays = weekDays.filter(d => d.dateStr <= todayStr)
             const weekCals = pastDays.reduce((acc, { dateStr }) =>
@@ -530,10 +530,24 @@ export default function Diet() {
                 sum + (mealCompletions.some(c => c.date === dateStr && c.meal_index === idx) ? m.protein_g : 0), 0
               ), 0
             )
+            const weekCarbs = pastDays.reduce((acc, { dateStr }) =>
+              acc + (dietPlan.meals ?? []).reduce((sum, m, idx) =>
+                sum + (mealCompletions.some(c => c.date === dateStr && c.meal_index === idx) ? m.carbs_g : 0), 0
+              ), 0
+            )
+            const weekFat = pastDays.reduce((acc, { dateStr }) =>
+              acc + (dietPlan.meals ?? []).reduce((sum, m, idx) =>
+                sum + (mealCompletions.some(c => c.date === dateStr && c.meal_index === idx) ? m.fat_g : 0), 0
+              ), 0
+            )
             const targetWeekCals = dietPlan.calories_target * pastDays.length
             const targetWeekProtein = dietPlan.protein_g * pastDays.length
+            const targetWeekCarbs = dietPlan.carbs_g * pastDays.length
+            const targetWeekFat = dietPlan.fat_g * pastDays.length
             const weekCalPct = targetWeekCals > 0 ? Math.min(100, Math.round((weekCals / targetWeekCals) * 100)) : 0
             const weekProtPct = targetWeekProtein > 0 ? Math.min(100, Math.round((weekProtein / targetWeekProtein) * 100)) : 0
+            const weekCarbPct = targetWeekCarbs > 0 ? Math.min(100, Math.round((weekCarbs / targetWeekCarbs) * 100)) : 0
+            const weekFatPct = targetWeekFat > 0 ? Math.min(100, Math.round((weekFat / targetWeekFat) * 100)) : 0
             return (
               <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-3">
                 <div className="flex items-center justify-between">
@@ -560,6 +574,28 @@ export default function Diet() {
                   </div>
                   <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
                     <div className={`h-full rounded-full transition-all duration-300 ${weekProtPct >= 90 ? 'bg-green-500' : 'bg-green-600'}`} style={{ width: `${weekProtPct}%` }} />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex justify-between text-xs mb-1.5">
+                    <span className="text-gray-500">Carbs this week</span>
+                    <span className={weekCarbPct >= 90 ? 'text-green-400' : 'text-blue-400'}>
+                      {Math.round(weekCarbs)}g / {Math.round(targetWeekCarbs)}g ({weekCarbPct}%)
+                    </span>
+                  </div>
+                  <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full transition-all duration-300 ${weekCarbPct >= 90 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${weekCarbPct}%` }} />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex justify-between text-xs mb-1.5">
+                    <span className="text-gray-500">Fat this week</span>
+                    <span className={weekFatPct >= 90 ? 'text-green-400' : 'text-yellow-400'}>
+                      {Math.round(weekFat)}g / {Math.round(targetWeekFat)}g ({weekFatPct}%)
+                    </span>
+                  </div>
+                  <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full transition-all duration-300 ${weekFatPct >= 90 ? 'bg-green-500' : 'bg-yellow-500'}`} style={{ width: `${weekFatPct}%` }} />
                   </div>
                 </div>
                 {/* Average daily deficit/surplus — only shown once there are logged meals this week */}
