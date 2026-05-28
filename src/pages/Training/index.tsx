@@ -500,10 +500,6 @@ export default function Training() {
             </div>
           )}
 
-          <div className="bg-amber-900/10 border border-amber-800/30 rounded-lg p-3 text-xs text-amber-600">
-            <strong className="text-amber-500">RIR:</strong> Reps In Reserve — stop each set with the indicated reps still in the tank. e.g. RIR 2 = 2 reps left before failure.
-          </div>
-
           {/* Session cards — today's session first, then remaining in day order */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {[...(trainingPlan.sessions ?? [])].sort((a, b) => {
@@ -544,18 +540,20 @@ export default function Training() {
                       <h3 className="text-sm font-semibold text-gray-200">{session.session_name}</h3>
                     </div>
                     <div className="flex items-center gap-2">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleStartWorkout(session) }}
-                        className={`font-bold transition-colors rounded-lg ${
-                          isDoneToday
-                            ? 'text-xs px-3 py-1 border border-gray-700 text-gray-500 hover:border-gray-600 hover:text-gray-400'
-                            : isToday
-                              ? 'bg-brand-600 hover:bg-brand-500 text-white text-sm px-4 py-2'
-                              : 'text-xs px-3 py-1 border border-gray-700 text-gray-400 hover:border-brand-700 hover:text-brand-400'
-                        }`}
-                      >
-                        {isDoneToday ? '↺ Redo' : '▶ Start Workout'}
-                      </button>
+                      {!isExpanded && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleStartWorkout(session) }}
+                          className={`font-bold transition-colors rounded-lg ${
+                            isDoneToday
+                              ? 'text-xs px-3 py-1 border border-gray-700 text-gray-500 hover:border-gray-600 hover:text-gray-400'
+                              : isToday
+                                ? 'bg-brand-600 hover:bg-brand-500 text-white text-sm px-4 py-2'
+                                : 'text-xs px-3 py-1 border border-gray-700 text-gray-400 hover:border-brand-700 hover:text-brand-400'
+                          }`}
+                        >
+                          {isDoneToday ? '↺ Redo' : '▶ Start Workout'}
+                        </button>
+                      )}
                       <span className="text-xs text-gray-500">{session.exercises.length} ex</span>
                       <span className="text-gray-600 text-xs">{isExpanded ? '▲' : '▼'}</span>
                     </div>
