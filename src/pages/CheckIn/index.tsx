@@ -296,7 +296,7 @@ function MissedSlotPanel({ slot, userId, isImperial, onFilled }: MissedSlotPanel
 
 export default function CheckIn() {
   const { user } = useUserStore()
-  const { submitCheckin, checkinHistory, latestCheckin, loadCheckinHistory, loading, workoutHistory, trainingPlan, loadWorkoutHistory } = usePlanStore()
+  const { submitCheckin, checkinHistory, latestCheckin, loadCheckinHistory, loadTrainingPlan, loading, workoutHistory, trainingPlan, loadWorkoutHistory } = usePlanStore()
   const { settings } = useSettingsStore()
 
   const isImperial = settings.units === 'imperial'
@@ -371,6 +371,7 @@ export default function CheckIn() {
     setCheckingInterval(true)
     loadCheckinHistory(user.id)
     loadWorkoutHistory(user.id)
+    loadTrainingPlan(user.id)
     window.api.getNextCheckinDate(user.id)
       .then((iso) => {
         setNextAllowed(iso && new Date(iso) > new Date() ? new Date(iso) : null)
