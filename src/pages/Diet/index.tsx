@@ -31,12 +31,14 @@ export default function Diet() {
   const [recalcDone, setRecalcDone] = useState(false)
   const [recalcLoading, setRecalcLoading] = useState(false)
   const [regenLoading, setRegenLoading] = useState(false)
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
 
   // Food preferences panel state
   const [prefsOpen, setPrefsOpen] = useState(false)
   const [prefsCookTime, setPrefsCookTime] = useState<'quick' | 'medium' | 'chef'>('medium')
   const [prefsPrepStyle, setPrefsPrepStyle] = useState<'daily' | 'batch' | 'mixed'>('daily')
-  const [prefsSnacks, setPrefsSnacks] = useState(true)
+  const [prefsSnackCount, setPrefsSnackCount] = useState(0)
   const [prefsExclusions, setPrefsExclusions] = useState<string[]>([])
   const [prefsPreferences, setPrefsPreferences] = useState<string[]>([])
   const [prefsExcludeSearch, setPrefsExcludeSearch] = useState('')
@@ -74,7 +76,7 @@ export default function Diet() {
     if (prefsOpen && user) {
       setPrefsCookTime((user.cooking_time_pref as 'quick' | 'medium' | 'chef') ?? 'medium')
       setPrefsPrepStyle((user.meal_prep_style as 'daily' | 'batch' | 'mixed') ?? 'daily')
-      setPrefsSnacks(user.include_snacks ?? true)
+      setPrefsSnackCount(user.snack_count ?? 0)
       setPrefsExclusions(user.food_exclusions ?? [])
       setPrefsPreferences(user.food_preferences ?? [])
       setPrefsRestrictions(user.dietary_restrictions ?? [])
@@ -118,7 +120,7 @@ export default function Diet() {
         id: user.id,
         cooking_time_pref: prefsCookTime,
         meal_prep_style: prefsPrepStyle,
-        include_snacks: prefsSnacks,
+        snack_count: prefsSnackCount,
         food_exclusions: prefsExclusions,
         food_preferences: prefsPreferences,
       })
@@ -508,77 +510,122 @@ export default function Diet() {
 
           {/* Meals */}
           <div>
-            <h2 className="text-lg font-semibold text-gray-100 mb-3">Daily Meals ({dietPlan.meal_count} meals)</h2>
-            <div className="space-y-3">
+            {(() => {
+              const snackCount = (dietPlan.meals ?? []).filter(m => m.name.toLowerCase().includes('snack')).length
+              const mainCount = (dietPlan.meals?.length ?? 0) - snackCount
+              return (
+                <h2 className="text-lg font-semibold text-gray-100 mb-3">
+                  Daily Meals ({mainCount} meal{mainCount !== 1 ? 's' : ''}
+                  {snackCount > 0 ? ` + ${snackCount} snack${snackCount !== 1 ? 's' : ''}` : ''})
+                </h2>
+              )
+            })()}
+            <div className="space-y-1">
               {dietPlan.meals?.map((meal, i) => {
-                const isActive = i === activeMealIndex
+                const snack = meal.name.toLowerCase().includes('snack')
                 return (
-                <div key={i} className={`bg-gray-900 border rounded-xl p-4 transition-colors ${
-                  isMealEaten(i) ? 'border-gray-800 opacity-70' :
-                  isActive ? 'border-brand-500 ring-1 ring-brand-500/30' :
-                  'border-gray-800'
-                }`}>
-                  <div
-                    className="flex items-center justify-between mb-2 cursor-pointer"
-                    onClick={() => toggleMealEaten(i, meal.name)}
-                    title={isMealEaten(i) ? 'Mark as not eaten' : 'Mark as eaten'}
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className={`w-5 h-5 rounded-full flex-shrink-0 border-2 flex items-center justify-center transition-colors ${isMealEaten(i) ? 'border-green-500 bg-green-500 text-white' : isActive ? 'border-brand-400' : 'border-gray-600'}`}>
-                        {isMealEaten(i) && <span className="text-xs leading-none">✓</span>}
+                  <div key={i}>
+                    {/* Drop zone before each card */}
+                    {dragIndex !== null && dragIndex !== i && (
+                      <div
+                        className={`transition-all rounded-full mx-2 mb-1 ${dragOverIndex === i ? 'h-3 bg-orange-500/50' : 'h-1 bg-transparent'}`}
+                        onDragOver={(e) => { e.preventDefault(); setDragOverIndex(i) }}
+                        onDragLeave={() => setDragOverIndex(null)}
+                        onDrop={async (e) => {
+                          e.preventDefault()
+                          if (dragIndex === null || !user || !dietPlan) return
+                          const meals = [...dietPlan.meals]
+                          const [moved] = meals.splice(dragIndex, 1)
+                          const insertAt = dragOverIndex !== null && dragOverIndex > dragIndex ? i - 1 : i
+                          meals.splice(Math.max(0, insertAt), 0, moved)
+                          setDragIndex(null); setDragOverIndex(null)
+                          await window.api.reorderMeals(user.id, meals)
+                          await loadDietPlan(user.id)
+                        }}
+                      />
+                    )}
+                    <div
+                      className={`rounded-xl p-4 mb-2 ${snack ? 'bg-orange-900/10 border border-orange-800/40' : 'bg-gray-900 border border-gray-800'} ${dragIndex === i ? 'opacity-50' : ''}`}
+                      draggable={snack ? true : undefined}
+                      onDragStart={snack ? (e) => { setDragIndex(i); e.dataTransfer.effectAllowed = 'move' } : undefined}
+                      onDragEnd={snack ? () => { setDragIndex(null); setDragOverIndex(null) } : undefined}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          {snack && (
+                            <span className="text-gray-600 cursor-grab select-none text-base leading-none">⠿</span>
+                          )}
+                          <span className="text-xs text-gray-600 font-mono">{meal.time}</span>
+                          <h3 className="text-sm font-semibold text-gray-200">{meal.name}</h3>
+                          {snack && (
+                            <span className="text-xs bg-orange-900/30 text-orange-400 border border-orange-800/40 rounded-full px-2 py-0.5 leading-none">Snack</span>
+                          )}
+                        </div>
+                        <div className="flex gap-3 text-xs text-gray-500">
+                          <span className="text-brand-400 font-medium">{meal.calories} kcal</span>
+                          <span className="text-green-400">P {meal.protein_g}g</span>
+                          <span className="text-blue-400">C {meal.carbs_g}g</span>
+                          <span className="text-yellow-400">F {meal.fat_g}g</span>
+                        </div>
                       </div>
-                      <span className="text-xs text-gray-600 font-mono">{meal.time}</span>
-                      <h3 className={`text-sm font-semibold ${isMealEaten(i) ? 'text-gray-500 line-through' : 'text-gray-200'}`}>{meal.name}</h3>
-                      {isActive && (
-                        <span className="text-xs font-semibold bg-brand-600/30 text-brand-400 border border-brand-700/50 rounded-full px-2 py-0.5 leading-none">
-                          Eat Now
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex gap-3 text-xs text-gray-500">
-                      <span className="text-brand-400 font-medium">{meal.calories} kcal</span>
-                      <span className="text-green-400">P {meal.protein_g}g</span>
-                      <span className="text-blue-400">C {meal.carbs_g}g</span>
-                      <span className="text-yellow-400">F {meal.fat_g}g</span>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {meal.foods.map((food, fi) => (
-                      <span key={fi} className="flex items-center gap-1 text-xs bg-gray-800 text-gray-400 px-2 py-1 rounded-md">
-                        {food}
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {meal.foods.map((food, fi) => (
+                          <span key={fi} className="flex items-center gap-1 text-xs bg-gray-800 text-gray-400 px-2 py-1 rounded-md">
+                            {food}
+                            <button
+                              onClick={() => setExcludePending(food)}
+                              className="opacity-40 hover:opacity-100 text-gray-500 hover:text-red-400 transition-opacity ml-0.5 flex-shrink-0"
+                              title="Exclude this food from future plans"
+                            >
+                              &#10005;
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                      <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-800">
                         <button
-                          onClick={() => setExcludePending(food)}
-                          className="opacity-40 hover:opacity-100 text-gray-500 hover:text-red-400 transition-opacity ml-0.5 flex-shrink-0"
-                          title="Exclude this food from future plans"
+                          onClick={() => { setSwapError(null); setSwapTarget({ mealIndex: i, meal }) }}
+                          className="text-xs text-gray-400 hover:text-brand-300 border border-gray-700 hover:border-brand-700 rounded-lg px-2.5 py-1 transition-colors flex items-center gap-1"
                         >
-                          &#10005;
+                          &#8635; {snack ? 'Swap Snack' : 'Swap Meal'}
                         </button>
-                      </span>
-                    ))}
+                        <button
+                          onClick={() => toggleMealEaten(i, meal.name)}
+                          className={`text-xs font-medium rounded-lg px-2.5 py-1 transition-colors flex items-center gap-1 ${
+                            isMealEaten(i)
+                              ? 'bg-green-900/30 border border-green-800/50 text-green-400'
+                              : 'bg-brand-900/20 border border-brand-700 text-brand-400 hover:bg-brand-900/40'
+                          }`}
+                        >
+                          {isMealEaten(i) ? '✓ Eaten' : 'Mark Eaten'}
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-800">
-                    <button
-                      onClick={() => toggleMealEaten(i, meal.name)}
-                      title={isMealEaten(i) ? 'Click to unmark' : 'Mark as eaten'}
-                      className={`text-xs font-medium rounded-lg px-2.5 py-1 transition-colors flex items-center gap-1 ${
-                        isMealEaten(i)
-                          ? 'bg-green-900/30 border border-green-800/50 text-green-400 hover:bg-red-900/20 hover:border-red-800/50 hover:text-red-400'
-                          : 'bg-brand-900/20 border border-brand-700 text-brand-400 hover:bg-brand-900/40'
-                      }`}
-                    >
-                      {isMealEaten(i) ? '✓ Eaten' : 'Mark Eaten'}
-                    </button>
-                    <button
-                      onClick={() => { setSwapError(null); setSwapTarget({ mealIndex: i, meal }) }}
-                      className="text-xs text-gray-400 hover:text-brand-300 border border-gray-700 hover:border-brand-700 rounded-lg px-2.5 py-1 transition-colors flex items-center gap-1"
-                    >
-                      &#8635; Swap Meal
-                    </button>
-                  </div>
-                </div>
                 )
               })}
+              {/* Trailing drop zone */}
+              {dragIndex !== null && (
+                <div
+                  className={`transition-all rounded-full mx-2 ${dragOverIndex === (dietPlan.meals?.length ?? 0) ? 'h-3 bg-orange-500/50' : 'h-1 bg-transparent'}`}
+                  onDragOver={(e) => { e.preventDefault(); setDragOverIndex(dietPlan.meals?.length ?? 0) }}
+                  onDragLeave={() => setDragOverIndex(null)}
+                  onDrop={async (e) => {
+                    e.preventDefault()
+                    if (dragIndex === null || !user || !dietPlan) return
+                    const meals = [...dietPlan.meals]
+                    const [moved] = meals.splice(dragIndex, 1)
+                    meals.push(moved)
+                    setDragIndex(null); setDragOverIndex(null)
+                    await window.api.reorderMeals(user.id, meals)
+                    await loadDietPlan(user.id)
+                  }}
+                />
+              )}
             </div>
+            {(user.snack_count ?? 0) > 0 && (
+              <p className="text-xs text-gray-600 mt-2">Drag snack cards (⠿) to reorder them between meals.</p>
+            )}
           </div>
 
           {/* Disclaimer */}
@@ -789,7 +836,7 @@ export default function Diet() {
                     ? ` · ${user.food_exclusions.length} food${user.food_exclusions.length !== 1 ? 's' : ''} excluded`
                     : ''}
                   {!user.dietary_restrictions?.length && !user.food_exclusions?.length ? ' No exclusions' : ''}
-                  {user.include_snacks ? ' · Snacks' : ''}
+                  {(user.snack_count ?? 0) > 0 ? ` · ${user.snack_count} snack${user.snack_count !== 1 ? 's' : ''}` : ''}
                 </p>
               </div>
               <span className="text-gray-500 text-xs">{prefsOpen ? '▲ Close' : '▼ Customize'}</span>
@@ -880,28 +927,24 @@ export default function Diet() {
                   </div>
                 </div>
 
-                {/* Snacks toggle */}
+                {/* Snacks count */}
                 <div>
                   <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 block">
-                    Snacks
+                    Snacks/Day (~200 kcal each)
                   </label>
                   <div className="flex gap-2">
-                    {[
-                      { value: true, label: 'Include Snacks', desc: 'Adds snack slots between meals' },
-                      { value: false, label: 'Main Meals Only', desc: 'No snack slots' },
-                    ].map((opt) => (
+                    {[0, 1, 2, 3].map((n) => (
                       <button
-                        key={String(opt.value)}
+                        key={n}
                         type="button"
-                        onClick={() => setPrefsSnacks(opt.value)}
-                        className={`flex-1 p-2 rounded-lg border text-left transition-colors ${
-                          prefsSnacks === opt.value
+                        onClick={() => setPrefsSnackCount(n)}
+                        className={`flex-1 py-2 rounded-lg border text-xs font-medium transition-colors ${
+                          prefsSnackCount === n
                             ? 'border-brand-500 bg-brand-600/20 text-brand-400'
                             : 'border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-600'
                         }`}
                       >
-                        <p className="text-xs font-semibold">{opt.label}</p>
-                        <p className="text-xs text-gray-500">{opt.desc}</p>
+                        {n === 0 ? 'None' : n}
                       </button>
                     ))}
                   </div>

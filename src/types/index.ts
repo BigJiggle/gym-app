@@ -19,6 +19,7 @@ export interface User {
   recovery_notes?: string
   is_natural: boolean
   meal_count: number
+  snack_count: number
   include_snacks: boolean
   split_preference: 'auto' | 'ppl' | 'upper_lower' | 'arnold' | 'bro' | 'full_body'
   food_preferences: string[]
@@ -229,6 +230,7 @@ declare global {
       generateDietPlan: (userId: number) => Promise<DietPlan>
       getDietPlan: (userId: number) => Promise<DietPlan | null>
       swapMeal: (userId: number, mealIndex: number, newFoods: string[]) => Promise<DietPlan>
+      reorderMeals: (userId: number, newMeals: Meal[]) => Promise<DietPlan>
       submitCheckin: (data: CreateCheckinInput) => Promise<CheckIn>
       updateCheckin: (id: number, data: Partial<CheckIn>) => Promise<CheckIn>
       getCheckinHistory: (userId: number) => Promise<CheckIn[]>

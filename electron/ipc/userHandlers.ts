@@ -11,14 +11,14 @@ export function registerUserHandlers(ipcMain: IpcMain): void {
         goal, dietary_preference, dietary_restrictions, training_frequency,
         equipment_access, activity_level, recovery_notes, is_natural, meal_count,
         split_preference, food_preferences, food_exclusions, cooking_time_pref, meal_prep_style,
-        include_snacks, culture_pref, exercises_per_session, sets_per_exercise
+        include_snacks, snack_count, culture_pref, exercises_per_session, sets_per_exercise
       ) VALUES (
         @name, @age, @sex, @height_cm, @weight_kg, @body_fat_pct,
         @training_experience_years, @competition_history, @division, @show_date,
         @goal, @dietary_preference, @dietary_restrictions, @training_frequency,
         @equipment_access, @activity_level, @recovery_notes, @is_natural, @meal_count,
         @split_preference, @food_preferences, @food_exclusions, @cooking_time_pref, @meal_prep_style,
-        @include_snacks, @culture_pref, @exercises_per_session, @sets_per_exercise
+        @include_snacks, @snack_count, @culture_pref, @exercises_per_session, @sets_per_exercise
       )
     `)
     const result = stmt.run(namedParams({
@@ -27,6 +27,7 @@ export function registerUserHandlers(ipcMain: IpcMain): void {
       dietary_restrictions: JSON.stringify(data.dietary_restrictions ?? []),
       is_natural: data.is_natural ? 1 : 0,
       include_snacks: data.include_snacks ? 1 : 0,
+      snack_count: data.snack_count ?? 0,
       food_preferences: JSON.stringify(data.food_preferences ?? []),
       food_exclusions: JSON.stringify(data.food_exclusions ?? []),
       culture_pref: data.culture_pref ?? 'any',
@@ -90,6 +91,7 @@ function parseUser(user: Record<string, unknown>) {
     dietary_restrictions: JSON.parse((user.dietary_restrictions as string) ?? '[]'),
     is_natural: user.is_natural === 1,
     include_snacks: user.include_snacks === 1,
+    snack_count: (user.snack_count as number) ?? 0,
     food_preferences: JSON.parse((user.food_preferences as string) ?? '[]'),
     food_exclusions: JSON.parse((user.food_exclusions as string) ?? '[]'),
     culture_pref: (user.culture_pref as string) ?? 'any',

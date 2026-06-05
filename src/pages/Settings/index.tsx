@@ -41,6 +41,7 @@ export default function Settings() {
   const [editOpen, setEditOpen] = useState(false)
   const [editSaving, setEditSaving] = useState(false)
   const [editSaved, setEditSaved] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
   const [editForm, setEditForm] = useState(() => ({
     name: user?.name ?? '',
     age: user?.age ?? 25,
@@ -60,6 +61,7 @@ export default function Settings() {
     sets_per_exercise: user?.sets_per_exercise ?? 4,
     dietary_preference: user?.dietary_preference ?? 'omnivore',
     meal_count: user?.meal_count ?? 4,
+    snack_count: user?.snack_count ?? 0,
     include_snacks: user?.include_snacks ?? true,
     cooking_time_pref: user?.cooking_time_pref ?? 'medium',
     meal_prep_style: user?.meal_prep_style ?? 'daily',
@@ -88,6 +90,7 @@ export default function Settings() {
         sets_per_exercise: user.sets_per_exercise ?? 4,
         dietary_preference: user.dietary_preference ?? 'omnivore',
         meal_count: user.meal_count ?? 4,
+        snack_count: user.snack_count ?? 0,
         include_snacks: user.include_snacks ?? true,
         cooking_time_pref: user.cooking_time_pref ?? 'medium',
         meal_prep_style: user.meal_prep_style ?? 'daily',
@@ -100,6 +103,7 @@ export default function Settings() {
 
   async function handleSaveProfile(regenerate = false) {
     setEditSaving(true)
+    setEditError(null)
     try {
       await updateUser({
         id: user!.id,
@@ -113,6 +117,7 @@ export default function Settings() {
       setTimeout(() => setEditSaved(false), 2500)
       if (!regenerate) setEditOpen(false)
     } catch (e) {
+      setEditError(String(e))
       console.error('Failed to update profile:', e)
     } finally {
       setEditSaving(false)
@@ -436,8 +441,17 @@ export default function Settings() {
                     <option value="vegetarian">Vegetarian</option>
                     <option value="vegan">Vegan</option>
                   </select></div>
-                <div><label className="text-xs text-gray-500 mb-1 block">Meals/Day</label>
-                  <input type="number" min={3} max={6} value={editForm.meal_count} onChange={(e) => setEditForm({...editForm, meal_count: parseInt(e.target.value)})} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200" /></div>
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Main Meals/Day</label>
+                  <div className="flex gap-1.5">
+                    {[3, 4, 5, 6].map((n) => (
+                      <button key={n} type="button" onClick={() => setEditForm({...editForm, meal_count: n})}
+                        className={`flex-1 py-1.5 rounded-lg border text-xs transition-colors ${editForm.meal_count === n ? 'bg-brand-600/20 border-brand-500 text-brand-400' : 'bg-gray-800 border-gray-700 text-gray-400'}`}>
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div><label className="text-xs text-gray-500 mb-1 block">Cook Time</label>
                   <select value={editForm.cooking_time_pref} onChange={(e) => setEditForm({...editForm, cooking_time_pref: e.target.value as any})} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200">
                     <option value="quick">Quick (&lt;15 min)</option>
@@ -470,10 +484,14 @@ export default function Settings() {
                   </div>
                 </div>
                 <div className="col-span-2">
-                  <label className="text-xs text-gray-500 mb-1 block">Snacks</label>
-                  <div className="flex gap-2">
-                    <button type="button" onClick={() => setEditForm({...editForm, include_snacks: true})} className={`flex-1 py-1.5 rounded-lg border text-xs transition-colors ${editForm.include_snacks ? 'bg-brand-600/20 border-brand-500 text-brand-400' : 'bg-gray-800 border-gray-700 text-gray-400'}`}>Include Snacks</button>
-                    <button type="button" onClick={() => setEditForm({...editForm, include_snacks: false})} className={`flex-1 py-1.5 rounded-lg border text-xs transition-colors ${!editForm.include_snacks ? 'bg-brand-600/20 border-brand-500 text-brand-400' : 'bg-gray-800 border-gray-700 text-gray-400'}`}>Main Meals Only</button>
+                  <label className="text-xs text-gray-500 mb-1 block">Snacks/Day (~200 kcal each)</label>
+                  <div className="flex gap-1.5">
+                    {[0, 1, 2, 3].map((n) => (
+                      <button key={n} type="button" onClick={() => setEditForm({...editForm, snack_count: n})}
+                        className={`flex-1 py-1.5 rounded-lg border text-xs transition-colors ${editForm.snack_count === n ? 'bg-brand-600/20 border-brand-500 text-brand-400' : 'bg-gray-800 border-gray-700 text-gray-400'}`}>
+                        {n === 0 ? 'None' : n}
+                      </button>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -481,6 +499,11 @@ export default function Settings() {
 
             {/* Save buttons */}
             <p className="text-xs text-gray-600 pt-1">Changed weight, age, or body fat? Just save. Changed training days or diet type? Save &amp; regenerate.</p>
+            {editError && (
+              <div className="text-xs text-red-400 bg-red-900/20 border border-red-800/40 rounded-lg px-3 py-2">
+                {editError}
+              </div>
+            )}
             <div className="flex gap-2">
               <button
                 onClick={() => handleSaveProfile(false)}

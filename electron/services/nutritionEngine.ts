@@ -2,8 +2,8 @@ import {
   EXCLUSION_ALIASES,
   FOOD_SUBSTITUTES,
   FOOD_CATEGORY,
-  FOOD_DISPLAY,
   SNACK_ONLY_FOODS,
+  FOOD_CALORIES_PER_100G,
   type FoodSubstituteTuple,
 } from './foodDatabase'
 
@@ -22,6 +22,7 @@ export interface NutritionInput {
   food_preferences?: string[]
   cooking_time_pref?: string
   meal_prep_style?: string
+  snack_count?: number
   include_snacks?: boolean
   culture_pref?: string
 }
@@ -115,9 +116,49 @@ export function restrictionsToAliasKeys(restrictions: string[]): string[] {
   return keys
 }
 
+// ─────────────────────────────────────────────
+// TemplateFoodItem — structured food description used to dynamically compute portions
+// ─────────────────────────────────────────────
+interface TemplateFoodItem {
+  id: string
+  display: string
+  // protein/carb/fat → portions scale with meal calories
+  // veg/fruit/powder → fixed gram amounts (ROLE_FIXED_G)
+  // fixed → fixedLabel is always returned as-is
+  role: 'protein' | 'carb' | 'veg' | 'fat' | 'fruit' | 'powder' | 'fixed'
+  fixedLabel?: string   // if set, calcPortionStr returns this string directly
+  unitSuffix?: string   // appended after grams: 'dry', 'cooked'
+}
 
-const PORTION_BY_CATEGORY: Record<string, string> = {
-  protein: '(150g)', carb: '(200g cooked)', fat: '(30g)', veg: '(200g)',
+// Fraction of meal calories allocated to each scalable role
+const MEAL_CAL_FRACTIONS: Record<string, number> = { protein: 0.45, carb: 0.35, fat: 0.15 }
+// Fixed gram amounts for roles that don't scale
+const ROLE_FIXED_G: Record<string, number> = { veg: 120, fruit: 100, powder: 30 }
+// Clamp ranges for scalable roles
+const ROLE_MIN_G: Record<string, number> = { protein: 40, carb: 30, fat: 10 }
+const ROLE_MAX_G: Record<string, number> = { protein: 280, carb: 280, fat: 50 }
+
+function calcPortionStr(item: TemplateFoodItem, mealCal: number): string {
+  if (item.fixedLabel) return item.fixedLabel
+  const { role, id, display, unitSuffix } = item
+  const suffix = unitSuffix ? ` ${unitSuffix}` : ''
+
+  if (role === 'veg' || role === 'fruit' || role === 'powder') {
+    return `${display} (${ROLE_FIXED_G[role]}g${suffix})`
+  }
+
+  const calPer100g = FOOD_CALORIES_PER_100G[id]
+  if (!calPer100g) return `${display} (100g${suffix})`
+
+  const fraction = MEAL_CAL_FRACTIONS[role] ?? 0.35
+  const budget = mealCal * fraction
+  // Round to nearest 5g
+  let grams = Math.round((budget / calPer100g) * 100 / 5) * 5
+  const min = ROLE_MIN_G[role] ?? 30
+  const max = ROLE_MAX_G[role] ?? 300
+  grams = Math.max(min, Math.min(max, grams))
+
+  return `${display} (${grams}g${suffix})`
 }
 
 // Checks if a food ID is excluded, including via alias and normalized human-readable name.
@@ -134,7 +175,11 @@ function isExcluded(id: string, exclusions: string[]): boolean {
   return false
 }
 
-// Returns the food string for a meal slot, respecting exclusions and preferences.
+function titleCase(id: string): string {
+  return id.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+}
+
+// Returns a TemplateFoodItem for a meal slot, respecting exclusions and preferences.
 // If the default food is excluded → iterate FOOD_SUBSTITUTES until finding one not excluded.
 // If a preferred food matches the same macro category and is not excluded → use it instead.
 //
@@ -145,10 +190,10 @@ function isExcluded(id: string, exclusions: string[]): boolean {
 function getFood(
   id: string,
   exclusions: string[],
-  defaultStr: string,
+  fallback: TemplateFoodItem,
   preferences?: string[],
   isMainMeal = true
-): string {
+): TemplateFoodItem {
   if (!isExcluded(id, exclusions)) {
     if (preferences?.length) {
       const category = FOOD_CATEGORY[id]
@@ -160,24 +205,24 @@ function getFood(
           // preference for greek_yogurt or apple never replaces salmon or rice in dinner.
           if (isMainMeal && SNACK_ONLY_FOODS.has(prefId)) continue
           if (FOOD_CATEGORY[prefId] === category) {
-            // Use FOOD_DISPLAY for correct portion, fall back to auto-generated label
-            if (FOOD_DISPLAY[prefId]) return FOOD_DISPLAY[prefId]
-            const label = prefId.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
-            return `${label} ${PORTION_BY_CATEGORY[category]}`
+            return { id: prefId, display: titleCase(prefId), role: fallback.role, unitSuffix: fallback.unitSuffix }
           }
         }
       }
     }
-    return defaultStr
+    return fallback
   }
   // Iterate substitutes in order — skip any whose food_id is itself excluded
   const subs = FOOD_SUBSTITUTES[id] as FoodSubstituteTuple[] | undefined
   if (subs) {
-    for (const [subId, subDisplay] of subs) {
-      if (!isExcluded(subId, exclusions)) return subDisplay
+    for (const [subId] of subs) {
+      if (!isExcluded(subId, exclusions)) {
+        const role = (FOOD_CATEGORY[subId] as TemplateFoodItem['role']) ?? fallback.role
+        return { id: subId, display: titleCase(subId), role, unitSuffix: fallback.unitSuffix }
+      }
     }
   }
-  return defaultStr
+  return fallback
 }
 
 export function calcBMR(weight_kg: number, height_cm: number, age: number, sex: string): number {
@@ -195,7 +240,7 @@ function buildMeals(
   food_exclusions?: string[],
   food_preferences?: string[],
   cooking_time_pref?: string,
-  include_snacks?: boolean,
+  snack_count?: number,
   culture_pref?: string,
   dietary_restrictions?: string[]
 ): Meal[] {
@@ -203,10 +248,10 @@ function buildMeals(
   const restrictionAliases = restrictionsToAliasKeys(dietary_restrictions ?? [])
   const allExclusions = [...(food_exclusions ?? []), ...restrictionAliases]
   const allPreferences = food_preferences ?? []
-  const mealTemplates = getMealTemplates(mealCount, dietary_preference, include_snacks, allExclusions, cooking_time_pref ?? 'medium', culture_pref ?? 'any', allPreferences)
+  const snackCount = snack_count ?? 0
+  const mealTemplates = getMealTemplates(mealCount, snackCount, dietary_preference, allExclusions, cooking_time_pref ?? 'medium', culture_pref ?? 'any', allPreferences)
 
   const SNACK_CAL = 200
-  const snackCount = mealTemplates.filter(t => t.name.toLowerCase().includes('snack')).length
   const mainCount = mealTemplates.length - snackCount
   const totalSnackCal = snackCount * SNACK_CAL
   const mainCalories = Math.max(800, totalCal - totalSnackCal)
@@ -223,6 +268,10 @@ function buildMeals(
     const pro = Math.round((cal * proteinCalRatio) / 4)
     const fat = Math.round((cal * fatCalRatio) / 9)
     const carb = Math.max(0, Math.round((cal - pro * 4 - fat * 9) / 4))
+
+    const rawFoods = t.foods(dietary_preference)
+    const foods = rawFoods.map(item => calcPortionStr(item, cal))
+
     return {
       name: t.name,
       time: t.time,
@@ -230,7 +279,7 @@ function buildMeals(
       protein_g: pro,
       carbs_g: carb,
       fat_g: fat,
-      foods: t.foods(dietary_preference)
+      foods
     }
   })
 }
@@ -238,50 +287,50 @@ function buildMeals(
 interface MealTemplate {
   name: string
   time: string
-  foods: (pref: string) => string[]
+  foods: (pref: string) => TemplateFoodItem[]
 }
 
-// Culture-specific food swaps
-const cultureFoods: Record<string, Record<string, string>> = {
+// Culture-specific food items — each entry is a TemplateFoodItem so portions scale correctly
+const cultureFoods: Record<string, Record<string, TemplateFoodItem>> = {
   indian: {
-    protein_main: 'Chicken Tikka (150g)',
-    protein_alt: 'Dal (150g cooked)',
-    carb_main: 'Basmati Rice (200g cooked)',
-    carb_alt: 'Whole Wheat Roti (2 pieces)',
-    veg: 'Saag (Spinach Puree) (150g)',
-    dairy: 'Dahi/Yogurt (200g)',
-    fat: 'Ghee (10g)',
-    plant_protein: 'Paneer (150g)',
+    protein_main:  { id: 'chicken_tikka', display: 'Chicken Tikka',        role: 'protein' },
+    protein_alt:   { id: 'dal',           display: 'Dal',                  role: 'protein', unitSuffix: 'cooked' },
+    carb_main:     { id: 'basmati_rice',  display: 'Basmati Rice',         role: 'carb',    unitSuffix: 'cooked' },
+    carb_alt:      { id: 'roti',          display: 'Whole Wheat Roti',     role: 'fixed',   fixedLabel: 'Whole Wheat Roti (2 pieces)' },
+    veg:           { id: 'spinach',       display: 'Saag (Spinach Puree)', role: 'veg' },
+    dairy:         { id: 'greek_yogurt',  display: 'Dahi/Yogurt',          role: 'protein', fixedLabel: 'Dahi/Yogurt (200g)' },
+    fat:           { id: 'ghee',          display: 'Ghee',                 role: 'fat' },
+    plant_protein: { id: 'paneer',        display: 'Paneer',               role: 'protein' },
   },
   mexican: {
-    protein_main: 'Chicken Tinga (150g)',
-    protein_alt: 'Carne Asada (150g)',
-    carb_main: 'Black Beans (150g cooked)',
-    carb_alt: 'Corn Tortilla x2',
-    veg: 'Pico de Gallo (100g)',
-    dairy: 'Cotija Cheese (30g)',
-    fat: 'Avocado (100g)',
-    plant_protein: 'Pinto Beans (150g cooked)',
+    protein_main:  { id: 'chicken_breast', display: 'Chicken Tinga',   role: 'protein' },
+    protein_alt:   { id: 'carne_asada',    display: 'Carne Asada',     role: 'protein' },
+    carb_main:     { id: 'black_beans',    display: 'Black Beans',     role: 'carb',    unitSuffix: 'cooked' },
+    carb_alt:      { id: 'corn_tortilla',  display: 'Corn Tortilla',   role: 'fixed',   fixedLabel: 'Corn Tortilla x2' },
+    veg:           { id: 'mixed_veg',      display: 'Pico de Gallo',   role: 'veg',     fixedLabel: 'Pico de Gallo (100g)' },
+    dairy:         { id: 'cheddar',        display: 'Cotija Cheese',   role: 'fat',     fixedLabel: 'Cotija Cheese (30g)' },
+    fat:           { id: 'avocado',        display: 'Avocado',         role: 'fat' },
+    plant_protein: { id: 'pinto_beans',    display: 'Pinto Beans',     role: 'carb',    unitSuffix: 'cooked' },
   },
   mediterranean: {
-    protein_main: 'Grilled Chicken (150g)',
-    protein_alt: 'Grilled Halloumi (100g)',
-    carb_main: 'Whole Wheat Pita (1 piece)',
-    carb_alt: 'Quinoa (185g cooked)',
-    veg: 'Cucumber & Tomato Salad (150g)',
-    dairy: 'Greek Yogurt (200g)',
-    fat: 'Hummus (50g)',
-    plant_protein: 'Falafel (100g)',
+    protein_main:  { id: 'chicken_breast', display: 'Grilled Chicken',        role: 'protein' },
+    protein_alt:   { id: 'halloumi',       display: 'Grilled Halloumi',        role: 'protein', fixedLabel: 'Grilled Halloumi (100g)' },
+    carb_main:     { id: 'pita_bread',     display: 'Whole Wheat Pita',        role: 'fixed',   fixedLabel: 'Whole Wheat Pita (1 piece)' },
+    carb_alt:      { id: 'quinoa',         display: 'Quinoa',                  role: 'carb',    unitSuffix: 'cooked' },
+    veg:           { id: 'mixed_veg',      display: 'Cucumber & Tomato Salad', role: 'veg',     fixedLabel: 'Cucumber & Tomato Salad (150g)' },
+    dairy:         { id: 'greek_yogurt',   display: 'Greek Yogurt',            role: 'protein', fixedLabel: 'Greek Yogurt (200g)' },
+    fat:           { id: 'chickpeas',      display: 'Hummus',                  role: 'fat',     fixedLabel: 'Hummus (50g)' },
+    plant_protein: { id: 'chickpeas',      display: 'Falafel',                 role: 'protein', fixedLabel: 'Falafel (100g)' },
   },
   asian: {
-    protein_main: 'Chicken Breast (150g)',
-    protein_alt: 'Silken Tofu (200g)',
-    carb_main: 'Jasmine Rice (200g cooked)',
-    carb_alt: 'Soba Noodles (200g cooked)',
-    veg: 'Edamame (150g)',
-    dairy: 'Soy Milk (200ml)',
-    fat: 'Sesame Oil (10g)',
-    plant_protein: 'Firm Tofu (200g)',
+    protein_main:  { id: 'chicken_breast', display: 'Chicken Breast', role: 'protein' },
+    protein_alt:   { id: 'tofu',           display: 'Silken Tofu',    role: 'protein' },
+    carb_main:     { id: 'jasmine_rice',   display: 'Jasmine Rice',   role: 'carb',    unitSuffix: 'cooked' },
+    carb_alt:      { id: 'pasta',          display: 'Soba Noodles',   role: 'fixed',   fixedLabel: 'Soba Noodles (200g cooked)' },
+    veg:           { id: 'edamame',        display: 'Edamame',        role: 'veg',     fixedLabel: 'Edamame (150g)' },
+    dairy:         { id: 'soy_protein',    display: 'Soy Milk',       role: 'powder',  fixedLabel: 'Soy Milk (200ml)' },
+    fat:           { id: 'sesame_seeds',   display: 'Sesame Oil',     role: 'fat',     fixedLabel: 'Sesame Oil (10g)' },
+    plant_protein: { id: 'tofu',           display: 'Firm Tofu',      role: 'protein' },
   },
   west_african: {
     protein_main: 'Grilled Tilapia (180g)',
@@ -325,11 +374,10 @@ const cultureFoods: Record<string, Record<string, string>> = {
   },
 }
 
-function getCultureFood(culturePref: string, key: string, pref: string, fallback: string): string {
+function getCultureFood(culturePref: string, key: string, pref: string, fallback: TemplateFoodItem): TemplateFoodItem {
   if (culturePref === 'any') return fallback
   const culture = cultureFoods[culturePref]
   if (!culture) return fallback
-  // Adjust for dietary preference
   if (key === 'protein_main' && (pref === 'vegan' || pref === 'vegetarian')) {
     return culture.plant_protein ?? fallback
   }
@@ -337,147 +385,187 @@ function getCultureFood(culturePref: string, key: string, pref: string, fallback
 }
 
 function getMealTemplates(
-  count: number,
+  mainCount: number,
+  snackCount: number,
   _pref: string,
-  includeSnacks: boolean = false,
   exclusions: string[] = [],
   cookingPref: string = 'medium',
   culturePref: string = 'any',
   preferences: string[] = []
 ): MealTemplate[] {
+  // cookingPref reserved for future template variants
+  void cookingPref
+
   const all: MealTemplate[] = [
+    // ── 0: Breakfast ──
     {
       name: 'Breakfast',
       time: '07:00',
       foods: (p) => {
         if (p === 'vegan') {
           return [
-            getFood('oats', exclusions, 'Oats (80g dry)', preferences),
-            getFood('soy_protein', exclusions, 'Soy Protein Shake (35g)', preferences),
-            getFood('banana', exclusions, 'Banana', preferences),
-            getCultureFood(culturePref, 'fat', p, getFood('almond_butter', exclusions, 'Almond Butter (15g)', preferences))
+            getFood('oats',         exclusions, { id: 'oats',         display: 'Oats',              role: 'carb',    unitSuffix: 'dry' }, preferences),
+            getFood('soy_protein',  exclusions, { id: 'soy_protein',  display: 'Soy Protein Shake', role: 'powder' }, preferences),
+            getFood('banana',       exclusions, { id: 'banana',       display: 'Banana',            role: 'fruit' },  preferences),
+            getCultureFood(culturePref, 'fat', p,
+              getFood('almond_butter', exclusions, { id: 'almond_butter', display: 'Almond Butter', role: 'fat' }, preferences)
+            ),
           ]
         }
         if (p === 'vegetarian') {
           return [
-            getFood('oats', exclusions, 'Oats (80g dry)', preferences),
-            getCultureFood(culturePref, 'dairy', p, getFood('greek_yogurt', exclusions, 'Greek Yogurt (200g)', preferences)),
-            getFood('banana', exclusions, 'Banana', preferences),
-            getFood('almonds', exclusions, 'Almonds (20g)', preferences)
+            getFood('oats', exclusions, { id: 'oats', display: 'Oats', role: 'carb', unitSuffix: 'dry' }, preferences),
+            getCultureFood(culturePref, 'dairy', p,
+              getFood('greek_yogurt', exclusions, { id: 'greek_yogurt', display: 'Greek Yogurt', role: 'protein' }, preferences)
+            ),
+            getFood('banana',  exclusions, { id: 'banana',  display: 'Banana',  role: 'fruit' }, preferences),
+            getFood('almonds', exclusions, { id: 'almonds', display: 'Almonds', role: 'fat' },   preferences),
           ]
         }
         return [
-          getFood('oats', exclusions, 'Oats (80g dry)', preferences),
-          getFood('eggs', exclusions, 'Whole Eggs x3', preferences),
-          getFood('egg_whites', exclusions, 'Egg Whites x3', preferences),
-          getFood('berries', exclusions, 'Berries (100g)', preferences)
+          getFood('oats',       exclusions, { id: 'oats',       display: 'Oats',        role: 'carb', unitSuffix: 'dry' }, preferences),
+          getFood('eggs',       exclusions, { id: 'eggs',       display: 'Whole Eggs',  role: 'fixed', fixedLabel: 'Whole Eggs x3' }, preferences),
+          getFood('egg_whites', exclusions, { id: 'egg_whites', display: 'Egg Whites',  role: 'fixed', fixedLabel: 'Egg Whites x3' }, preferences),
+          getFood('berries',    exclusions, { id: 'berries',    display: 'Berries',     role: 'fruit' }, preferences),
         ]
       }
     },
+    // ── 1: Mid-Morning ──
     {
       name: 'Mid-Morning',
       time: '10:00',
       foods: (p) => {
         if (p === 'vegan') {
           return [
-            getFood('brown_rice', exclusions, 'Brown Rice (150g cooked)', preferences),
-            getFood('tofu', exclusions, 'Tofu (150g)', preferences),
-            getFood('mixed_veg', exclusions, 'Mixed Vegetables (200g)', preferences)
+            getFood('brown_rice', exclusions, { id: 'brown_rice', display: 'Brown Rice', role: 'carb', unitSuffix: 'cooked' }, preferences),
+            getFood('tofu',       exclusions, { id: 'tofu',       display: 'Tofu',       role: 'protein' }, preferences),
+            getFood('mixed_veg',  exclusions, { id: 'mixed_veg',  display: 'Mixed Vegetables', role: 'veg' }, preferences),
           ]
         }
         if (p === 'vegetarian') {
           return [
-            getFood('brown_rice', exclusions, 'Brown Rice (150g cooked)', preferences),
-            getFood('cottage_cheese', exclusions, 'Cottage Cheese (150g)', preferences),
-            getFood('mixed_veg', exclusions, 'Vegetables (200g)', preferences)
+            getFood('brown_rice',     exclusions, { id: 'brown_rice',     display: 'Brown Rice',     role: 'carb', unitSuffix: 'cooked' }, preferences),
+            getFood('cottage_cheese', exclusions, { id: 'cottage_cheese', display: 'Cottage Cheese', role: 'protein' }, preferences),
+            getFood('mixed_veg',      exclusions, { id: 'mixed_veg',      display: 'Vegetables',     role: 'veg' }, preferences),
           ]
         }
         return [
-          getFood('brown_rice', exclusions, 'Brown Rice (150g cooked)', preferences),
-          getFood('chicken_breast', exclusions, 'Chicken Breast (150g)', preferences),
-          getFood('broccoli', exclusions, 'Broccoli (200g)', preferences)
+          getFood('brown_rice',    exclusions, { id: 'brown_rice',    display: 'Brown Rice',    role: 'carb', unitSuffix: 'cooked' }, preferences),
+          getFood('chicken_breast',exclusions, { id: 'chicken_breast',display: 'Chicken Breast',role: 'protein' }, preferences),
+          getFood('broccoli',      exclusions, { id: 'broccoli',      display: 'Broccoli',      role: 'veg' }, preferences),
         ]
       }
     },
+    // ── 2: Lunch ──
     {
       name: 'Lunch',
       time: '13:00',
       foods: (p) => {
         if (p === 'vegan') {
           return [
-            getCultureFood(culturePref, 'plant_protein', p, getFood('tempeh', exclusions, 'Tempeh (150g)', preferences)),
-            getCultureFood(culturePref, 'carb_main', p, getFood('sweet_potato', exclusions, 'Sweet Potato (200g)', preferences)),
-            getCultureFood(culturePref, 'veg', p, getFood('spinach', exclusions, 'Spinach (100g)', preferences))
+            getCultureFood(culturePref, 'plant_protein', p,
+              getFood('tempeh', exclusions, { id: 'tempeh', display: 'Tempeh', role: 'protein' }, preferences)
+            ),
+            getCultureFood(culturePref, 'carb_main', p,
+              getFood('sweet_potato', exclusions, { id: 'sweet_potato', display: 'Sweet Potato', role: 'carb' }, preferences)
+            ),
+            getCultureFood(culturePref, 'veg', p,
+              getFood('spinach', exclusions, { id: 'spinach', display: 'Spinach', role: 'veg' }, preferences)
+            ),
           ]
         }
         return [
-          getCultureFood(culturePref, 'protein_main', p, getFood('chicken_breast', exclusions, 'Chicken Breast (180g)', preferences)),
-          getCultureFood(culturePref, 'carb_main', p, getFood('white_rice', exclusions, 'White Rice (200g cooked)', preferences)),
-          getCultureFood(culturePref, 'veg', p, getFood('broccoli', exclusions, 'Broccoli (200g)', preferences))
+          getCultureFood(culturePref, 'protein_main', p,
+            getFood('chicken_breast', exclusions, { id: 'chicken_breast', display: 'Chicken Breast', role: 'protein' }, preferences)
+          ),
+          getCultureFood(culturePref, 'carb_main', p,
+            getFood('white_rice', exclusions, { id: 'white_rice', display: 'White Rice', role: 'carb', unitSuffix: 'cooked' }, preferences)
+          ),
+          getCultureFood(culturePref, 'veg', p,
+            getFood('broccoli', exclusions, { id: 'broccoli', display: 'Broccoli', role: 'veg' }, preferences)
+          ),
         ]
       }
     },
+    // ── 3: Pre-Workout ──
     {
       name: 'Pre-Workout',
       time: '16:00',
       foods: (p) => {
         if (p === 'vegan') {
           return [
-            getFood('rice_cakes', exclusions, 'Rice Cakes x3', preferences),
-            getFood('pea_protein', exclusions, 'Pea Protein Shake (35g)', preferences),
-            getFood('apple', exclusions, 'Apple', preferences)
+            getFood('rice_cakes', exclusions, { id: 'rice_cakes', display: 'Rice Cakes', role: 'fixed', fixedLabel: 'Rice Cakes x3' }, preferences),
+            getFood('pea_protein', exclusions, { id: 'pea_protein', display: 'Pea Protein Shake', role: 'powder' }, preferences),
+            getFood('apple', exclusions, { id: 'apple', display: 'Apple', role: 'fruit' }, preferences),
           ]
         }
         return [
-          getFood('rice_cakes', exclusions, 'Rice Cakes x3', preferences),
-          getFood('whey_protein', exclusions, 'Whey Protein Shake (35g)', preferences),
-          getFood('apple', exclusions, 'Apple', preferences)
+          getFood('rice_cakes',   exclusions, { id: 'rice_cakes',   display: 'Rice Cakes',         role: 'fixed',  fixedLabel: 'Rice Cakes x3' }, preferences),
+          getFood('whey_protein', exclusions, { id: 'whey_protein', display: 'Whey Protein Shake', role: 'powder' }, preferences),
+          getFood('apple',        exclusions, { id: 'apple',        display: 'Apple',              role: 'fruit' },  preferences),
         ]
       }
     },
+    // ── 4: Post-Workout ──
     {
       name: 'Post-Workout',
       time: '18:30',
       foods: (p) => {
         if (p === 'vegan') {
           return [
-            getFood('white_rice', exclusions, 'White Rice (200g cooked)', preferences),
-            getFood('soy_protein', exclusions, 'Soy Protein Shake (35g)', preferences),
-            getFood('banana', exclusions, 'Banana', preferences)
+            getFood('white_rice',  exclusions, { id: 'white_rice',  display: 'White Rice',       role: 'carb',   unitSuffix: 'cooked' }, preferences),
+            getFood('soy_protein', exclusions, { id: 'soy_protein', display: 'Soy Protein Shake',role: 'powder' }, preferences),
+            getFood('banana',      exclusions, { id: 'banana',      display: 'Banana',           role: 'fruit' },  preferences),
           ]
         }
         return [
-          getFood('white_rice', exclusions, 'White Rice (200g cooked)', preferences),
-          getFood('whey_protein', exclusions, 'Whey Protein Shake (35g)', preferences),
-          getFood('banana', exclusions, 'Banana', preferences)
+          getFood('white_rice',   exclusions, { id: 'white_rice',   display: 'White Rice',        role: 'carb',   unitSuffix: 'cooked' }, preferences),
+          getFood('whey_protein', exclusions, { id: 'whey_protein', display: 'Whey Protein Shake',role: 'powder' }, preferences),
+          getFood('banana',       exclusions, { id: 'banana',       display: 'Banana',            role: 'fruit' },  preferences),
         ]
       }
     },
+    // ── 5: Dinner ──
     {
       name: 'Dinner',
       time: '20:00',
       foods: (p) => {
         if (p === 'vegan') {
           return [
-            getFood('quinoa', exclusions, 'Quinoa (150g cooked)', preferences),
-            getCultureFood(culturePref, 'plant_protein', p, getFood('black_beans', exclusions, 'Black Beans (150g)', preferences)),
-            getFood('mixed_veg', exclusions, 'Roasted Vegetables (250g)', preferences)
+            getFood('quinoa', exclusions, { id: 'quinoa', display: 'Quinoa', role: 'carb', unitSuffix: 'cooked' }, preferences),
+            getCultureFood(culturePref, 'plant_protein', p,
+              getFood('black_beans', exclusions, { id: 'black_beans', display: 'Black Beans', role: 'protein' }, preferences)
+            ),
+            getFood('mixed_veg', exclusions, { id: 'mixed_veg', display: 'Roasted Vegetables', role: 'veg' }, preferences),
           ]
         }
         if (p === 'vegetarian') {
           return [
-            getCultureFood(culturePref, 'carb_alt', p, getFood('pasta', exclusions, 'Pasta (150g cooked)', preferences)),
-            getCultureFood(culturePref, 'plant_protein', p, getFood('ricotta', exclusions, 'Ricotta (100g)', preferences)),
-            getCultureFood(culturePref, 'veg', p, getFood('mixed_veg', exclusions, 'Vegetables (100g)', preferences))
+            getCultureFood(culturePref, 'carb_alt', p,
+              getFood('pasta', exclusions, { id: 'pasta', display: 'Pasta', role: 'carb', unitSuffix: 'cooked' }, preferences)
+            ),
+            getCultureFood(culturePref, 'plant_protein', p,
+              getFood('ricotta', exclusions, { id: 'ricotta', display: 'Ricotta', role: 'protein' }, preferences)
+            ),
+            getCultureFood(culturePref, 'veg', p,
+              getFood('mixed_veg', exclusions, { id: 'mixed_veg', display: 'Vegetables', role: 'veg' }, preferences)
+            ),
           ]
         }
         return [
-          getCultureFood(culturePref, 'carb_main', p, getFood('white_rice', exclusions, 'White Rice (150g cooked)', preferences)),
-          getCultureFood(culturePref, 'protein_main', p, getFood('salmon', exclusions, 'Salmon Fillet (180g)', preferences)),
-          getCultureFood(culturePref, 'veg', p, getFood('asparagus', exclusions, 'Asparagus (200g)', preferences))
+          getCultureFood(culturePref, 'carb_main', p,
+            getFood('white_rice', exclusions, { id: 'white_rice', display: 'White Rice', role: 'carb', unitSuffix: 'cooked' }, preferences)
+          ),
+          getCultureFood(culturePref, 'protein_main', p,
+            getFood('salmon', exclusions, { id: 'salmon', display: 'Salmon Fillet', role: 'protein' }, preferences)
+          ),
+          getCultureFood(culturePref, 'veg', p,
+            getFood('asparagus', exclusions, { id: 'asparagus', display: 'Asparagus', role: 'veg' }, preferences)
+          ),
         ]
       }
     },
+    // ── 6: Mid-Morning Snack ──
     {
       name: 'Mid-Morning Snack',
       time: '10:30',
@@ -486,14 +574,15 @@ function getMealTemplates(
       foods: (p) =>
         p === 'vegan'
           ? [
-              getFood('pea_protein', exclusions, 'Pea Protein Shake (35g)', preferences, false),
-              getFood('apple', exclusions, 'Apple', preferences, false)
+              getFood('pea_protein', exclusions, { id: 'pea_protein', display: 'Pea Protein Shake', role: 'powder' }, preferences, false),
+              getFood('apple',       exclusions, { id: 'apple',       display: 'Apple',             role: 'fruit' },  preferences, false),
             ]
           : [
-              getFood('greek_yogurt', exclusions, 'Greek Yogurt (150g)', preferences, false),
-              getFood('berries', exclusions, 'Mixed Berries (100g)', preferences, false)
+              getFood('greek_yogurt', exclusions, { id: 'greek_yogurt', display: 'Greek Yogurt',  role: 'protein' }, preferences, false),
+              getFood('berries',      exclusions, { id: 'berries',      display: 'Mixed Berries',  role: 'fruit' },   preferences, false),
             ]
     },
+    // ── 7: Afternoon Snack ──
     {
       name: 'Afternoon Snack',
       time: '15:30',
@@ -501,31 +590,45 @@ function getMealTemplates(
       foods: (p) =>
         p === 'vegan'
           ? [
-              getFood('rice_cakes',    exclusions, 'Rice Cakes x2',        preferences, false),
-              getFood('almond_butter', exclusions, 'Almond Butter (16g)',  preferences, false),
-              getFood('banana',        exclusions, 'Banana (half)',         preferences, false)
+              getFood('rice_cakes',    exclusions, { id: 'rice_cakes',    display: 'Rice Cakes',    role: 'fixed', fixedLabel: 'Rice Cakes x2' },       preferences, false),
+              getFood('almond_butter', exclusions, { id: 'almond_butter', display: 'Almond Butter', role: 'fat',   fixedLabel: 'Almond Butter (16g)' }, preferences, false),
+              getFood('banana',        exclusions, { id: 'banana',        display: 'Banana',         role: 'fixed', fixedLabel: 'Banana (half)' },       preferences, false),
             ]
           : [
-              getFood('cottage_cheese', exclusions, 'Cottage Cheese (150g)', preferences, false),
-              getFood('rice_cakes',     exclusions, 'Rice Cakes x2',         preferences, false)
+              getFood('cottage_cheese', exclusions, { id: 'cottage_cheese', display: 'Cottage Cheese', role: 'protein' }, preferences, false),
+              getFood('rice_cakes',     exclusions, { id: 'rice_cakes',     display: 'Rice Cakes',     role: 'fixed', fixedLabel: 'Rice Cakes x2' }, preferences, false),
             ]
-    }
+    },
+    // ── 8: Evening Snack ──
+    {
+      name: 'Evening Snack',
+      time: '21:00',
+      foods: (p) =>
+        p === 'vegan'
+          ? [
+              getFood('rice_cakes',    exclusions, { id: 'rice_cakes',    display: 'Rice Cakes',    role: 'fixed', fixedLabel: 'Rice Cakes x2' },       preferences, false),
+              getFood('almond_butter', exclusions, { id: 'almond_butter', display: 'Almond Butter', role: 'fat',   fixedLabel: 'Almond Butter (16g)' }, preferences, false),
+            ]
+          : [
+              getFood('cottage_cheese', exclusions, { id: 'cottage_cheese', display: 'Cottage Cheese', role: 'protein' }, preferences, false),
+              getFood('almonds',        exclusions, { id: 'almonds',        display: 'Almonds',        role: 'fat' },      preferences, false),
+            ]
+    },
   ]
 
-  let indices: number[]
-  if (includeSnacks) {
-    if (count <= 3) indices = [0, 2, 5]
-    else if (count === 4) indices = [0, 6, 2, 5]
-    else if (count === 5) indices = [0, 6, 2, 7, 5]
-    else indices = [0, 6, 1, 2, 7, 5]
-  } else {
-    if (count <= 3) indices = [0, 2, 5]
-    else if (count === 4) indices = [0, 2, 3, 5]
-    else if (count === 5) indices = [0, 1, 2, 4, 5]
-    else indices = [0, 1, 2, 3, 4, 5]
+  // Select main meal templates (indices 0-5) based on mainCount
+  const mainSets: Record<number, number[]> = {
+    3: [0, 2, 5],
+    4: [0, 2, 3, 5],
+    5: [0, 1, 2, 4, 5],
+    6: [0, 1, 2, 3, 4, 5],
   }
-
-  return indices.slice(0, count).map((i) => all[i])
+  const mainIndices = (mainSets[mainCount] ?? mainSets[3]).slice(0, mainCount)
+  // Snack templates: 6=Mid-Morning Snack (10:30), 7=Afternoon Snack (15:30), 8=Evening Snack (21:00)
+  const snackIndices = [6, 7, 8].slice(0, snackCount)
+  const combined = [...mainIndices, ...snackIndices].map((i) => all[i])
+  combined.sort((a, b) => a.time.localeCompare(b.time))
+  return combined
 }
 
 // Public re-export for use in plan:recalculateMacros IPC handler
@@ -539,11 +642,11 @@ export function buildMealsPublic(
   food_exclusions?: string[],
   food_preferences?: string[],
   cooking_time_pref?: string,
-  include_snacks?: boolean,
+  snack_count?: number,
   culture_pref?: string,
   dietary_restrictions?: string[]
 ) {
-  return buildMeals(totalCal, protein_g, carbs_g, fat_g, mealCount, dietary_preference, food_exclusions, food_preferences, cooking_time_pref, include_snacks, culture_pref, dietary_restrictions)
+  return buildMeals(totalCal, protein_g, carbs_g, fat_g, mealCount, dietary_preference, food_exclusions, food_preferences, cooking_time_pref, snack_count, culture_pref, dietary_restrictions)
 }
 
 export function generateNutritionPlan(input: NutritionInput): NutritionPlan {
@@ -559,6 +662,8 @@ export function generateNutritionPlan(input: NutritionInput): NutritionPlan {
   const carbCals = Math.max(0, calories - proteinCals - fatCals)
   const carbs_g = Math.round(carbCals / 4)
 
+  const resolvedSnackCount = input.snack_count ?? (input.include_snacks ? 1 : 0)
+
   const meals = buildMeals(
     calories,
     protein_g,
@@ -569,7 +674,7 @@ export function generateNutritionPlan(input: NutritionInput): NutritionPlan {
     input.food_exclusions,
     input.food_preferences,
     input.cooking_time_pref,
-    input.include_snacks,
+    resolvedSnackCount,
     input.culture_pref,
     input.dietary_restrictions
   )

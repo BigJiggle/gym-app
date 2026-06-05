@@ -518,6 +518,66 @@ export const FOOD_DISPLAY: Record<string, string> = {
 }
 
 // ─────────────────────────────────────────────
+// FOOD_CALORIES_PER_100G
+// Caloric density used by nutritionEngine to compute gram portions dynamically.
+// ─────────────────────────────────────────────
+export const FOOD_CALORIES_PER_100G: Record<string, number> = {
+  // Proteins — poultry
+  chicken_breast: 165, turkey_breast: 157, chicken_thigh: 177,
+  duck_breast: 201, rotisserie_chicken: 167, canned_chicken: 120, deli_turkey: 89,
+  lean_ground_turkey: 170,
+  // Proteins — beef / red meat
+  lean_beef: 176, ground_beef_lean: 215, beef_steak: 271, sirloin: 207,
+  bison: 143, venison: 158, lamb_chop: 258, lamb_kebab: 165,
+  // Proteins — pork
+  pork_tenderloin: 143, pork_chop: 231,
+  // Proteins — fish
+  salmon: 208, tilapia: 96, cod: 82, tuna_steak: 144, halibut: 111,
+  sea_bass: 97, mackerel: 205, trout: 148, mahi_mahi: 109, swordfish: 144,
+  smoked_salmon: 117, herring: 158, tuna_can: 116,
+  // Proteins — shellfish
+  shrimp: 99, crab: 97, lobster: 89, scallops: 88,
+  // Proteins — eggs
+  eggs: 155, egg_whites: 52,
+  // Proteins — dairy
+  greek_yogurt: 59, cottage_cheese: 98, ricotta: 174, kefir: 61, paneer: 265, dahi: 61,
+  // Proteins — plant
+  tofu: 76, tempeh: 195, seitan: 106, edamame: 121,
+  black_beans: 132, lentils: 116, chickpeas: 164, pinto_beans: 116,
+  navy_beans: 127, kidney_beans: 127,
+  // Proteins — supplements
+  whey_protein: 370, soy_protein: 370, pea_protein: 365, casein_protein: 370,
+  // Culture proteins
+  chicken_tikka: 148, carne_asada: 180, dal: 116, halloumi: 321,
+  // Carbs — grains
+  white_rice: 130, brown_rice: 111, oats: 389, quinoa: 120,
+  sweet_potato: 86, pasta: 131, rice_cakes: 387, cream_of_rice: 359,
+  wild_rice: 101, millet: 119, buckwheat: 343, barley: 123,
+  couscous: 112, bulgur_wheat: 83, bread_ww: 247, ezekiel_bread: 243,
+  rye_bread: 259, sourdough_bread: 289, pita_bread: 275,
+  bread: 265, roti: 297, naan: 317, flour_tortilla: 218, corn_tortilla: 218,
+  basmati_rice: 121, jasmine_rice: 130,
+  // Fruits
+  banana: 89, apple: 52, berries: 57, orange: 47, mango: 60,
+  pineapple: 50, grapes: 69, watermelon: 30, kiwi: 61, peach: 39,
+  cherries: 50, pear: 57, blueberries: 57, strawberries: 32, raspberries: 52,
+  blackberries: 43, dates: 277, raisins: 299,
+  // Vegetables
+  broccoli: 34, asparagus: 20, spinach: 23, mixed_veg: 65, kale: 35,
+  zucchini: 17, bell_pepper: 20, mushrooms: 22, cauliflower: 25,
+  green_beans: 31, tomato: 18, carrots: 41, cucumber: 15,
+  // Fats
+  almonds: 579, almond_butter: 614, olive_oil: 884, avocado: 160, walnuts: 654,
+  cashews: 553, peanut_butter: 588, chia_seeds: 486, flaxseed: 534,
+  hemp_seeds: 553, pumpkin_seeds: 559, sunflower_seeds: 584,
+  ghee: 900, butter: 717, coconut_oil: 892, avocado_oil: 884,
+  tahini: 595, sesame_seeds: 573,
+  // Cheese / dairy fat
+  mozzarella: 280, cheddar: 403, parmesan: 431, feta: 264,
+  swiss_cheese: 380, goat_cheese: 364, cream_cheese: 342,
+}
+
+// ─────────────────────────────────────────────
 // SNACK_ONLY_FOODS
 // Foods appropriate for snacks, breakfast, or pre/post-workout light meals,
 // but NOT suitable as the primary protein or carb in main meals (Lunch, Dinner).

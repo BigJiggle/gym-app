@@ -254,5 +254,13 @@ export const MIGRATIONS: { version: number; sql: string }[] = [
       ALTER TABLE weekly_checkins ADD COLUMN schedule_type TEXT NOT NULL DEFAULT 'day';
       ALTER TABLE weekly_checkins ADD COLUMN interval_days INTEGER NOT NULL DEFAULT 7
     `
+  },
+  {
+    version: 11,
+    sql: `
+      ALTER TABLE users ADD COLUMN snack_count INTEGER NOT NULL DEFAULT 0;
+      UPDATE users SET snack_count = CASE WHEN include_snacks = 1 THEN 1 ELSE 0 END;
+      UPDATE users SET meal_count = meal_count - CASE WHEN include_snacks = 1 AND meal_count > 3 THEN 1 ELSE 0 END
+    `
   }
 ]

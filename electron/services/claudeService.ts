@@ -76,7 +76,7 @@ Requirements:
 - Protein = ${Math.round((userProfile.weight_kg as number) * 2.3)}g (2.3g/kg)
 - Fat = ${Math.round((userProfile.weight_kg as number) * 0.9)}g (0.9g/kg)
 - Carbs fill remaining calories
-- Include ${userProfile.meal_count ?? 4} meals${userProfile.include_snacks ? ' including snacks' : ''}
+- Include ${userProfile.meal_count ?? 4} main meals${(userProfile.snack_count ?? 0) > 0 ? ` + ${userProfile.snack_count} snack${userProfile.snack_count !== 1 ? 's' : ''} (~200 kcal each, placed between main meals)` : ''}
 - Cultural preference: ${userProfile.culture_pref ?? 'any'}
 - Dietary type: ${userProfile.dietary_preference ?? 'omnivore'}
 - Exclude these food IDs: ${JSON.stringify(userProfile.food_exclusions ?? [])}
@@ -335,7 +335,7 @@ export async function processAIRequest(
 Current user profile:
 goal=${u.goal} | weight=${u.weight_kg}kg | training=${u.training_frequency}days/wk
 split=${u.split_preference} | exercises/session=${u.exercises_per_session} | sets/exercise=${u.sets_per_exercise}
-diet=${u.dietary_preference} | meals/day=${u.meal_count} | snacks=${u.include_snacks}
+diet=${u.dietary_preference} | meals/day=${u.meal_count} | snacks/day=${u.snack_count ?? 0}
 cook=${u.cooking_time_pref} | culture=${u.culture_pref} | activity=${u.activity_level}
 equipment=${u.equipment_access} | division=${u.division ?? 'none'} | show_date=${u.show_date ?? 'not set'}
 prep_phase=${prepPhaseForAI} | weeks_out=${weeksOutForAI !== null ? weeksOutForAI : 'N/A (no show)'}
@@ -370,7 +370,7 @@ Use "reject" when: request is genuinely harmful or outrageous for bodybuilding â
 - division: string (e.g. "Classic Physique", "Men's Physique", "Bikini", "Open Bodybuilding", "Wellness", "Figure", "Women's Physique", "212 Bodybuilding")
 - show_date: string in YYYY-MM-DD format (compute from today ${today} + user's timeframe)
 - meal_count: integer 3â€“6
-- include_snacks: true | false
+- snack_count: integer 0â€“3 (snacks per day, ~200 kcal each, placed between main meals)
 - dietary_preference: "omnivore" | "vegetarian" | "vegan"
 - cooking_time_pref: "quick" | "medium" | "chef"
 - meal_prep_style: "daily" | "batch" | "mixed"
@@ -397,7 +397,7 @@ Use "reject" when: request is genuinely harmful or outrageous for bodybuilding â
 
 === REGENERATION RULES ===
 Set regenerateTraining=true when settingChanges contains: training_frequency, split_preference, exercises_per_session, sets_per_exercise, equipment_access, goal (if affects periodization), show_date, training_experience_years, division, recovery_notes
-Set regenerateDiet=true when settingChanges contains: meal_count, include_snacks, dietary_preference, cooking_time_pref, meal_prep_style, culture_pref, dietary_restrictions, food_exclusions, food_preferences, goal, activity_level
+Set regenerateDiet=true when settingChanges contains: meal_count, snack_count, dietary_preference, cooking_time_pref, meal_prep_style, culture_pref, dietary_restrictions, food_exclusions, food_preferences, goal, activity_level
 
 === INJURY AND CONSTRAINT RULES ===
 When the request mentions an injury or physical limitation:

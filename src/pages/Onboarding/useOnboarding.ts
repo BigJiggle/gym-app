@@ -15,6 +15,7 @@ export function useOnboarding() {
     training_experience_years: 2,
     is_natural: true,
     meal_count: 4,
+    snack_count: 0,
     include_snacks: true,
     competition_history: [],
     dietary_restrictions: [],

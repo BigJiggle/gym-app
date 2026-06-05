@@ -60,6 +60,7 @@ export const usePlanStore = create<PlanStore>((set) => ({
       set({ trainingPlan: plan, loading: false })
     } catch (e) {
       set({ error: String(e), loading: false })
+      throw e
     }
   },
 
@@ -75,6 +76,7 @@ export const usePlanStore = create<PlanStore>((set) => ({
       set({ dietPlan: plan, loading: false })
     } catch (e) {
       set({ error: String(e), loading: false })
+      throw e
     }
   },
 

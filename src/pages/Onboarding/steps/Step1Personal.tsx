@@ -108,7 +108,7 @@ export default function Step1Personal({ data, update }: Props) {
           min={16}
           max={80}
           value={data.age ?? ''}
-          onChange={(e) => update({ age: parseInt(e.target.value) })}
+          onChange={(e) => update({ age: e.target.value ? parseInt(e.target.value) : undefined })}
           placeholder="e.g. 28"
           required
         />
@@ -145,7 +145,7 @@ export default function Step1Personal({ data, update }: Props) {
                 min={140}
                 max={250}
                 value={data.height_cm ?? ''}
-                onChange={(e) => update({ height_cm: parseFloat(e.target.value) })}
+                onChange={(e) => update({ height_cm: e.target.value ? parseFloat(e.target.value) : undefined })}
                 placeholder="e.g. 178"
                 required
               />
@@ -206,7 +206,7 @@ export default function Step1Personal({ data, update }: Props) {
                 max={300}
                 step={0.1}
                 value={data.weight_kg ?? ''}
-                onChange={(e) => update({ weight_kg: parseFloat(e.target.value) })}
+                onChange={(e) => update({ weight_kg: e.target.value ? parseFloat(e.target.value) : undefined })}
                 placeholder="e.g. 85.5"
                 required
               />
@@ -249,7 +249,7 @@ export default function Step1Personal({ data, update }: Props) {
           max={30}
           step={0.5}
           value={data.training_experience_years ?? ''}
-          onChange={(e) => update({ training_experience_years: parseFloat(e.target.value) })}
+          onChange={(e) => update({ training_experience_years: e.target.value ? parseFloat(e.target.value) : undefined })}
           placeholder="e.g. 3"
           required
         />

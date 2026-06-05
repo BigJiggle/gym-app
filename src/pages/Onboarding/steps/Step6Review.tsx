@@ -58,7 +58,7 @@ export default function Step6Review({ data }: Props) {
               : 'None'
           }
         />
-        <Row label="Snacks" value={data.include_snacks !== false ? 'Included' : 'Main meals only'} />
+        <Row label="Snacks/Day" value={(data.snack_count ?? 0) > 0 ? String(data.snack_count) : 'None'} />
         <Row label="Cook Time" value={data.cooking_time_pref ?? 'medium'} />
         <Row label="Cultural Preference" value={data.culture_pref ?? 'any'} />
         <Row label="Meal Prep Style" value={data.meal_prep_style ?? 'daily'} />

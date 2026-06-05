@@ -172,7 +172,7 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
         culture_pref: (user.culture_pref as string) ?? 'any',
         food_exclusions: (() => { try { return JSON.parse((user.food_exclusions as string) ?? '[]') } catch { return [] } })(),
         food_preferences: (() => { try { return JSON.parse((user.food_preferences as string) ?? '[]') } catch { return [] } })(),
-        include_snacks: user.include_snacks === 1,
+        snack_count: (user.snack_count as number) ?? 0,
         weeks_out: dietWeeksOutClaude,
       }
       const claudeResult = await generateDietWithClaude(claudeApiKey, userProfile)
@@ -213,8 +213,8 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
       food_preferences: (() => { try { return JSON.parse((user.food_preferences as string) ?? '[]') } catch { return [] } })(),
       cooking_time_pref: (user.cooking_time_pref as string) ?? 'medium',
       meal_prep_style: (user.meal_prep_style as string) ?? 'daily',
-      include_snacks: user.include_snacks === 1,
-      culture_pref: (user.culture_pref as string) ?? 'any'
+      snack_count: (user.snack_count as number) ?? 0,
+      culture_pref: 'any'
     })
 
     db.prepare('DELETE FROM diet_plans WHERE user_id = ?').run(userId)
@@ -306,8 +306,8 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
       food_exclusions: (() => { try { return JSON.parse((user.food_exclusions as string) ?? '[]') } catch { return [] } })(),
       food_preferences: (() => { try { return JSON.parse((user.food_preferences as string) ?? '[]') } catch { return [] } })(),
       cooking_time_pref: (user.cooking_time_pref as string) ?? 'medium',
-      include_snacks: user.include_snacks === 1,
-      culture_pref: (user.culture_pref as string) ?? 'any',
+      snack_count: (user.snack_count as number) ?? 0,
+      culture_pref: 'any',
     })
     db.prepare('DELETE FROM diet_plans WHERE user_id = ?').run(userId)
     db.prepare(`INSERT INTO diet_plans (user_id, name, calories_target, protein_g, carbs_g, fat_g, meal_count, meals, phase, generated_at_weeks_out) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run([userId, `${dietPlan.phase.charAt(0).toUpperCase() + dietPlan.phase.slice(1)} Nutrition Plan`, dietPlan.calories_target, dietPlan.protein_g, dietPlan.carbs_g, dietPlan.fat_g, dietPlan.meal_count, JSON.stringify(dietPlan.meals), dietPlan.phase, weeksOut ?? null])
@@ -471,8 +471,8 @@ Ensure every exercise respects the constraints above while maintaining phase-app
         food_exclusions: (() => { try { return JSON.parse((freshUser.food_exclusions as string) ?? '[]') } catch { return [] } })(),
         food_preferences: (() => { try { return JSON.parse((freshUser.food_preferences as string) ?? '[]') } catch { return [] } })(),
         cooking_time_pref: (freshUser.cooking_time_pref as string) ?? 'medium',
-        include_snacks: freshUser.include_snacks === 1,
-        culture_pref: (freshUser.culture_pref as string) ?? 'any',
+        snack_count: (freshUser.snack_count as number) ?? 0,
+        culture_pref: 'any',
       })
       db.prepare('DELETE FROM diet_plans WHERE user_id = ?').run(userId)
       db.prepare(`INSERT INTO diet_plans (user_id, name, calories_target, protein_g, carbs_g, fat_g, meal_count, meals, phase, generated_at_weeks_out) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
@@ -618,7 +618,7 @@ Ensure every exercise respects the constraints above while maintaining phase-app
         training_frequency: user.training_frequency, split_preference: user.split_preference,
         exercises_per_session: user.exercises_per_session, sets_per_exercise: user.sets_per_exercise,
         dietary_preference: user.dietary_preference, meal_count: user.meal_count,
-        include_snacks: user.include_snacks === 1, cooking_time_pref: user.cooking_time_pref,
+        snack_count: (user.snack_count as number) ?? 0, cooking_time_pref: user.cooking_time_pref,
         culture_pref: user.culture_pref, activity_level: user.activity_level,
         equipment_access: user.equipment_access,
         // Full context so AI can factor in injuries, show timeline, and division
@@ -689,7 +689,7 @@ Ensure every exercise respects the constraints above while maintaining phase-app
     // Whitelist of actual users table columns Claude is allowed to change
     const ALLOWED_COLUMNS = new Set([
       'training_frequency', 'split_preference', 'exercises_per_session', 'sets_per_exercise',
-      'meal_count', 'include_snacks', 'dietary_preference', 'cooking_time_pref', 'culture_pref',
+      'meal_count', 'snack_count', 'dietary_preference', 'cooking_time_pref', 'culture_pref',
       'activity_level', 'goal', 'dietary_restrictions', 'food_exclusions', 'food_preferences',
       'meal_prep_style', 'training_experience_years', 'equipment_access',
       'show_date', 'division', 'recovery_notes'
@@ -703,7 +703,6 @@ Ensure every exercise respects the constraints above while maintaining phase-app
       const changes: Record<string, unknown> = {}
       for (const [k, v] of Object.entries(raw)) {
         if (!ALLOWED_COLUMNS.has(k)) continue  // skip hallucinated column names
-        if (k === 'include_snacks') { changes[k] = v ? 1 : 0; continue }
         if (JSON_ARRAY_COLS.has(k)) {
           // Merge with existing array if request is additive
           const existing = db.prepare(`SELECT ${k} FROM users WHERE id=?`).get(userId) as Record<string,unknown>
@@ -853,8 +852,8 @@ Ensure every exercise respects the constraints above while maintaining phase-app
           (() => { try { return JSON.parse((updatedUser.food_exclusions as string) ?? '[]') } catch { return [] } })(),
           (() => { try { return JSON.parse((updatedUser.food_preferences as string) ?? '[]') } catch { return [] } })(),
           (updatedUser.cooking_time_pref as string) ?? 'medium',
-          updatedUser.include_snacks === 1,
-          (updatedUser.culture_pref as string) ?? 'any',
+          (updatedUser.snack_count as number) ?? 0,
+          'any',
           (() => { try { return JSON.parse((updatedUser.dietary_restrictions as string) ?? '[]') } catch { return [] } })()
         )
         db.prepare(
@@ -876,6 +875,17 @@ Ensure every exercise respects the constraints above while maintaining phase-app
     if (mealIndex < 0 || mealIndex >= meals.length) throw new Error('Invalid meal index')
     meals[mealIndex] = { ...meals[mealIndex], foods: newFoods }
     db.prepare('UPDATE diet_plans SET meals = ? WHERE id = ?').run([JSON.stringify(meals), plan.id])
+    const saved = db.prepare('SELECT * FROM diet_plans WHERE id = ?').get(plan.id as number) as Record<string, unknown>
+    return { ...saved, meals: JSON.parse(saved.meals as string) }
+  })
+
+  ipcMain.handle('plan:reorderMeals', (_event, userId: number, newMeals: unknown[]) => {
+    const db = getDb()
+    const plan = db.prepare('SELECT * FROM diet_plans WHERE user_id = ? ORDER BY id DESC LIMIT 1').get(userId) as Record<string, unknown> | undefined
+    if (!plan) throw new Error('No diet plan found')
+    const existing = JSON.parse(plan.meals as string) as unknown[]
+    if ((newMeals as unknown[]).length !== existing.length) throw new Error('Meal count mismatch')
+    db.prepare('UPDATE diet_plans SET meals = ? WHERE id = ?').run([JSON.stringify(newMeals), plan.id])
     const saved = db.prepare('SELECT * FROM diet_plans WHERE id = ?').get(plan.id as number) as Record<string, unknown>
     return { ...saved, meals: JSON.parse(saved.meals as string) }
   })

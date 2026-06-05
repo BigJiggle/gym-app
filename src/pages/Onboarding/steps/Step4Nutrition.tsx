@@ -2,6 +2,7 @@ import { Select } from '../../../components/ui'
 import type { OnboardingData } from '../useOnboarding'
 
 const MEAL_COUNTS = [3, 4, 5, 6]
+const SNACK_COUNTS = [0, 1, 2, 3]
 
 const COMMON_RESTRICTIONS = [
   'Gluten-free',
@@ -18,7 +19,7 @@ interface Props {
 }
 
 export default function Step4Nutrition({ data, update }: Props) {
-  const meals = data.meal_count ?? 4
+  const meals = Math.max(3, data.meal_count ?? 4)
 
   const toggleRestriction = (r: string) => {
     const prev = data.dietary_restrictions ?? []
@@ -61,7 +62,7 @@ export default function Step4Nutrition({ data, update }: Props) {
             <button
               key={n}
               type="button"
-              onClick={() => update({ meal_count: n })}
+              onClick={() => update({ meal_count: Math.max(3, n) })}
               className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
                 meals === n
                   ? 'bg-brand-600/20 border-brand-500 text-brand-400'
@@ -73,36 +74,38 @@ export default function Step4Nutrition({ data, update }: Props) {
           ))}
         </div>
         <p className="text-xs text-gray-500 mt-1.5">
-          Calories and macros will be evenly distributed across your meals.
+          Main meals only — snacks are set separately below.
         </p>
       </div>
 
-      {/* Snack Preference */}
+      {/* Snack Count */}
       <div>
-        <label className="block text-sm font-medium text-gray-300 mb-2">
-          Include Snacks?
-          <span className="text-gray-500 font-normal ml-1 text-xs">— small 150–250 kcal portions between meals</span>
+        <label className="text-sm font-medium text-gray-300 mb-2 block">
+          Snacks Per Day:{' '}
+          <span className="text-brand-400 font-bold">
+            {data.snack_count ?? 0}
+          </span>
+          <span className="text-gray-500 font-normal ml-1 text-xs">— ~200 kcal each, placed between main meals</span>
         </label>
-        <div className="grid grid-cols-2 gap-2">
-          {[
-            { value: true, label: 'Yes — Add Snack Slots', desc: 'Mid-morning or afternoon snacks included' },
-            { value: false, label: 'No — Main Meals Only', desc: 'Only your chosen meal count' },
-          ].map((opt) => (
+        <div className="flex gap-2">
+          {SNACK_COUNTS.map((n) => (
             <button
-              key={String(opt.value)}
+              key={n}
               type="button"
-              onClick={() => update({ include_snacks: opt.value })}
-              className={`p-3 rounded-xl border text-left transition-colors ${
-                (data.include_snacks ?? true) === opt.value
-                  ? 'border-brand-500 bg-brand-600/20 text-brand-400'
-                  : 'border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-600'
+              onClick={() => update({ snack_count: n })}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                (data.snack_count ?? 0) === n
+                  ? 'bg-brand-600/20 border-brand-500 text-brand-400'
+                  : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'
               }`}
             >
-              <p className="text-sm font-semibold">{opt.label}</p>
-              <p className="text-xs text-gray-500 mt-0.5">{opt.desc}</p>
+              {n === 0 ? 'None' : n}
             </button>
           ))}
         </div>
+        <p className="text-xs text-gray-500 mt-1.5">
+          Snacks are fixed at ~200 kcal; main meals split the remaining calories.
+        </p>
       </div>
 
       {/* Dietary restrictions */}
