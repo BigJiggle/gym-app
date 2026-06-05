@@ -1195,7 +1195,8 @@ export default function Diet() {
   )
 }
 
-// Generates alternative food combos for a given meal slot, filtered by exclusions
+// Generates alternative food combos for a given meal slot, filtered by exclusions.
+// Portions are computed dynamically from meal.calories to match the nutrition engine.
 function getSwapAlternatives(meal: Meal, dietary: string, exclusions: string[] = []): string[][] {
   const isExcluded = (foods: string[]) =>
     foods.some((food) =>
@@ -1205,50 +1206,57 @@ function getSwapAlternatives(meal: Meal, dietary: string, exclusions: string[] =
   const isVegan = dietary === 'vegan'
   const isVeg = dietary === 'vegetarian'
   const mealName = meal.name.toLowerCase()
+  const mc = meal.calories
+
+  // Returns gram amount scaled to mealCal * fraction, rounded to nearest 5g, clamped to [min, max]
+  const pg = (calPer100g: number, fraction: number, min = 30, max = 280): number => {
+    const g = Math.round((mc * fraction / calPer100g) * 100 / 5) * 5
+    return Math.max(min, Math.min(max, g))
+  }
 
   let candidates: string[][]
 
   if (mealName.includes('breakfast')) {
     candidates = isVegan
       ? [
-          ['Tofu Scramble (200g)', 'Oats (80g dry)', 'Blueberries (100g)'],
-          ['Soy Protein Shake (35g)', 'Banana', 'Almond Butter (32g)'],
-          ['Cream of Rice (50g dry)', 'Pea Protein Shake (35g)', 'Mixed Berries (150g)'],
+          [`Tofu Scramble (${pg(76, 0.45)}g)`, `Oats (${pg(389, 0.35)}g dry)`, 'Blueberries (100g)'],
+          ['Soy Protein Shake (30g)', 'Banana (100g)', `Almond Butter (${pg(614, 0.15, 5, 30)}g)`],
+          [`Cream of Rice (${pg(380, 0.35)}g dry)`, 'Pea Protein Shake (30g)', 'Mixed Berries (100g)'],
         ]
       : [
-          ['Greek Yogurt (200g)', 'Oats (80g dry)', 'Mixed Berries (150g)'],
-          ['Egg Whites x6', 'Sweet Potato (200g)', 'Spinach (100g)'],
-          ['Whey Protein Shake (35g)', 'Oats (80g dry)', 'Banana'],
+          [`Greek Yogurt (${pg(59, 0.45)}g)`, `Oats (${pg(389, 0.35)}g dry)`, 'Mixed Berries (100g)'],
+          ['Egg Whites x6', `Sweet Potato (${pg(86, 0.35)}g)`, 'Spinach (100g)'],
+          ['Whey Protein Shake (30g)', `Oats (${pg(389, 0.35)}g dry)`, 'Banana (100g)'],
         ]
   } else if (mealName.includes('snack')) {
     candidates = isVegan
       ? [
-          ['Rice Cakes x2', 'Pea Protein Shake (35g)'],
-          ['Apple', 'Almond Butter (16g)'],
+          ['Rice Cakes x2', 'Pea Protein Shake (30g)'],
+          ['Apple (100g)', 'Almond Butter (16g)'],
           ['Edamame (100g)'],
         ]
       : [
-          ['Greek Yogurt (150g)', 'Apple'],
-          ['Cottage Cheese (150g)', 'Rice Cakes x2'],
-          ['Whey Protein Shake (35g)', 'Banana (half)'],
+          [`Greek Yogurt (${pg(59, 0.45, 100, 250)}g)`, 'Apple (100g)'],
+          [`Cottage Cheese (${pg(98, 0.45, 100, 250)}g)`, 'Rice Cakes x2'],
+          ['Whey Protein Shake (30g)', 'Banana (100g)'],
         ]
   } else if (isVegan) {
     candidates = [
-      ['Tempeh (150g)', 'Brown Rice (200g cooked)', 'Broccoli (200g)'],
-      ['Tofu (200g)', 'Quinoa (185g cooked)', 'Mixed Veg (200g)'],
-      ['Edamame (150g)', 'Sweet Potato (200g)', 'Kale (100g)'],
+      [`Tempeh (${pg(195, 0.45)}g)`, `Brown Rice (${pg(111, 0.35)}g cooked)`, 'Broccoli (120g)', `Walnuts (${pg(654, 0.15, 5, 30)}g)`],
+      [`Tofu (${pg(76, 0.45)}g)`, `Quinoa (${pg(120, 0.35)}g cooked)`, 'Mixed Veg (120g)', `Avocado (${pg(160, 0.15, 20, 80)}g)`],
+      ['Edamame (120g)', `Sweet Potato (${pg(86, 0.35)}g)`, 'Kale (100g)', `Almond Butter (${pg(614, 0.15, 5, 30)}g)`],
     ]
   } else if (isVeg) {
     candidates = [
-      ['Cottage Cheese (200g)', 'Sweet Potato (200g)', 'Green Beans (150g)'],
-      ['Greek Yogurt (200g)', 'Quinoa (185g cooked)', 'Spinach (100g)'],
-      ['Eggs x3', 'Brown Rice (200g)', 'Broccoli (200g)'],
+      [`Cottage Cheese (${pg(98, 0.45)}g)`, `Sweet Potato (${pg(86, 0.35)}g)`, 'Green Beans (120g)', `Almonds (${pg(579, 0.15, 5, 30)}g)`],
+      [`Greek Yogurt (${pg(59, 0.45)}g)`, `Quinoa (${pg(120, 0.35)}g cooked)`, 'Spinach (100g)', `Almonds (${pg(579, 0.15, 5, 30)}g)`],
+      ['Eggs x3', `Brown Rice (${pg(111, 0.35)}g cooked)`, 'Broccoli (120g)', `Almonds (${pg(579, 0.15, 5, 30)}g)`],
     ]
   } else {
     candidates = [
-      ['Turkey Breast (150g)', 'White Rice (200g cooked)', 'Asparagus (150g)'],
-      ['Salmon Fillet (180g)', 'Sweet Potato (200g)', 'Spinach (100g)'],
-      ['Lean Ground Beef (150g)', 'Quinoa (185g cooked)', 'Bell Pepper (150g)'],
+      [`Turkey Breast (${pg(157, 0.45)}g)`, `White Rice (${pg(130, 0.35)}g cooked)`, 'Asparagus (150g)', `Almonds (${pg(579, 0.15, 5, 30)}g)`],
+      [`Salmon Fillet (${pg(208, 0.45)}g)`, `Sweet Potato (${pg(86, 0.35)}g)`, 'Spinach (100g)', `Almonds (${pg(579, 0.15, 5, 30)}g)`],
+      [`Lean Ground Beef (${pg(176, 0.45)}g)`, `Quinoa (${pg(120, 0.35)}g cooked)`, 'Bell Pepper (150g)', `Almonds (${pg(579, 0.15, 5, 30)}g)`],
     ]
   }
 

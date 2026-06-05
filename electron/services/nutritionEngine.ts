@@ -135,8 +135,8 @@ const MEAL_CAL_FRACTIONS: Record<string, number> = { protein: 0.45, carb: 0.35, 
 // Fixed gram amounts for roles that don't scale
 const ROLE_FIXED_G: Record<string, number> = { veg: 120, fruit: 100, powder: 30 }
 // Clamp ranges for scalable roles
-const ROLE_MIN_G: Record<string, number> = { protein: 40, carb: 30, fat: 10 }
-const ROLE_MAX_G: Record<string, number> = { protein: 280, carb: 280, fat: 50 }
+const ROLE_MIN_G: Record<string, number> = { protein: 40, carb: 30, fat: 5 }
+const ROLE_MAX_G: Record<string, number> = { protein: 280, carb: 280, fat: 30 }
 
 function calcPortionStr(item: TemplateFoodItem, mealCal: number): string {
   if (item.fixedLabel) return item.fixedLabel
@@ -423,10 +423,10 @@ function getMealTemplates(
           ]
         }
         return [
-          getFood('oats',       exclusions, { id: 'oats',       display: 'Oats',        role: 'carb', unitSuffix: 'dry' }, preferences),
-          getFood('eggs',       exclusions, { id: 'eggs',       display: 'Whole Eggs',  role: 'fixed', fixedLabel: 'Whole Eggs x3' }, preferences),
-          getFood('egg_whites', exclusions, { id: 'egg_whites', display: 'Egg Whites',  role: 'fixed', fixedLabel: 'Egg Whites x3' }, preferences),
-          getFood('berries',    exclusions, { id: 'berries',    display: 'Berries',     role: 'fruit' }, preferences),
+          getFood('oats',    exclusions, { id: 'oats',    display: 'Oats',       role: 'carb',  unitSuffix: 'dry' }, preferences),
+          getFood('eggs',    exclusions, { id: 'eggs',    display: 'Whole Eggs', role: 'fixed', fixedLabel: 'Whole Eggs x3' }, preferences),
+          getFood('berries', exclusions, { id: 'berries', display: 'Berries',    role: 'fruit' }, preferences),
+          getFood('almonds', exclusions, { id: 'almonds', display: 'Almonds',    role: 'fat' }, preferences),
         ]
       }
     },
@@ -437,22 +437,25 @@ function getMealTemplates(
       foods: (p) => {
         if (p === 'vegan') {
           return [
-            getFood('brown_rice', exclusions, { id: 'brown_rice', display: 'Brown Rice', role: 'carb', unitSuffix: 'cooked' }, preferences),
-            getFood('tofu',       exclusions, { id: 'tofu',       display: 'Tofu',       role: 'protein' }, preferences),
-            getFood('mixed_veg',  exclusions, { id: 'mixed_veg',  display: 'Mixed Vegetables', role: 'veg' }, preferences),
+            getFood('brown_rice',    exclusions, { id: 'brown_rice',    display: 'Brown Rice',       role: 'carb',    unitSuffix: 'cooked' }, preferences),
+            getFood('tofu',          exclusions, { id: 'tofu',          display: 'Tofu',             role: 'protein' }, preferences),
+            getFood('mixed_veg',     exclusions, { id: 'mixed_veg',     display: 'Mixed Vegetables', role: 'veg' },    preferences),
+            getFood('almond_butter', exclusions, { id: 'almond_butter', display: 'Almond Butter',   role: 'fat' },    preferences),
           ]
         }
         if (p === 'vegetarian') {
           return [
-            getFood('brown_rice',     exclusions, { id: 'brown_rice',     display: 'Brown Rice',     role: 'carb', unitSuffix: 'cooked' }, preferences),
+            getFood('brown_rice',     exclusions, { id: 'brown_rice',     display: 'Brown Rice',     role: 'carb',    unitSuffix: 'cooked' }, preferences),
             getFood('cottage_cheese', exclusions, { id: 'cottage_cheese', display: 'Cottage Cheese', role: 'protein' }, preferences),
-            getFood('mixed_veg',      exclusions, { id: 'mixed_veg',      display: 'Vegetables',     role: 'veg' }, preferences),
+            getFood('mixed_veg',      exclusions, { id: 'mixed_veg',      display: 'Vegetables',     role: 'veg' },    preferences),
+            getFood('almonds',        exclusions, { id: 'almonds',        display: 'Almonds',        role: 'fat' },    preferences),
           ]
         }
         return [
-          getFood('brown_rice',    exclusions, { id: 'brown_rice',    display: 'Brown Rice',    role: 'carb', unitSuffix: 'cooked' }, preferences),
+          getFood('brown_rice',    exclusions, { id: 'brown_rice',    display: 'Brown Rice',    role: 'carb',    unitSuffix: 'cooked' }, preferences),
           getFood('chicken_breast',exclusions, { id: 'chicken_breast',display: 'Chicken Breast',role: 'protein' }, preferences),
-          getFood('broccoli',      exclusions, { id: 'broccoli',      display: 'Broccoli',      role: 'veg' }, preferences),
+          getFood('broccoli',      exclusions, { id: 'broccoli',      display: 'Broccoli',      role: 'veg' },    preferences),
+          getFood('almonds',       exclusions, { id: 'almonds',       display: 'Almonds',       role: 'fat' },    preferences),
         ]
       }
     },
@@ -472,6 +475,9 @@ function getMealTemplates(
             getCultureFood(culturePref, 'veg', p,
               getFood('spinach', exclusions, { id: 'spinach', display: 'Spinach', role: 'veg' }, preferences)
             ),
+            getCultureFood(culturePref, 'fat', p,
+              getFood('avocado', exclusions, { id: 'avocado', display: 'Avocado', role: 'fat' }, preferences)
+            ),
           ]
         }
         return [
@@ -483,6 +489,9 @@ function getMealTemplates(
           ),
           getCultureFood(culturePref, 'veg', p,
             getFood('broccoli', exclusions, { id: 'broccoli', display: 'Broccoli', role: 'veg' }, preferences)
+          ),
+          getCultureFood(culturePref, 'fat', p,
+            getFood('almonds', exclusions, { id: 'almonds', display: 'Almonds', role: 'fat' }, preferences)
           ),
         ]
       }
@@ -537,6 +546,9 @@ function getMealTemplates(
               getFood('black_beans', exclusions, { id: 'black_beans', display: 'Black Beans', role: 'protein' }, preferences)
             ),
             getFood('mixed_veg', exclusions, { id: 'mixed_veg', display: 'Roasted Vegetables', role: 'veg' }, preferences),
+            getCultureFood(culturePref, 'fat', p,
+              getFood('walnuts', exclusions, { id: 'walnuts', display: 'Walnuts', role: 'fat' }, preferences)
+            ),
           ]
         }
         if (p === 'vegetarian') {

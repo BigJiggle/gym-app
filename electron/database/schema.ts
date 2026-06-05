@@ -262,5 +262,9 @@ export const MIGRATIONS: { version: number; sql: string }[] = [
       UPDATE users SET snack_count = CASE WHEN include_snacks = 1 THEN 1 ELSE 0 END;
       UPDATE users SET meal_count = meal_count - CASE WHEN include_snacks = 1 AND meal_count > 3 THEN 1 ELSE 0 END
     `
+  },
+  {
+    version: 12,
+    sql: `ALTER TABLE diet_plans ADD COLUMN engine_version INTEGER NOT NULL DEFAULT 1`
   }
 ]

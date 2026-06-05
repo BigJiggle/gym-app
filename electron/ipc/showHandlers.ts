@@ -67,12 +67,12 @@ export function regenerateDietForGoal(
     : 'Off-Season Nutrition Plan'
   db.prepare('DELETE FROM diet_plans WHERE user_id=?').run([userId])
   db.prepare(
-    `INSERT INTO diet_plans (user_id, name, calories_target, protein_g, carbs_g, fat_g, meal_count, meals, phase, generated_at_weeks_out)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO diet_plans (user_id, name, calories_target, protein_g, carbs_g, fat_g, meal_count, meals, phase, generated_at_weeks_out, engine_version)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run([
     userId, planLabel,
     newDiet.calories_target, newDiet.protein_g, newDiet.carbs_g, newDiet.fat_g,
-    newDiet.meal_count, JSON.stringify(newDiet.meals), newDiet.phase, weeksOut ?? null,
+    newDiet.meal_count, JSON.stringify(newDiet.meals), newDiet.phase, weeksOut ?? null, 2,
   ])
 }
 
