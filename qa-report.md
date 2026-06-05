@@ -1,43 +1,89 @@
-# App Health Report — 2026-05-28
+# App Health Report — 2026-06-05
 
 ## Phase 1: QA Engineer
 - TypeScript: PASS (0 errors)
 - Unit tests: PASS (84 passing, 0 failing)
-- Bugs fixed: 0
+- Bugs fixed: 1
 
-### Feature Audit
-- Onboarding: OK — 6-step flow validates Step 1 fields, submits via createUser + addShow, navigates before async plan generation.
-- Diet page: OK — Swap meal calls window.api.swapMeal, reloads plan, modal closes. Completions reload on tab return.
-- Training page: OK — saveSetsBatch + completeWorkout on finish, WorkoutSession phase transitions correctly.
-- Check-in page: OK — Locked state shows countdown with time label; open state shows form with pre-filled prior weight; nextAllowed recalculated on settings changes.
-- Education page: OK — All 5 tabs (Posing Guide, Prep Timeline, Show Checklist, Peak Week, First Timer) render; auto-switches to timeline only from default posing tab when show exists.
-- Progress page: OK — Empty state links to Check-In; stat cards use optional chaining to avoid crash when progressEntries loads after checkinHistory.
-- Settings page: OK — Unit change via setSetting('units'), interval via setSetting('checkin_interval_days'), profile save via updateUser with editForm.
+### Audit Scope
+- Nutrition engine (`electron/services/nutritionEngine.ts`): full audit — macro math, buildMeals, getCultureFood, getFood exclusion logic
+- Food database (`electron/services/foodDatabase.ts`): all culture food keys verified, FOOD_SUBSTITUTES coverage verified
+- IPC handlers: planHandlers (5 handlers), checkinHandlers, userHandlers
+- DB migrations: v1–v10 verified correct
+- User flows traced: onboarding, diet plan tab, training session, check-in form, progress page, settings profile edit, startup refresh
 
 ### Bugs Fixed
-None.
+
+**Bug: culture_pref hardcoded as `'any'` in 5 rule-based diet generation paths** (`electron/ipc/planHandlers.ts`)
+
+The rule-based diet path (used when no Claude API key is configured) always ignored the user's stored `culture_pref` setting, always passing `'any'` to the nutrition engine. The AI generation path already correctly read `(user.culture_pref as string) ?? 'any'`, creating a divergence. Fixed all 5 occurrences:
+
+| Handler | Variable | Location |
+|---|---|---|
+| `plan:generateDiet` rule-based fallback | `user` | ~line 217 |
+| `plan:regenerateAll` | `user` | ~line 311 |
+| `plan:startupRefresh` | `freshUser` | ~line 476 |
+| `plan:recalculateMacros` | `user` (11th arg to buildMeals) | ~line 527 |
+| `plan:applyAIRequest` regenerateDiet | `updatedUser` | ~line 851 |
+
+- TypeScript remained clean after fix
+- All 84 tests still passing
 
 ### Known Issues (not fixed)
 None found.
 
 ---
 
-## Phase 2: Bodybuilder User
-- Status: RAN (Phase 1 fixed 0 bugs, which is fewer than 3)
-- Feature added: **Strength Trend Indicator** on the Training page
-- Description: When a training session card is expanded, each exercise now shows a colored trend arrow (↑ green / ↓ red / → gray) next to its PR weight. The trend is computed from the top-set weight across the last 3 completed sessions of that exercise using the already-loaded `workoutHistory`. This lets a prep athlete immediately see whether strength is holding or declining on a cut — without digging through the history log. No new API calls or DB schema changes required.
-- Files changed: `src/pages/Training/index.tsx`
+## Phase 2: Prep Athlete Feature
+
+- Status: RAN (Phase 1 fixed 1 bug, which is fewer than 3)
+- Feature added: **Daily Water Intake Tracker** on Dashboard
+
+**Why this feature:** Hydration is a core daily tracking task for a competitive prep athlete — especially relevant near peak week when sodium and water manipulation is strategic. The app had no hydration tracking despite tracking every other daily metric (meals, workouts, weight, macros).
+
+**Implementation:**
+- `localStorage`-based, per-day storage (`water_ml_${todayStr}`) — no IPC calls or schema changes
+- Auto-resets at day boundary (reads from new key each new day)
+- Persistent configurable daily target (`water_target_ml` key, defaults to 3 L metric / 1 gallon imperial)
+- Quick-add buttons: +200ml/350ml/500ml/750ml (metric) or +8oz/12oz/16oz/32oz (imperial)
+- Progress bar with percentage, large current-amount display
+- Inline target editor accessible via the "Target: X L" label in the card header
+- Reset button appears when intake > 0
+- Respects `settings.units` for display and quick-add amounts
+
+- Files changed: `src/pages/Dashboard/index.tsx`
 
 ---
 
 ## Phase 3: UX Reviewer
-- Changes made: 2
 
-1. `src/pages/Diet/index.tsx` — Styled the `↺ Regenerate` button in amber (`text-amber-600`, amber border) to visually distinguish it from the safe `⟳ Update Macros` button. Both buttons were previously identical gray, making accidental destructive clicks likely. Made the helper text slightly more legible (`text-gray-400`, `font-medium` on the warning phrase) so a tired user sees the warning before tapping.
+**Fix 1: Diet page — "⟳ Update Macros" button showed no loading state feedback**
 
-2. `src/pages/Training/index.tsx` — Renamed the "View Log" button in the workout history list to "Edit Log". The button opens `WorkoutLogEditor` — a full editor for correcting set weights and reps after a workout. The word "View" hid the editing capability, so athletes who mislogged a weight would not know to click it.
+The button became disabled (grayed out) during the 1–3 second recalculation but kept its normal "⟳ Update Macros" text, giving no indication the operation had registered. Added a dedicated `recalcLoading` state so the button shows "⟳ Updating..." while running. Also isolated its disabled state from the shared planStore `loading` flag so it responds only to its own operation.
+
+**Fix 2: Diet page — "↺ Regenerate" button showed uninformative `'...'` during operation**
+
+The Regenerate operation can take 5–30 seconds (especially with AI generation). During this time the button showed `'...'`, leaving users uncertain whether the operation was running or frozen. Added a dedicated `regenLoading` state and changed the in-progress text to `'↺ Regenerating...'`. Also isolated disabled state from the shared `loading` flag for the same reason as Fix 1.
+
+Both buttons now independently track their loading state, preventing each from showing a spurious "busy" state when the other is running.
+
+- Files changed: `src/pages/Diet/index.tsx`
 
 ---
 
 ## Push
-- Status: SUCCESS
+- Status: SUCCESS — 3 commits pushed to `origin/master` (41554fc)
+
+---
+
+## Prior Session — 2026-05-28
+
+### Bugs Fixed
+None in Phase 1.
+
+### Feature Added (Phase 2)
+**Strength Trend Indicator** on Training page — trend arrows (↑/↓/→) next to exercise PR weights in expanded session cards, computed from last 3 completed workouts per exercise.
+
+### UX Fixes (Phase 3)
+1. `src/pages/Diet/index.tsx` — Amber styling on Regenerate button to distinguish from safe Update Macros button.
+2. `src/pages/Training/index.tsx` — Renamed "View Log" → "Edit Log" to surface the log-editing capability.
