@@ -72,55 +72,76 @@ Set contains 16 items: `greek_yogurt`, `cottage_cheese`, `kefir`, `whey_protein`
 | Diet plan regeneration via Settings | ✓ |
 | Food preference change → plan regenerated | ✓ |
 
+### Bugs Fixed
+
+**Bug 1 — Vegan lunch tempeh mislabeled as Tofu**
+`electron/services/nutritionEngine.ts:368`
+
+`getFood('tempeh', exclusions, defaultStr)` returns `defaultStr` when tempeh is not excluded. The default string was incorrectly set to `'Tofu (200g)'`, causing vegan lunch meals to display "Tofu (200g)" even when serving tempeh. Fixed to `'Tempeh (150g)'`.
+
+**Bug 2 — Misleading comment in planStore.submitCheckin**
+`src/store/planStore.ts:99`
+
+Comment read "macros were recalculated by the backend" — factually wrong. The checkin handler only stores the checkin and returns adjustment recommendations; it does not recalculate or modify diet macros. Fixed to "reload diet plan to pick up any server-side updates".
+
 ### Phase 1 Result
-**0 bugs found and fixed.** TypeScript clean, all tests pass, all flows verified. Since 0 < 3, Phase 2 runs per specification.
+**2 bugs fixed.** TypeScript clean, all tests pass, all flows verified. Since 2 < 3, Phase 2 runs per specification.
 
 ---
 
 ## Phase 2 — Feature (Prep Athlete)
 
-**Feature: Per-meal protein grams on Dashboard meal list**
+**Feature: Next Meal countdown card on Dashboard**
 
 File changed: `src/pages/Dashboard/index.tsx`
 
-Every meal row in the "Today's Meals" card now shows protein grams below the meal time:
+A new card inserted between the stats row and Prep Pace shows the next upcoming un-eaten meal:
+
 ```
-Breakfast                  480 kcal
-07:00                       38g P
+Next Meal
+Lunch   13:00
+in 1h 45m
+
+· Chicken breast (150g)
+· Brown rice (150g)
+· Broccoli (100g)
+
+480 kcal  · 42g protein       [ Mark Eaten ]
 ```
 
-**Why this matters for prep:** A competitive athlete managing a calorie deficit needs to confirm protein distribution at a glance — not just total daily protein. Seeing `38g P` per meal immediately tells them whether a meal is light (snack) or high-protein (post-workout), so they know which meal to protect and which to swap without navigating to the full Diet page.
+**Why this matters for prep:** 12 weeks out, hitting every meal on schedule is non-negotiable. This card surfaces the one thing the athlete needs right now — exactly what to eat and how long until it — without any navigation. The "Mark Eaten" button uses the existing `handleToggleMeal` flow so state stays in sync with the full meals checklist. When all meals are logged the card swaps to a green "All meals logged for today!" confirmation.
 
-**Implementation:** Uses `meal.protein_g` already present in the plan store — no new IPC calls or state. Two-line addition to the meal row's sub-label area.
+**Implementation:** Uses `dietPlan.meals` and `mealCompletions` already loaded at Dashboard mount. No new IPC calls, no new store state. Compares current `HH:MM` to each meal's scheduled `time` field, picks the first un-eaten meal whose time is after now.
 
 ---
 
 ## Phase 3 — UX Clarity Fixes
 
-### Fix 1: Goal-aware Prep Pace rate color
-**File:** `src/pages/Dashboard/index.tsx` (Prep Pace card)
+### Fix 1: "Skip" → "Skip Exercise" in WorkoutSession
+**File:** `src/pages/Training/WorkoutSession.tsx` (ExerciseCard header)
 
-**Before:** Rate colour was always green for negative values (weight loss) and amber for positive values (weight gain), regardless of goal.
+**Before:** Each exercise card showed a "Skip" button in the top-right corner. With a separate "Remove set" (✕) button on individual set rows, "Skip" was ambiguous — skip the exercise or skip the current set?
 
-**After:** Colour logic is now goal-aware:
-- `cut`: negative rate = green (losing as planned), positive = amber (gaining — bad)
-- `bulk`: positive rate = green (gaining as planned), negative = amber (losing — bad)
-- `maintain`: neutral gray for both
+**After:** Button renamed to "Skip Exercise". The action is now self-describing and cannot be confused with the per-set remove button.
 
-A bulk athlete previously saw amber (`+0.3 kg/wk`) even when progressing exactly as intended, which was misleading.
+### Fix 2: Space between weight value and unit in "Last" performance line
+**File:** `src/pages/Training/WorkoutSession.tsx` (ExerciseCard)
 
-### Fix 2: Workout completion state on Dashboard
-**File:** `src/pages/Dashboard/index.tsx` (Today's workout card)
+**Before:** `Last: 70kg × 8` — the value and unit are concatenated with no space.
 
-**Before:** "▶ Start Today's Workout" button was shown all day even after the athlete had already completed and logged the session.
-
-**After:** If `workoutHistory` contains a `completed` log for today, the button is replaced by a green "✓ Workout Complete" confirmation pill. The start button only shows when the workout is genuinely pending.
+**After:** `Last: 70 kg × 8` — consistent with how weight is displayed elsewhere in the app and easier to scan at a glance during a timed rest period.
 
 ---
 
 ## Push Status
 
-Commits pushed to `origin master`:
-1. `[FEATURE] 2026-06-06: Per-meal protein shown on Dashboard meal list`
-2. `[UX] 2026-06-06: Goal-aware Prep Pace color + workout completion state`
-3. `QA report — 2026-06-06`
+All commits pushed to `origin master`:
+1. `[QA] 2026-06-06: fix vegan lunch tempeh mislabeled as tofu; fix misleading checkin comment`
+2. `[FEATURE] 2026-06-06: add next-meal countdown card to Dashboard`
+3. `[UX] 2026-06-06: two surgical clarity fixes in WorkoutSession`
+
+---
+
+_Earlier 2026-06-06 session also delivered:_
+- `[FEATURE] Per-meal protein shown on Dashboard meal list`
+- `[UX] Goal-aware Prep Pace color + workout completion state`
