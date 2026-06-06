@@ -79,7 +79,7 @@ function ExerciseCard({ exercise, state, isImperial, lastPerf, onSetUpdate, onSe
           <p className="text-xs text-gray-500">{exercise.sets} sets × {exercise.reps} @ RIR {exercise.rir}</p>
           {lastPerf && (
             <p className="text-xs text-amber-500/70 mt-0.5">
-              Last: {lastPerf.weight}{weightUnit} × {lastPerf.reps}
+              Last: {lastPerf.weight} {weightUnit} × {lastPerf.reps}
             </p>
           )}
         </div>
@@ -89,7 +89,7 @@ function ExerciseCard({ exercise, state, isImperial, lastPerf, onSetUpdate, onSe
             onClick={onSkipExercise}
             className="text-xs text-gray-500 hover:text-red-400 border border-gray-700 hover:border-red-800 rounded-lg px-2 py-1 transition-colors"
           >
-            Skip
+            Skip Exercise
           </button>
         )}
         {state.allSkipped && <span className="text-xs text-gray-600 italic">Skipped</span>}
