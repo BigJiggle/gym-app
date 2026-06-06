@@ -95,7 +95,7 @@ export const usePlanStore = create<PlanStore>((set) => ({
         latestCheckin: checkin,
         loading: false
       }))
-      // Cascade: reload diet plan since macros were recalculated by the backend
+      // Cascade: reload diet plan to pick up any server-side updates
       try {
         const userId = (data as any).user_id
         const updatedDiet = await window.api.getDietPlan(userId)

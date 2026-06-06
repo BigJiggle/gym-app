@@ -365,7 +365,7 @@ function getMealTemplates(
       foods: (p) => {
         if (p === 'vegan') {
           return [
-            getCultureFood(culturePref, 'plant_protein', p, getFood('tempeh', exclusions, 'Tofu (200g)', preferences)),
+            getCultureFood(culturePref, 'plant_protein', p, getFood('tempeh', exclusions, 'Tempeh (150g)', preferences)),
             getCultureFood(culturePref, 'carb_main', p, getFood('sweet_potato', exclusions, 'Sweet Potato (200g)', preferences)),
             getCultureFood(culturePref, 'veg', p, getFood('spinach', exclusions, 'Spinach (100g)', preferences))
           ]
