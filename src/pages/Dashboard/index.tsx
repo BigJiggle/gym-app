@@ -428,7 +428,10 @@ export default function Dashboard() {
                         <span className={`text-sm ${done ? 'text-gray-500 line-through' : 'text-gray-200'}`}>{meal.name}</span>
                         <span className="text-xs text-gray-500 ml-2 flex-shrink-0">{meal.calories} kcal</span>
                       </div>
-                      <span className="text-xs text-gray-600">{meal.time}</span>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-600">{meal.time}</span>
+                        <span className={`text-xs ml-2 flex-shrink-0 ${done ? 'text-gray-600' : 'text-blue-400/70'}`}>{meal.protein_g}g P</span>
+                      </div>
                     </div>
                   </div>
                 )
