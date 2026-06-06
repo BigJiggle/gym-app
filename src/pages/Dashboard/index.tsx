@@ -176,6 +176,76 @@ export default function Dashboard() {
         />
       </div>
 
+      {/* Next Meal — upcoming un-eaten meal quick-glance */}
+      {dietPlan && (() => {
+        const nowDate = new Date()
+        const nowMins = nowDate.getHours() * 60 + nowDate.getMinutes()
+        const meals = dietPlan.meals ?? []
+        const todayMealsDone = new Set(
+          mealCompletions.filter(c => c.date === todayStr).map(c => c.meal_index)
+        )
+        const allDone = meals.length > 0 && meals.every((_, idx) => todayMealsDone.has(idx))
+        if (allDone) {
+          return (
+            <div className="bg-green-950/20 border border-green-800/40 rounded-xl p-4 flex items-center gap-3">
+              <span className="text-green-500 text-lg">✓</span>
+              <div>
+                <p className="text-sm font-semibold text-green-400">All meals logged for today!</p>
+                <p className="text-xs text-gray-500">Great work hitting your nutrition targets.</p>
+              </div>
+            </div>
+          )
+        }
+        const next = meals
+          .map((meal, idx) => ({ meal, idx }))
+          .filter(({ idx }) => !todayMealsDone.has(idx))
+          .find(({ meal }) => {
+            const [h, m] = meal.time.split(':').map(Number)
+            return h * 60 + m > nowMins
+          })
+        if (!next) return null
+        const { meal, idx } = next
+        const [mealH, mealM] = meal.time.split(':').map(Number)
+        const diffMins = mealH * 60 + mealM - nowMins
+        const countdownStr = diffMins < 60
+          ? `in ${diffMins} min`
+          : `in ${Math.floor(diffMins / 60)}h${diffMins % 60 > 0 ? ` ${diffMins % 60}m` : ''}`
+        return (
+          <div className="bg-gray-900 border border-brand-900/40 rounded-xl p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Next Meal</p>
+                <div className="flex items-baseline gap-2 mb-0.5">
+                  <p className="text-base font-semibold text-gray-100">{meal.name}</p>
+                  <span className="text-xs text-gray-600">{meal.time}</span>
+                </div>
+                <p className="text-sm text-brand-400 font-medium mb-2">{countdownStr}</p>
+                {meal.foods.length > 0 && (
+                  <div className="space-y-0.5 mb-2">
+                    {meal.foods.slice(0, 3).map((food, i) => (
+                      <p key={i} className="text-xs text-gray-500 truncate">· {food}</p>
+                    ))}
+                    {meal.foods.length > 3 && (
+                      <p className="text-xs text-gray-700">+{meal.foods.length - 3} more items</p>
+                    )}
+                  </div>
+                )}
+                <div className="flex items-center gap-3 text-xs">
+                  <span className="text-gray-500">{meal.calories} kcal</span>
+                  <span className="text-blue-400/70">{meal.protein_g}g protein</span>
+                </div>
+              </div>
+              <button
+                onClick={() => handleToggleMeal(idx, meal.name)}
+                className="flex-shrink-0 text-xs font-medium px-3 py-1.5 bg-brand-900/30 border border-brand-700/50 text-brand-400 rounded-lg hover:bg-brand-900/50 transition-colors"
+              >
+                Mark Eaten
+              </button>
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Prep Pace — only shown when 2+ check-ins exist */}
       {checkinHistory.length >= 2 && (() => {
         const isImperial = settings.units === 'imperial'
