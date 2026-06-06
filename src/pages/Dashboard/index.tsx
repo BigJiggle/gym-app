@@ -223,7 +223,11 @@ export default function Dashboard() {
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center justify-between hover:border-gray-700 transition-colors">
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Prep Pace</p>
-                <p className={`text-lg font-bold ${weeklyRateKg < 0 ? 'text-green-400' : weeklyRateKg > 0 ? 'text-amber-400' : 'text-gray-300'}`}>
+                <p className={`text-lg font-bold ${
+                  user.goal === 'bulk'
+                    ? (weeklyRateKg > 0 ? 'text-green-400' : weeklyRateKg < 0 ? 'text-amber-400' : 'text-gray-300')
+                    : (weeklyRateKg < 0 ? 'text-green-400' : weeklyRateKg > 0 ? 'text-amber-400' : 'text-gray-300')
+                }`}>
                   {weeklyRateDisplay > 0 ? '+' : ''}{weeklyRateDisplay} {wUnit}/wk
                 </p>
                 <p className="text-xs text-gray-600 mt-0.5">avg last {Math.min(checkinHistory.length, 4)} check-ins · tap for full chart</p>
@@ -312,11 +316,17 @@ export default function Dashboard() {
           {todaySession ? (
             <div className="space-y-2">
               <p className="text-sm font-medium text-brand-400">{todaySession.session_name}</p>
-              <Link to="/training">
-                <Button className="w-full">
-                  ▶ Start Today's Workout
-                </Button>
-              </Link>
+              {workoutHistory.some(l => l.status === 'completed' && l.date === todayStr) ? (
+                <div className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-green-900/20 border border-green-800/40 text-green-400 text-sm font-medium">
+                  <span>✓</span> Workout Complete
+                </div>
+              ) : (
+                <Link to="/training">
+                  <Button className="w-full">
+                    ▶ Start Today's Workout
+                  </Button>
+                </Link>
+              )}
               <div className="space-y-1 pt-1">
                 {todaySession.exercises.slice(0, 5).map((ex, i) => (
                   <div key={i} className="flex justify-between text-sm">
