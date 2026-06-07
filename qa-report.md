@@ -1,4 +1,4 @@
-# PrepCoach QA Report — 2026-06-06
+# PrepCoach QA Report — 2026-06-07
 
 ## Phase 1 — QA Audit
 
@@ -9,80 +9,47 @@
 `npm test` — **84 tests pass, 0 failures** across the full vitest suite.
 
 ### Nutrition Engine Audit (`nutritionEngine.ts` + `foodDatabase.ts`)
+Re-audited `generateNutritionPlan`, `buildMeals`, `getMealTemplates`, `getFood`, `getCultureFood`, and the food database tables.
 
-#### `getFood(id, exclusions, defaultStr, preferences?, isMainMeal=true)`
-- Correctly skips excluded food IDs.
-- Applies culture/preference substitutions only when the substitute's `FOOD_CATEGORY` intersects the original food's categories.
-- `isMainMeal=true` blocks any ID present in `SNACK_ONLY_FOODS` from substituting in main meals — logic verified correct.
-- Default string returned when all candidates are excluded.
-
-#### `buildMeals()` macro math
-- `protein_g = weight_kg × 2.3` ✓
-- `fat_g = weight_kg × 0.9` ✓
-- `carbs_g = (calories - protein*4 - fat*9) / 4` ✓
-- Per-meal distribution uses `proteinCalRatio` / `fatCalRatio` proportional split ✓
-- Snack model: `SNACK_CAL = 200` per snack; main meal calories = `max(800, totalCal - snacks×200) / mainCount` ✓
-
-#### `getMealTemplates()` — indices verified
-| Config | Indices |
-|---|---|
-| 6 meals, no snacks | `[0,1,2,3,4,5]` |
-| 4 meals + 1 snack (`includeSnacks=true`) | `[0,6,2,5]` + snack template(s) |
-
-#### `FOOD_CALORIES_PER_100G`
-Does not exist in the current codebase — refactored away. Implementation uses fixed display strings. Not a bug.
-
-#### `SNACK_ONLY_FOODS` coverage
-Set contains 16 items: `greek_yogurt`, `cottage_cheese`, `kefir`, `whey_protein`, `casein_protein`, `pea_protein`, `soy_protein`, `labneh`, `dahi`, `apple`, `banana`, `berries`, `orange`, `rice_cakes`, `crackers`, `pretzels`. All blocked from main meals via `isMainMeal` guard. ✓
-
-#### `FOOD_CATEGORY` / `FOOD_SUBSTITUTES`
-- Substitute IDs reference foods that exist as keys in `FOOD_DISPLAY` and `FOOD_CATEGORY` — no dangling references found.
-- Category matching in `getFood()` prevents category-crossing substitutions (e.g., a grain substitute cannot replace a protein).
-
-#### `getCultureFood()` / `EXCLUSION_ALIASES`
-- 4 culture paths verified: `indian`, `mexican`, `mediterranean`, `asian`.
-- Alias map correctly normalises user-facing food names to canonical IDs before exclusion lookup.
+- Macro math verified correct: `protein_g = round(weight_kg × 2.3)`, `fat_g = round(weight_kg × 0.9)`, `carbs_g = round((calories - protein×4 - fat×9) / 4)` (`electron/services/nutritionEngine.ts:515-520`)
+- All 29 `getFood()` template ids cross-reference cleanly into `FOOD_CATEGORY` / `FOOD_DISPLAY` — no dangling references
+- `cultureFoods` table covers all 4 cultures (indian, mexican, mediterranean, asian) × all 8 keys (protein_main, protein_alt, carb_main, carb_alt, veg, dairy, fat, plant_protein) — complete
+- No bugs found in the engine itself this session (both real bugs were in adjacent service/script code — see below)
 
 ### Spot Checks
+Ran `generateNutritionPlan` for both required scenarios via a temporary script:
 
 **Scenario A — 80 kg male omnivore, 6 meals, cut**
-- Calories: ~2,400 kcal (moderate deficit applied)
-- Protein: ~184 g (~2.3 g/kg) ✓
-- Fat: ~72 g (~0.9 g/kg) ✓
-- Carbs: derived residual ✓
+- Calories ≈ moderate cut deficit; protein ≈ 184 g (2.3 g/kg); fat ≈ 72 g (0.9 g/kg); carbs derived residual
 - 6 meal objects generated, all with non-NaN macros and valid portion strings ✓
 
 **Scenario B — 70 kg female vegan, 4 meals + 1 snack, maintain**
-- Calories: ~2,100 kcal (maintenance)
-- Protein: ~161 g ✓
-- Fat: ~63 g ✓
-- 4 main meals + 1 snack (200 kcal) generated ✓
-- No animal products appear in food selections ✓
-- No NaN, undefined, or zero-calorie meals ✓
+- Calories at maintenance; protein ≈ 161 g; fat ≈ 63 g
+- 4 main meals + 1 snack (200 kcal); no animal products in any selection; no NaN/undefined/zero-calorie meals ✓
 
 ### 7 User Flow Traces
 
 | Flow | Status |
 |---|---|
-| Onboarding → user created → plans generated | ✓ |
-| Check-in submitted → adjustments applied → macros scaled | ✓ |
+| Onboarding → user created → plans generated | ✓ (also verified live via headless UI run, see Phase 2 verification) |
+| Diet portions render with valid macros and strings | ✓ |
 | Meal completion logged/unlogged | ✓ |
-| Meal swap (manual + AI) | ✓ |
+| Check-in submitted → adjustments applied → macros scaled | ✓ (live-verified — see Bug 2 below) |
+| Settings → diet plan regeneration | ✓ |
 | Workout start → set log → complete | ✓ |
-| Diet plan regeneration via Settings | ✓ |
-| Food preference change → plan regenerated | ✓ |
+| Progress chart renders from check-in history | ✓ |
 
 ### Bugs Fixed
 
-**Bug 1 — Vegan lunch tempeh mislabeled as Tofu**
-`electron/services/nutritionEngine.ts:368`
+**Bug 1 — False-failing assertion in `scripts/qa-runner.ts`**
+`scripts/qa-runner.ts:264` (Section 5, training plan structural check)
 
-`getFood('tempeh', exclusions, defaultStr)` returns `defaultStr` when tempeh is not excluded. The default string was incorrectly set to `'Tofu (200g)'`, causing vegan lunch meals to display "Tofu (200g)" even when serving tempeh. Fixed to `'Tempeh (150g)'`.
+The adversarial QA runner asserted `Array.isArray(e.sets)`, but `Exercise.sets` is defined as a plain `number` in `trainingEngine.ts` (and rendered as a number throughout the UI, e.g. `Training/index.tsx:638`). The assertion was therefore always false, producing a permanently-failing check that masked real signal. Fixed to `typeof e.sets === 'number' && e.sets > 0`. Re-running the runner went from 19/20 → 20/20 passing.
 
-**Bug 2 — Misleading comment in planStore.submitCheckin**
-`src/store/planStore.ts:99`
+**Bug 2 — Macro recalculation used stale onboarding weight instead of the athlete's current weigh-in**
+`electron/ipc/checkinHandlers.ts:110` (`checkin:submit` handler)
 
-Comment read "macros were recalculated by the backend" — factually wrong. The checkin handler only stores the checkin and returns adjustment recommendations; it does not recalculate or modify diet macros. Fixed to "reload diet plan to pick up any server-side updates".
+After a weekly check-in adjusts calorie targets, the handler recomputes `protein_g`/`fat_g` from body weight — but it read `user.weight_kg`, which is set only once at onboarding and is **never** updated anywhere in the codebase (verified via full-repo grep — no `UPDATE users ... weight_kg` exists). This means every athlete's protein/fat targets stayed pinned to their onboarding weight for the entire 12-week cut, never adapting as they actually lost weight — a real, meaningful bug for a prep-tracking app whose entire premise is week-to-week adaptation. Fixed to prefer the just-submitted weigh-in: `(data.weight_kg as number) ?? (user.weight_kg as number)`. Did **not** change `users.weight_kg` globally, since it's intentionally relied on elsewhere as the athlete's "starting weight" baseline (e.g. `Progress` page's weight chart).
 
 ### Phase 1 Result
 **2 bugs fixed.** TypeScript clean, all tests pass, all flows verified. Since 2 < 3, Phase 2 runs per specification.
@@ -91,57 +58,83 @@ Comment read "macros were recalculated by the backend" — factually wrong. The 
 
 ## Phase 2 — Feature (Prep Athlete)
 
-**Feature: Next Meal countdown card on Dashboard**
+**Feature: Next check-in status on the Dashboard**
 
 File changed: `src/pages/Dashboard/index.tsx`
 
-A new card inserted between the stats row and Prep Pace shows the next upcoming un-eaten meal:
+A prep athlete checks the Dashboard daily but previously had to navigate to the dedicated `/checkin` page to learn whether this week's weigh-in is open yet, or how long until it unlocks (that locked-countdown logic existed only on the CheckIn page). This surfaces that status directly inside the existing "Check-In Feedback" card:
 
-```
-Next Meal
-Lunch   13:00
-in 1h 45m
+- **Locked:** a subtle gray line — `Next check-in opens in 4 days · Mon, Jun 8` (or "opens tomorrow" when ≤ 1 day away)
+- **Open:** a clickable green banner — `● Check-in is open — log this week's weigh-in →` linking straight to `/checkin`
+- **No check-ins yet:** indicator is hidden entirely so it doesn't clutter the empty state
 
-· Chicken breast (150g)
-· Brown rice (150g)
-· Broccoli (100g)
+**Implementation:** Uses the already-exposed `window.api.getNextCheckinDate(userId)` (maps to the existing `checkin:nextAllowed` IPC handler, confirmed present in `electron/preload.ts:47` before writing any code). No new IPC calls, no backend changes, no new store state — just one `useState` + one `useEffect` that re-fetches whenever `latestCheckin` changes (so the status updates immediately after submitting a check-in).
 
-480 kcal  · 42g protein       [ Mark Eaten ]
-```
+**Live UI verification:** Launched the Electron dev build headlessly (`xvfb-run` + `electron-vite dev --no-sandbox`) and drove it end-to-end with `xdotool`, screenshotting each step:
+1. Completed onboarding for a fresh test user → landed on Dashboard; confirmed the indicator is correctly **hidden** when `latestCheckin` is null ("No check-ins yet" empty state, no extra banner)
+2. Submitted a real check-in through the UI
+3. Returned to Dashboard → confirmed the card now renders **`Next check-in opens tomorrow · Mon, Jun 8`** exactly as designed, computed live from the real `getNextCheckinDate` IPC round-trip
 
-**Why this matters for prep:** 12 weeks out, hitting every meal on schedule is non-negotiable. This card surfaces the one thing the athlete needs right now — exactly what to eat and how long until it — without any navigation. The "Mark Eaten" button uses the existing `handleToggleMeal` flow so state stays in sync with the full meals checklist. When all meals are logged the card swaps to a green "All meals logged for today!" confirmation.
-
-**Implementation:** Uses `dietPlan.meals` and `mealCompletions` already loaded at Dashboard mount. No new IPC calls, no new store state. Compares current `HH:MM` to each meal's scheduled `time` field, picks the first un-eaten meal whose time is after now.
+(The "open" green-banner branch is the structural mirror of the verified "locked" branch — same state, same conditional render — and was inspected directly in the rendered DOM tree of the working build.)
 
 ---
 
 ## Phase 3 — UX Clarity Fixes
 
-### Fix 1: "Skip" → "Skip Exercise" in WorkoutSession
-**File:** `src/pages/Training/WorkoutSession.tsx` (ExerciseCard header)
+### Fix 1: Standardize "sets × reps @ RIR n" formatting across pages
+**Files:** `src/pages/Dashboard/index.tsx:414`, `src/pages/Training/index.tsx:638`
 
-**Before:** Each exercise card showed a "Skip" button in the top-right corner. With a separate "Remove set" (✕) button on individual set rows, "Skip" was ambiguous — skip the exercise or skip the current set?
+**Before:** The exact same exercise prescription rendered with three different conventions depending on which screen you were on:
+- Dashboard: `4 × 8 @RIR2`
+- Training plan list: `4×8 RIR2`
+- WorkoutSession / SessionEditor: `4 sets × 8 @ RIR 2`
 
-**After:** Button renamed to "Skip Exercise". The action is now self-describing and cannot be confused with the per-set remove button.
+**After:** Dashboard and Training plan list now match WorkoutSession/SessionEditor's spacing: `4 × 8 @ RIR 2`. Same class of issue as the previously-fixed "70kg" → "70 kg" inconsistency — a user bouncing between Dashboard and Training would see the identical data point punctuated three different ways and might wonder if they were different metrics.
 
-### Fix 2: Space between weight value and unit in "Last" performance line
-**File:** `src/pages/Training/WorkoutSession.tsx` (ExerciseCard)
+### Fix 2: Distinguish the destructive Diet "Regenerate" glyph from the safe "Update Macros" glyph
+**File:** `src/pages/Diet/index.tsx:294, 310, 313`
 
-**Before:** `Last: 70kg × 8` — the value and unit are concatenated with no space.
+**Before:** "Update Macros" (safe — only adjusts calorie targets) used `⟳` and "Regenerate" (destructive — confirm-gated, wipes **all** meals and manual swaps) used `↺`. These two circular-arrow glyphs (U+27F3 vs U+21BA) are nearly indistinguishable at 12px, including in the legend line directly below the buttons that's supposed to explain the difference between them.
 
-**After:** `Last: 70 kg × 8` — consistent with how weight is displayed elsewhere in the app and easier to scan at a glance during a timed rest period.
+**After:** Replaced the destructive glyph with `⚠`, which is visually distinct from `⟳` at a glance and semantically signals "this one is risky" — reducing the chance of a quick-scanning user clicking the wrong button.
 
 ---
 
 ## Push Status
 
-All commits pushed to `origin master`:
-1. `[QA] 2026-06-06: fix vegan lunch tempeh mislabeled as tofu; fix misleading checkin comment`
-2. `[FEATURE] 2026-06-06: add next-meal countdown card to Dashboard`
-3. `[UX] 2026-06-06: two surgical clarity fixes in WorkoutSession`
+**SUCCESS** — all commits pushed to `origin master` (`ea7afef..95d1dcf`):
+1. `[QA] 2026-06-07: Fix stale-weight macro recalc on check-in and bad qa-runner type assertion`
+2. `[FEATURE] 2026-06-07: Show next check-in status on Dashboard`
+3. `[UX] 2026-06-07: standardize RIR formatting; distinguish destructive Diet action glyph`
 
 ---
 
-_Earlier 2026-06-06 session also delivered:_
-- `[FEATURE] Per-meal protein shown on Dashboard meal list`
-- `[UX] Goal-aware Prep Pace color + workout completion state`
+_Earlier 2026-06-06 session report (preserved for history) follows below._
+
+---
+
+# PrepCoach QA Report — 2026-06-06 (previous session)
+
+## Phase 1 — QA Audit
+
+### TypeScript
+`npx tsc --noEmit` passed with **0 errors** before and after all changes.
+
+### Unit Tests
+`npm test` — **84 tests pass, 0 failures** across the full vitest suite.
+
+### Bugs Fixed (2)
+- **Bug 1** — Vegan lunch tempeh mislabeled as Tofu (`electron/services/nutritionEngine.ts:368`) — default string `'Tofu (200g)'` → `'Tempeh (150g)'`
+- **Bug 2** — Misleading comment in `planStore.submitCheckin` (`src/store/planStore.ts:99`) — corrected to describe actual reload-on-server-update behavior
+
+### Phase 2 — Feature
+**Next Meal countdown card on Dashboard** (`src/pages/Dashboard/index.tsx`) — surfaces the next upcoming un-eaten meal with a live countdown and a "Mark Eaten" action wired into the existing `handleToggleMeal` flow.
+
+### Phase 3 — UX Fixes
+1. "Skip" → "Skip Exercise" button rename in `WorkoutSession.tsx` (disambiguates from per-set "remove" button)
+2. `Last: 70kg × 8` → `Last: 70 kg × 8` spacing fix in `WorkoutSession.tsx`
+
+### Push Status
+All 3 commits pushed to `origin master`.
+
+_That session also noted earlier 2026-06-06 deliveries: per-meal protein on Dashboard, goal-aware Prep Pace color, and workout completion state._
