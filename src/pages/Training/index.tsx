@@ -635,7 +635,7 @@ export default function Training() {
                               )}
                             </div>
                             <span className="text-gray-400 font-mono text-xs ml-3 flex-shrink-0">
-                              {ex.sets}×{ex.reps} RIR{ex.rir}
+                              {ex.sets} × {ex.reps} @ RIR {ex.rir}
                             </span>
                           </div>
                         )

@@ -411,7 +411,7 @@ export default function Dashboard() {
                 {todaySession.exercises.slice(0, 5).map((ex, i) => (
                   <div key={i} className="flex justify-between text-sm">
                     <span className="text-gray-300">{ex.name}</span>
-                    <span className="text-gray-500">{ex.sets} × {ex.reps} @RIR{ex.rir}</span>
+                    <span className="text-gray-500">{ex.sets} × {ex.reps} @ RIR {ex.rir}</span>
                   </div>
                 ))}
                 {(todaySession.exercises.length ?? 0) > 5 && (
