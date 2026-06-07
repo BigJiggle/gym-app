@@ -46,6 +46,7 @@ export default function Dashboard() {
   const [waterTargetMl, setWaterTargetMl] = useState(3000)
   const [editingWaterTarget, setEditingWaterTarget] = useState(false)
   const [waterTargetInput, setWaterTargetInput] = useState('')
+  const [nextCheckinAt, setNextCheckinAt] = useState<Date | null>(null)
 
   useEffect(() => {
     if (!user) return
@@ -55,6 +56,15 @@ export default function Dashboard() {
     loadMealCompletions(user.id, todayStr, todayStr)
     loadWorkoutHistory(user.id)
   }, [user?.id])
+
+  // Refresh the next-check-in date whenever the latest check-in changes
+  // (e.g. right after submitting one) so the Dashboard status stays current.
+  useEffect(() => {
+    if (!user) return
+    window.api.getNextCheckinDate(user.id)
+      .then((iso: string | null) => setNextCheckinAt(iso ? new Date(iso) : null))
+      .catch(() => setNextCheckinAt(null))
+  }, [user?.id, latestCheckin])
 
   useEffect(() => {
     window.api.getExerciseLibrary().then(setExerciseLibrary)
@@ -439,6 +449,28 @@ export default function Dashboard() {
         {/* Latest check-in feedback */}
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <h2 className="font-semibold text-gray-100 mb-3">Check-In Feedback</h2>
+          {(() => {
+            const now = new Date()
+            const isOpen = latestCheckin && (!nextCheckinAt || nextCheckinAt <= now)
+            if (!latestCheckin || !isOpen && !nextCheckinAt) return null
+            if (isOpen) {
+              return (
+                <Link to="/checkin" className="block mb-3">
+                  <div className="flex items-center gap-2 text-xs font-medium text-green-400 bg-green-900/20 border border-green-800/40 rounded-lg px-3 py-1.5 hover:border-green-700/60 transition-colors">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0" />
+                    Check-in is open — log this week's weigh-in →
+                  </div>
+                </Link>
+              )
+            }
+            const msLeft = nextCheckinAt!.getTime() - now.getTime()
+            const daysLeft = Math.ceil(msLeft / (1000 * 60 * 60 * 24))
+            return (
+              <div className="mb-3 text-xs text-gray-500">
+                Next check-in {daysLeft <= 1 ? 'opens tomorrow' : `opens in ${daysLeft} days`} · {nextCheckinAt!.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+              </div>
+            )
+          })()}
           {latestCheckin ? (
             <div className="space-y-2">
               <div className="flex gap-2 text-sm">
