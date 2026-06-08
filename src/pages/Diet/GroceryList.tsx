@@ -34,10 +34,20 @@ function categorize(foodName: string): GroceryItem['category'] {
 }
 
 function multiplyQty(foodStr: string, days = 7): string {
-  return foodStr.replace(/\((\d+(?:\.\d+)?)\s*g\)/g, (_, qty) => {
-    const total = Math.round(parseFloat(qty) * days)
-    return `(${total}g/wk)`
-  }).replace(/x(\d+)/g, (_, n) => `x${parseInt(n) * days}/wk`)
+  let matched = false
+  const result = foodStr
+    .replace(/\((\d+(?:\.\d+)?)\s*g\)/g, (_, qty) => {
+      matched = true
+      const total = Math.round(parseFloat(qty) * days)
+      return `(${total}g/wk)`
+    })
+    .replace(/x(\d+)/g, (_, n) => {
+      matched = true
+      return `x${parseInt(n) * days}/wk`
+    })
+  // Plain food names with no gram or count notation (e.g. "Banana", "Apple")
+  // would otherwise show with no weekly quantity at all — append a count.
+  return matched ? result : `${result} ×${days}/wk`
 }
 
 function buildGroceryItems(meals: Meal[]): GroceryItem[] {
