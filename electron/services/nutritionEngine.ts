@@ -539,7 +539,7 @@ export function generateNutritionPlan(input: NutritionInput): NutritionPlan {
     protein_g,
     carbs_g,
     fat_g,
-    meal_count: input.meal_count,
+    meal_count: meals.length,
     phase: PHASE_MAP[input.goal] ?? 'deficit',
     meals
   }
