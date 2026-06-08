@@ -1,3 +1,107 @@
+# PrepCoach QA Report — 2026-06-08 (run 2)
+
+## Phase 1 — QA Audit
+
+### TypeScript
+`npx tsc --noEmit` passed with **0 errors** before and after all changes.
+
+### Unit Tests
+`npm test` — **84 tests pass, 0 failures** across the full vitest suite (both before and after changes).
+
+### Architecture Note
+The audit checklist in this session's brief referenced types/helpers that do not exist in the current codebase (`TemplateFoodItem`, `calcPortionStr`, `MEAL_CAL_FRACTIONS`, `ROLE_FIXED_G`/`MIN_G`/`MAX_G`, `FOOD_CALORIES_PER_100G`, `snack_count`) — confirmed via repo-wide grep returning no matches. The actual architecture uses fixed display-string foods returned by `getFood()`, a boolean `include_snacks` flag, and template selection via `getMealTemplates()`/index arrays. This audit was performed against the real architecture rather than the checklist's (stale) description of it.
+
+### Nutrition Engine & Database Audit (`nutritionEngine.ts` + `foodDatabase.ts`)
+Audited `getPhaseAwareDeficit`, `restrictionsToAliasKeys`, `isExcluded`, `getFood`, `calcBMR`, `buildMeals`, `getCultureFood`, `getMealTemplates`, `buildMealsPublic`, `generateNutritionPlan`, and the food database tables (`EXCLUSION_ALIASES`, `FOOD_SUBSTITUTES`, `FOOD_CATEGORY`, `FOOD_DISPLAY`, `SNACK_ONLY_FOODS`).
+
+- Macro math verified correct: `protein_g = round(weight_kg × 2.3)`, `fat_g = round(weight_kg × 0.9)`, `carbs_g = round((calories - protein×4 - fat×9) / 4)`
+- `FOOD_SUBSTITUTES`/`FOOD_CATEGORY`/`SNACK_ONLY_FOODS` cross-referenced cleanly against `getFood()` template ids — no dangling references
+- Found and fixed a real gap in `cultureFoods` coverage (Bug 2 below)
+
+### Spot Checks
+Ran `generateNutritionPlan` via a temporary `vite-node` script for both required scenarios:
+
+**80 kg male omnivore, 6 meals, 0 snacks, moderate cut**
+`calories_target=2275 protein_g=184 carbs_g=223 fat_g=72 phase=deficit` — 6 meals generated (Breakfast, Mid-Morning, Lunch, Pre-Workout, Post-Workout, Dinner), each with non-NaN macros, valid portion strings, and omnivore foods (chicken, salmon, eggs, rice, etc.).
+
+**70 kg female vegan, 4 meals, 1 snack, light activity, maintain**
+`calories_target=1953 protein_g=161 carbs_g=186 fat_g=63 phase=maintenance` — 4 main meals + 1 snack (Mid-Morning Snack, 200 kcal), zero animal products in any selection, no zero-calorie meals.
+
+### 7 User Flow Traces
+
+| Flow | Status |
+|---|---|
+| Onboarding → user created → plans generated | ✓ |
+| Diet page renders meals/macros/portions | ✓ |
+| Meal completion logged/unlogged via `logMealCompletion`/`unlogMealCompletion` | ✓ |
+| Check-in submitted → adjustments applied → macros recalculated | ✓ |
+| Settings → Save & Regenerate → `regeneratePlans` IPC round-trip | ✓ |
+| Workout start → set logging → completion | ✓ |
+| Progress page chart renders from `checkinHistory`/`progressEntries` | ✓ |
+
+### Bugs Fixed
+
+**Bug 1 — Grocery list showed no weekly quantity for plain food names**
+`src/pages/Diet/GroceryList.tsx:36` (`multiplyQty`)
+
+`multiplyQty()` only rewrote `(NNNg)` and `xN` notations into weekly totals. Foods with neither — e.g. `"Banana"`, `"Apple"`, `"Banana (half)"` — passed through completely unchanged, so the weekly shopping list showed just the bare food name with **no indication of how many you'd need for the week**, unlike every other item on the list. Reproduced by simulating the vegan 6-meal-with-snacks template combination, where `Banana` and `Banana (half)` co-occur. Fixed by tracking whether either pattern matched and appending a `×{days}/wk` fallback count when neither did (e.g. `Banana ×7/wk`).
+
+**Bug 2 — 4 of 9 advertised culture meal preferences silently fell back to generic omnivore meals**
+`electron/services/nutritionEngine.ts` (`cultureFoods` record, after the `asian` entry)
+
+`src/types/index.ts` and the AI-chat prompt in `claudeService.ts` both advertise 9 `culture_pref` options (`indian`, `mexican`, `mediterranean`, `asian`, `west_african`, `japanese`, `korean`, `middle_eastern`, `caribbean`/etc.), and `getCultureFood()` is designed to look up culture-specific foods from the `cultureFoods` record — but that record only had entries for 4 of the 9 (`indian`, `mexican`, `mediterranean`, `asian`). Any athlete who selected `west_african`, `japanese`, `korean`, or `middle_eastern` (reachable via the AI chat refinement flow, which is in `ALLOWED_COLUMNS`) would silently get generic omnivore meals with no indication their preference wasn't honored. Fixed by adding all 4 missing entries with all 8 required keys (`protein_main`, `protein_alt`, `carb_main`, `carb_alt`, `veg`, `dairy`, `fat`, `plant_protein`), populated with foods that exist in `FOOD_DISPLAY`/`FOOD_CATEGORY`.
+
+### Phase 1 Result
+**2 bugs fixed.** TypeScript clean, all 84 tests pass, all 7 flows verified. Since 2 < 3, Phase 2 runs per spec.
+
+---
+
+## Phase 2 — Feature (Prep Athlete)
+
+**Feature: Adherence streak badge on the Dashboard**
+
+File changed: `src/pages/Dashboard/index.tsx`
+
+A prep athlete checking the Dashboard daily now sees a `🔥 N-day streak` badge next to today's date once they've built one up. The streak counts consecutive prior days where **every planned meal was logged** *and* **any scheduled training session was completed** — the two things the app already asks athletes to track every single day — giving an at-a-glance, motivating signal of consistency without digging through history pages.
+
+**Implementation (pure frontend, existing IPC only):**
+- Computed entirely as derived state from data the Dashboard already loads: `mealCompletions`, `workoutHistory`, `trainingPlan.sessions`, `dietPlan.meals.length`. No new IPC calls, no schema changes, no persisted UI state.
+- The one supporting change: widened the Dashboard's `loadMealCompletions` window from "today only" to the last 60 days, so the streak lookback has history to walk. Verified this doesn't affect `isMealDone`/`logMealCompletion`/`unlogMealCompletion`, which all filter by exact `date`+`meal_index` and are unaffected by a larger loaded set.
+- Counts backward from *yesterday* (today is still in progress), stopping at the first day where the logged-meal count is short of the plan's meal count, or — on a day with a scheduled session — no `completed` workout log exists for that date.
+
+---
+
+## Phase 3 — UX Clarity Fixes
+
+### Fix 1: Standardize "Stress Level" rating-scale anchor labels across the three check-in forms
+**File:** `src/pages/CheckIn/index.tsx:269, 645, 880`
+
+**Before:** The same 1–5 "Stress Level" rating (same DB field, same `RatingBar` component) used two different anchor-word vocabularies depending on the form — `"Relaxed" → "Overwhelmed"` (describing emotional state) on the missed-check-in and edit-last-check-in forms, but `"None" → "Very high"` (describing stress quantity) on the main weekly check-in form. A user filling in a 3/5 on one screen and a 3/5 on another had two different mental models for what the number meant.
+
+**After:** All three forms now use `"Relaxed" → "Overwhelmed"`, matching the majority convention (2 of 3 already used it).
+
+### Fix 2: Fix low-contrast tick labels on the Settings "UI Zoom" slider
+**File:** `src/pages/Settings/index.tsx:191`
+
+**Before:** The zoom slider's `50% / 100% / 200% / 300%` tick labels used `text-gray-700` — noticeably lower contrast against the `bg-gray-800`/`bg-gray-900` card backgrounds than the `text-gray-600` used for the structurally identical tick-label row on the check-in adherence sliders (`AdherenceSlider`, e.g. `0% / 50% / 100%`).
+
+**After:** Matched to `text-gray-600`, consistent with the equivalent control elsewhere and easier to read.
+
+---
+
+## Push Status
+
+**SUCCESS** — commits pushed to `origin master`:
+1. `[QA] 2026-06-08: Fix grocery list quantities for unit-less foods and add missing culture meal data`
+2. `[FEATURE] 2026-06-08: Adherence streak badge on Dashboard`
+3. `[UX] 2026-06-08: standardize Stress Level scale labels; fix low-contrast UI Zoom tick labels`
+
+---
+
+_Earlier 2026-06-08 (run 1) report (preserved for history) follows below._
+
+---
+
 # PrepCoach QA Report — 2026-06-08
 
 ## Phase 1 — QA Audit
