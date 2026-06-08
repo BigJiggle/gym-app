@@ -577,7 +577,7 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
                   <div key={i} className="flex items-center justify-between">
                     <span className="text-sm text-gray-300 truncate mr-2">{pr.exerciseName}</span>
                     <span className="text-sm font-bold text-brand-300 flex-shrink-0">
-                      {pr.weight}{isImperial ? 'lbs' : 'kg'} × {pr.reps}
+                      {pr.weight} {isImperial ? 'lbs' : 'kg'} × {pr.reps}
                     </span>
                   </div>
                 ))}
