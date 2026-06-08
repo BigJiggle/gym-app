@@ -54,7 +54,10 @@ export default function Dashboard() {
     loadTrainingPlan(user.id)
     loadDietPlan(user.id)
     loadCheckinHistory(user.id)
-    loadMealCompletions(user.id, todayStr, todayStr)
+    // Load 60 days of completions (not just today) so the adherence streak
+    // below can look back over recent history.
+    const streakWindowStart = (() => { const d = new Date(); d.setDate(d.getDate() - 60); return localDateStr(d) })()
+    loadMealCompletions(user.id, streakWindowStart, todayStr)
     loadWorkoutHistory(user.id)
   }, [user?.id])
 
@@ -114,6 +117,30 @@ export default function Dashboard() {
 
   const isMealDone = (idx: number) => mealCompletions.some(c => c.date === todayStr && c.meal_index === idx)
 
+  // Adherence streak — consecutive days (counting backward from yesterday,
+  // since today is still in progress) where every planned meal was logged
+  // AND any scheduled training session that day was completed. Derived
+  // entirely from already-loaded mealCompletions/workoutHistory/trainingPlan
+  // — no new IPC calls or persisted state needed.
+  const adherenceStreak = (() => {
+    const totalMeals = dietPlan?.meals?.length ?? 0
+    const sessions = trainingPlan?.sessions ?? []
+    if (totalMeals === 0) return 0
+    let streak = 0
+    for (let offset = 1; offset <= 60; offset++) {
+      const d = new Date()
+      d.setDate(d.getDate() - offset)
+      const dateStr = localDateStr(d)
+      const loggedCount = mealCompletions.filter(c => c.date === dateStr).length
+      if (loggedCount < totalMeals) break
+      const dow = d.getDay() === 0 ? 7 : d.getDay()
+      const hadSession = sessions.some(s => s.day_of_week === dow)
+      if (hadSession && !workoutHistory.some(l => l.status === 'completed' && l.date === dateStr)) break
+      streak++
+    }
+    return streak
+  })()
+
   async function handleToggleMeal(idx: number, name: string) {
     if (isMealDone(idx)) {
       unlogMealCompletion(user!.id, todayStr, idx)
@@ -149,9 +176,19 @@ export default function Dashboard() {
           <h1 className="text-2xl font-bold text-gray-100">
             Welcome back, {user.name.split(' ')[0]}
           </h1>
-          <p className="text-gray-500 mt-0.5">
-            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-          </p>
+          <div className="flex items-center gap-2 mt-0.5">
+            <p className="text-gray-500">
+              {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+            </p>
+            {adherenceStreak > 0 && (
+              <span
+                className="inline-flex items-center gap-1 text-xs font-semibold text-orange-400 bg-orange-900/20 border border-orange-800/40 rounded-full px-2 py-0.5"
+                title="Consecutive days with every planned meal logged and any scheduled workout completed"
+              >
+                🔥 {adherenceStreak}-day streak
+              </span>
+            )}
+          </div>
         </div>
         <Link to="/checkin">
           <Button size="sm">+ Check-In</Button>
