@@ -47,6 +47,7 @@ export default function Dashboard() {
   const [editingWaterTarget, setEditingWaterTarget] = useState(false)
   const [waterTargetInput, setWaterTargetInput] = useState('')
   const [nextCheckinAt, setNextCheckinAt] = useState<Date | null>(null)
+  const [checkedMilestones, setCheckedMilestones] = useState<boolean[]>([])
 
   useEffect(() => {
     if (!user) return
@@ -77,6 +78,37 @@ export default function Dashboard() {
     if (storedTarget > 0) setWaterTargetMl(storedTarget)
     else setWaterTargetMl(settings.units === 'imperial' ? 3785 : 3000)
   }, [todayStr])
+
+  // Nearest upcoming show + this week's prep guidance — drives both the
+  // "This Week in Prep" card and its persisted milestone checklist below.
+  const nearestShow = [...shows]
+    .filter(s => s.show_date >= todayStr)
+    .sort((a, b) => a.show_date.localeCompare(b.show_date))[0]
+  const currentPrepWeek = nearestShow
+    ? buildPrepTimeline(nearestShow.show_date).find(w => w.isCurrentWeek) ?? null
+    : null
+  const milestoneStorageKey = nearestShow && currentPrepWeek
+    ? `milestones_${nearestShow.id}_${currentPrepWeek.weeksOut}`
+    : null
+
+  // Load this week's checked-off milestones whenever the relevant show/week changes
+  useEffect(() => {
+    if (!milestoneStorageKey) { setCheckedMilestones([]); return }
+    try {
+      const stored = JSON.parse(localStorage.getItem(milestoneStorageKey) ?? '[]')
+      setCheckedMilestones(Array.isArray(stored) ? stored : [])
+    } catch {
+      setCheckedMilestones([])
+    }
+  }, [milestoneStorageKey])
+
+  function toggleMilestone(index: number) {
+    if (!milestoneStorageKey) return
+    const next = [...checkedMilestones]
+    next[index] = !next[index]
+    setCheckedMilestones(next)
+    localStorage.setItem(milestoneStorageKey, JSON.stringify(next))
+  }
 
   if (!user) return null
 
@@ -322,15 +354,8 @@ export default function Dashboard() {
 
       {/* This Week in Prep — shown when there's an upcoming show */}
       {(() => {
-        const today = new Date().toLocaleDateString('en-CA')
-        const nearestShow = [...shows]
-          .filter(s => s.show_date >= today)
-          .sort((a, b) => a.show_date.localeCompare(b.show_date))[0]
-        if (!nearestShow) return null
-        const timeline = buildPrepTimeline(nearestShow.show_date)
-        const currentWeek = timeline.find(w => w.isCurrentWeek)
-        if (!currentWeek) return null
-        const { guidance } = currentWeek
+        if (!nearestShow || !currentPrepWeek) return null
+        const { guidance } = currentPrepWeek
         const PHASE_BADGE: Record<string, string> = {
           green:  'bg-green-900/30 text-green-400 border-green-800/50',
           brand:  'bg-brand-900/30 text-brand-400 border-brand-800/50',
@@ -365,13 +390,32 @@ export default function Dashboard() {
               </div>
               {guidance.milestones.length > 0 && (
                 <div className="border-t border-gray-800 pt-2">
-                  <p className="text-xs text-gray-600 mb-1.5">This week's milestones</p>
-                  <div className="flex flex-wrap gap-x-4 gap-y-1">
-                    {guidance.milestones.slice(0, 2).map((m, i) => (
-                      <p key={i} className="text-xs text-gray-500 flex items-center gap-1">
-                        <span className="text-gray-700">□</span> {m}
+                  <div className="flex items-center justify-between mb-1.5">
+                    <p className="text-xs text-gray-600">This week's milestones</p>
+                    {checkedMilestones.filter(Boolean).length > 0 && (
+                      <p className="text-xs text-gray-600">
+                        {checkedMilestones.filter(Boolean).length}/{guidance.milestones.length} done
                       </p>
-                    ))}
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    {guidance.milestones.map((m, i) => {
+                      const checked = !!checkedMilestones[i]
+                      return (
+                        <div
+                          key={i}
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleMilestone(i) }}
+                          className="flex items-start gap-1.5 text-xs cursor-pointer group"
+                        >
+                          <span className={checked ? 'text-green-500' : 'text-gray-700 group-hover:text-gray-500'}>
+                            {checked ? '☑' : '□'}
+                          </span>
+                          <span className={checked ? 'text-gray-600 line-through' : 'text-gray-400 group-hover:text-gray-300'}>
+                            {m}
+                          </span>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               )}

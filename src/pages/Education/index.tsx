@@ -303,6 +303,36 @@ export default function Education() {
   const [expandedWeek, setExpandedWeek] = useState<number | null>(null)
   const expandedWeekInitialized = useRef(false)
 
+  // Persisted milestone checkboxes — shares the same localStorage keys as the
+  // Dashboard's "This Week in Prep" checklist so checking one off is reflected
+  // in both places.
+  const [, bumpMilestones] = useState(0)
+  function milestoneKey(weeksOut: number) {
+    return nearestShow ? `milestones_${nearestShow.id}_${weeksOut}` : null
+  }
+  function isMilestoneChecked(weeksOut: number, index: number) {
+    const key = milestoneKey(weeksOut)
+    if (!key) return false
+    try {
+      const arr = JSON.parse(localStorage.getItem(key) ?? '[]')
+      return Array.isArray(arr) && !!arr[index]
+    } catch {
+      return false
+    }
+  }
+  function toggleMilestone(weeksOut: number, index: number) {
+    const key = milestoneKey(weeksOut)
+    if (!key) return
+    let arr: boolean[] = []
+    try {
+      const parsed = JSON.parse(localStorage.getItem(key) ?? '[]')
+      if (Array.isArray(parsed)) arr = parsed
+    } catch { /* start fresh */ }
+    arr[index] = !arr[index]
+    localStorage.setItem(key, JSON.stringify(arr))
+    bumpMilestones(v => v + 1)
+  }
+
   // Auto-expand the current week once the show data loads (shows load async from DB)
   useEffect(() => {
     if (expandedWeekInitialized.current || !timeline) return
@@ -485,16 +515,27 @@ export default function Education() {
                               <p className="text-xs text-gray-300">{guidance.focus}</p>
                             </div>
                           </div>
-                          {/* Milestones */}
+                          {/* Milestones — interactive checklist, persisted locally so it
+                              survives reloads and stays in sync with the Dashboard card */}
                           {guidance.milestones.length > 0 && (
                             <div>
                               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Milestones / Checklist</p>
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-1">
-                                {guidance.milestones.map((m, i) => (
-                                  <div key={i} className="flex gap-2 text-xs text-gray-400 bg-gray-800/30 rounded-lg px-3 py-2">
-                                    <span className="text-gray-600 flex-shrink-0">□</span>{m}
-                                  </div>
-                                ))}
+                                {guidance.milestones.map((m, i) => {
+                                  const checked = isMilestoneChecked(weeksOut, i)
+                                  return (
+                                    <div
+                                      key={i}
+                                      onClick={() => toggleMilestone(weeksOut, i)}
+                                      className="flex gap-2 text-xs bg-gray-800/30 hover:bg-gray-800/50 rounded-lg px-3 py-2 cursor-pointer transition-colors"
+                                    >
+                                      <span className={`flex-shrink-0 ${checked ? 'text-green-500' : 'text-gray-600'}`}>
+                                        {checked ? '☑' : '□'}
+                                      </span>
+                                      <span className={checked ? 'text-gray-600 line-through' : 'text-gray-400'}>{m}</span>
+                                    </div>
+                                  )
+                                })}
                               </div>
                             </div>
                           )}
