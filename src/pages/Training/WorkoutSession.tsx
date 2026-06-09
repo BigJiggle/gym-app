@@ -41,6 +41,7 @@ interface ExerciseCardProps {
   state: ExerciseState
   isImperial: boolean
   lastPerf?: LastPerf
+  pr?: LastPerf
   onSetUpdate: (setIdx: number, field: keyof Pick<SetEntry, 'reps' | 'weight' | 'rir'>, value: number) => void
   onSetDone: (setIdx: number) => void
   onRemoveSet: (setIdx: number) => void
@@ -48,7 +49,7 @@ interface ExerciseCardProps {
   onAddSet: () => void
 }
 
-function ExerciseCard({ exercise, state, isImperial, lastPerf, onSetUpdate, onSetDone, onRemoveSet, onSkipExercise, onAddSet }: ExerciseCardProps) {
+function ExerciseCard({ exercise, state, isImperial, lastPerf, pr, onSetUpdate, onSetDone, onRemoveSet, onSkipExercise, onAddSet }: ExerciseCardProps) {
   const weightUnit = isImperial ? 'lbs' : 'kg'
   const weightStep = isImperial ? 5 : 2.5
   const allSetsDone = !state.allSkipped && state.sets.length > 0 && state.sets.every((s) => s.done)
@@ -80,6 +81,11 @@ function ExerciseCard({ exercise, state, isImperial, lastPerf, onSetUpdate, onSe
           {lastPerf && (
             <p className="text-xs text-amber-500/70 mt-0.5">
               Last: {lastPerf.weight} {weightUnit} × {lastPerf.reps}
+            </p>
+          )}
+          {pr && pr.weight > (lastPerf?.weight ?? 0) && (
+            <p className="text-xs text-purple-400/70 mt-0.5">
+              PR: {pr.weight} {weightUnit} × {pr.reps}
             </p>
           )}
         </div>
@@ -210,6 +216,27 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
     return result
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])  // intentionally run once at mount — history is already loaded by parent
+
+  // All-time PRs across every completed session — gives the athlete a true progress baseline.
+  // Runs once at mount so it reflects the history snapshot at session start.
+  const allTimePR = useMemo<Map<string, LastPerf>>(() => {
+    const result = new Map<string, LastPerf>()
+    for (const log of workoutHistory) {
+      if (log.status !== 'completed') continue
+      for (const s of log.sets ?? []) {
+        if (s.skipped || !s.weight_kg || s.weight_kg === 0 || !s.reps_actual) continue
+        const displayWeight = isImperial
+          ? Math.round(s.weight_kg * 2.20462 * 10) / 10
+          : Math.round(s.weight_kg * 10) / 10
+        const existing = result.get(s.exercise_name)
+        if (!existing || displayWeight > existing.weight) {
+          result.set(s.exercise_name, { weight: displayWeight, reps: s.reps_actual })
+        }
+      }
+    }
+    return result
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [phase, setPhase] = useState<Phase>('active')
@@ -451,6 +478,7 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
             state={exerciseStates.get(ex.name)!}
             isImperial={isImperial}
             lastPerf={lastPerformance.get(ex.name)}
+            pr={allTimePR.get(ex.name)}
             onSetUpdate={(setIdx, field, value) => updateSet(ex.name, setIdx, field, value)}
             onSetDone={(setIdx) => { markSetDone(ex.name, setIdx); startRest() }}
             onRemoveSet={(setIdx) => removeSet(ex.name, setIdx)}
