@@ -633,7 +633,8 @@ export default function Dashboard() {
                   <div
                     key={idx}
                     onClick={() => handleToggleMeal(idx, meal.name)}
-                    className={`flex items-center gap-3 py-1.5 px-2 rounded-lg transition-colors cursor-pointer ${done ? 'bg-green-950/20' : 'hover:bg-gray-800'}`}
+                    className={`flex items-center gap-3 py-1.5 px-2 rounded-lg transition-colors cursor-pointer ${done ? 'bg-green-950/20 hover:bg-red-950/20' : 'hover:bg-gray-800'}`}
+                    title={done ? 'Click to unmark' : undefined}
                   >
                     <div
                       className={`w-5 h-5 rounded-full flex-shrink-0 border-2 flex items-center justify-center transition-colors ${

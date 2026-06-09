@@ -450,9 +450,10 @@ export default function Diet() {
                   <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-800">
                     <button
                       onClick={() => toggleMealEaten(i, meal.name)}
+                      title={isMealEaten(i) ? 'Click to unmark' : 'Mark as eaten'}
                       className={`text-xs font-medium rounded-lg px-2.5 py-1 transition-colors flex items-center gap-1 ${
                         isMealEaten(i)
-                          ? 'bg-green-900/30 border border-green-800/50 text-green-400'
+                          ? 'bg-green-900/30 border border-green-800/50 text-green-400 hover:bg-red-900/20 hover:border-red-800/50 hover:text-red-400'
                           : 'bg-brand-900/20 border border-brand-700 text-brand-400 hover:bg-brand-900/40'
                       }`}
                     >
