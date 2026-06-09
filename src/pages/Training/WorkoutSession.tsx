@@ -483,6 +483,7 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
               </span>
             </div>
             <div className="flex items-center gap-1">
+              <span className="text-xs text-gray-600 mr-0.5">Set:</span>
               {[60, 90, 120, 180].map((s) => (
                 <button
                   key={s}
@@ -538,7 +539,7 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
           disabled={!canComplete || saving}
           className="w-full py-3 rounded-xl font-bold text-white bg-brand-600 hover:bg-brand-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          {saving ? 'Saving...' : !canComplete ? 'Log a set to finish' : 'Complete Workout ✓'}
+          {saving ? 'Saving...' : !canComplete ? 'Log at least 1 set to finish' : 'Complete Workout ✓'}
         </button>
       </div>
 

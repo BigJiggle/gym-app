@@ -49,6 +49,32 @@ export default function Dashboard() {
   const [nextCheckinAt, setNextCheckinAt] = useState<Date | null>(null)
   const [checkedMilestones, setCheckedMilestones] = useState<boolean[]>([])
 
+  interface CardioEntry { date: string; type: string; minutes: number }
+  const [cardioLog, setCardioLog] = useState<CardioEntry[]>(() => {
+    try { return JSON.parse(localStorage.getItem('cardio_log') ?? '[]') } catch { return [] }
+  })
+  const [cardioInputOpen, setCardioInputOpen] = useState(false)
+  const [cardioType, setCardioType] = useState('LISS')
+  const [cardioMinutes, setCardioMinutes] = useState('')
+
+  function saveCardioLog(entries: CardioEntry[]) {
+    setCardioLog(entries)
+    localStorage.setItem('cardio_log', JSON.stringify(entries))
+  }
+
+  function logCardio() {
+    const mins = parseInt(cardioMinutes, 10)
+    if (!cardioType || isNaN(mins) || mins <= 0) return
+    const updated = [...cardioLog.filter(e => e.date !== todayStr), { date: todayStr, type: cardioType, minutes: mins }]
+    saveCardioLog(updated)
+    setCardioInputOpen(false)
+    setCardioMinutes('')
+  }
+
+  function removeCardioToday() {
+    saveCardioLog(cardioLog.filter(e => e.date !== todayStr))
+  }
+
   useEffect(() => {
     if (!user) return
     loadTrainingPlan(user.id)
@@ -783,6 +809,90 @@ export default function Dashboard() {
                 </button>
               )}
             </div>
+          </div>
+        )
+      })()}
+
+      {/* Cardio Tracker */}
+      {(() => {
+        const jsDay = new Date().getDay()
+        const daysFromMon = jsDay === 0 ? 6 : jsDay - 1
+        const weekStart = new Date(Date.now() - daysFromMon * 86400000).toLocaleDateString('en-CA')
+        const weekEntries = cardioLog.filter(e => e.date >= weekStart && e.date <= todayStr)
+        const todayEntry = cardioLog.find(e => e.date === todayStr)
+        const weekMins = weekEntries.reduce((s, e) => s + e.minutes, 0)
+        const CARDIO_TYPES = ['LISS', 'HIIT', 'Stairs', 'Bike', 'Other']
+        return (
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold text-gray-100">Cardio</h2>
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <span>{weekEntries.length} session{weekEntries.length !== 1 ? 's' : ''} this week</span>
+                {weekMins > 0 && <span>· {weekMins} min</span>}
+              </div>
+            </div>
+            {todayEntry ? (
+              <div className="flex items-center justify-between bg-green-950/20 border border-green-800/40 rounded-xl px-3 py-2.5 mb-3">
+                <div>
+                  <span className="text-green-400 font-semibold text-sm">{todayEntry.type}</span>
+                  <span className="text-gray-400 text-sm ml-2">{todayEntry.minutes} min</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => { setCardioType(todayEntry.type); setCardioMinutes(String(todayEntry.minutes)); setCardioInputOpen(true) }}
+                    className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                  >Edit</button>
+                  <button onClick={removeCardioToday} className="text-xs text-red-500 hover:text-red-400 transition-colors">✕</button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-600 mb-3">No cardio logged today.</p>
+            )}
+            {cardioInputOpen ? (
+              <div className="space-y-2">
+                <div className="flex gap-1.5 flex-wrap">
+                  {CARDIO_TYPES.map(t => (
+                    <button
+                      key={t}
+                      onClick={() => setCardioType(t)}
+                      className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${cardioType === t ? 'bg-brand-600/20 border-brand-500 text-brand-400' : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'}`}
+                    >{t}</button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={180}
+                    value={cardioMinutes}
+                    onChange={e => setCardioMinutes(e.target.value)}
+                    placeholder="Minutes"
+                    className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-brand-500"
+                    autoFocus
+                    onKeyDown={e => e.key === 'Enter' && logCardio()}
+                  />
+                  <span className="text-xs text-gray-500">min</span>
+                  <button onClick={logCardio} className="text-xs bg-brand-600 hover:bg-brand-500 text-white px-3 py-1 rounded-lg transition-colors font-medium">Save</button>
+                  <button onClick={() => { setCardioInputOpen(false); setCardioMinutes('') }} className="text-xs text-gray-500 hover:text-gray-400 transition-colors">Cancel</button>
+                </div>
+                <div className="flex gap-1.5">
+                  {[['LISS', 30], ['LISS', 45], ['HIIT', 20], ['HIIT', 25]].map(([t, m]) => (
+                    <button
+                      key={`${t}-${m}`}
+                      onClick={() => { setCardioType(t as string); setCardioMinutes(String(m)); }}
+                      className="text-xs px-2 py-1 bg-gray-800 border border-gray-700 rounded-lg text-gray-400 hover:border-brand-700 hover:text-brand-400 transition-colors"
+                    >{t} {m}m</button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => { setCardioType('LISS'); setCardioMinutes(''); setCardioInputOpen(true) }}
+                className="w-full py-2 rounded-xl border border-dashed border-gray-700 text-gray-500 hover:border-brand-700 hover:text-brand-400 text-sm transition-colors"
+              >
+                + Log {todayEntry ? 'another' : 'today\'s'} cardio
+              </button>
+            )}
           </div>
         )
       })()}
