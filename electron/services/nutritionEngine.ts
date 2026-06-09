@@ -283,6 +283,46 @@ const cultureFoods: Record<string, Record<string, string>> = {
     fat: 'Sesame Oil (10g)',
     plant_protein: 'Firm Tofu (200g)',
   },
+  west_african: {
+    protein_main: 'Grilled Tilapia (180g)',
+    protein_alt: 'Egusi Soup with Beef (200g)',
+    carb_main: 'Jollof Rice (200g cooked)',
+    carb_alt: 'Fried Plantain (150g)',
+    veg: 'Sautéed Greens (150g)',
+    dairy: 'Coconut Milk (200ml)',
+    fat: 'Groundnut (Peanut) Sauce (30g)',
+    plant_protein: 'Black-Eyed Pea Stew (150g cooked)',
+  },
+  japanese: {
+    protein_main: 'Yakitori Chicken (150g)',
+    protein_alt: 'Salmon Sashimi (120g)',
+    carb_main: 'Steamed Short-Grain Rice (200g cooked)',
+    carb_alt: 'Soba Noodles (200g cooked)',
+    veg: 'Nori Seaweed Salad (100g)',
+    dairy: 'Miso Soup (250ml)',
+    fat: 'Sesame Oil (10g)',
+    plant_protein: 'Edamame (150g)',
+  },
+  korean: {
+    protein_main: 'Bulgogi Beef (150g)',
+    protein_alt: 'Korean Fried Tofu (200g)',
+    carb_main: 'Bibimbap Rice Bowl Base (250g)',
+    carb_alt: 'Japchae Glass Noodles (200g cooked)',
+    veg: 'Kimchi (150g)',
+    dairy: 'Soy Milk (200ml)',
+    fat: 'Toasted Sesame Oil (10g)',
+    plant_protein: 'Braised Tofu (200g)',
+  },
+  middle_eastern: {
+    protein_main: 'Grilled Lamb Kebab (150g)',
+    protein_alt: 'Lentil Soup (300g)',
+    carb_main: 'Couscous (185g cooked)',
+    carb_alt: 'Pita Bread (60g)',
+    veg: 'Tabbouleh Salad (150g)',
+    dairy: 'Labneh (150g)',
+    fat: 'Hummus (50g)',
+    plant_protein: 'Spiced Chickpeas (150g cooked)',
+  },
 }
 
 function getCultureFood(culturePref: string, key: string, pref: string, fallback: string): string {
@@ -365,7 +405,7 @@ function getMealTemplates(
       foods: (p) => {
         if (p === 'vegan') {
           return [
-            getCultureFood(culturePref, 'plant_protein', p, getFood('tempeh', exclusions, 'Tofu (200g)', preferences)),
+            getCultureFood(culturePref, 'plant_protein', p, getFood('tempeh', exclusions, 'Tempeh (150g)', preferences)),
             getCultureFood(culturePref, 'carb_main', p, getFood('sweet_potato', exclusions, 'Sweet Potato (200g)', preferences)),
             getCultureFood(culturePref, 'veg', p, getFood('spinach', exclusions, 'Spinach (100g)', preferences))
           ]
@@ -539,7 +579,7 @@ export function generateNutritionPlan(input: NutritionInput): NutritionPlan {
     protein_g,
     carbs_g,
     fat_g,
-    meal_count: input.meal_count,
+    meal_count: meals.length,
     phase: PHASE_MAP[input.goal] ?? 'deficit',
     meals
   }

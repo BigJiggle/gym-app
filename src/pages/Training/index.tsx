@@ -613,7 +613,7 @@ export default function Training() {
                       {session.exercises.map((ex, i) => {
                         const pr = exercisePRs.get(ex.name)
                         const prDisplay = pr
-                          ? `${isImperial ? Math.round(pr.weightKg * 2.20462 * 10) / 10 : pr.weightKg}${isImperial ? 'lbs' : 'kg'} × ${pr.reps}`
+                          ? `${isImperial ? Math.round(pr.weightKg * 2.20462 * 10) / 10 : pr.weightKg} ${isImperial ? 'lbs' : 'kg'} × ${pr.reps}`
                           : null
                         const trend = exerciseTrend.get(ex.name)
                         const trendSymbol = trend === 'up' ? '↑' : trend === 'down' ? '↓' : trend === 'stable' ? '→' : null
@@ -635,7 +635,7 @@ export default function Training() {
                               )}
                             </div>
                             <span className="text-gray-400 font-mono text-xs ml-3 flex-shrink-0">
-                              {ex.sets}×{ex.reps} RIR{ex.rir}
+                              {ex.sets} × {ex.reps} @ RIR {ex.rir}
                             </span>
                           </div>
                         )
@@ -775,7 +775,7 @@ export default function Training() {
                                   <div key={name} className="flex items-center justify-between text-xs">
                                     <span className="text-gray-500 truncate mr-2">{name}</span>
                                     <span className="flex items-center gap-1 flex-shrink-0 font-medium tabular-nums">
-                                      <span className="text-gray-300">{displayW}{isImperial ? 'lbs' : 'kg'}×{reps}</span>
+                                      <span className="text-gray-300">{displayW} {isImperial ? 'lbs' : 'kg'} × {reps}</span>
                                       {isPR && <span className="text-amber-400 font-bold">PR</span>}
                                       {!isPR && delta !== null && delta > 0 && <span className="text-green-400">↑</span>}
                                       {!isPR && delta !== null && delta < 0 && <span className="text-red-400">↓</span>}

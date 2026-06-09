@@ -876,8 +876,8 @@ export default function CheckIn() {
         <Card title="How are you feeling?" subtitle="Optional">
           <div className="space-y-4">
             <RatingBar label="Energy Level"  value={energyLevel}  onChange={setEnergyLevel}  lowLabel="Exhausted" highLabel="Excellent"   />
-            <RatingBar label="Sleep Quality" value={sleepQuality} onChange={setSleepQuality} lowLabel="Very poor"  highLabel="Excellent"   />
-            <RatingBar label="Stress Level"  value={stressLevel}  onChange={setStressLevel}  lowLabel="None"       highLabel="Very high"  lowerIsBetter  />
+            <RatingBar label="Sleep Quality" value={sleepQuality} onChange={setSleepQuality} lowLabel="Poor"       highLabel="Great"      />
+            <RatingBar label="Stress Level"  value={stressLevel}  onChange={setStressLevel}  lowLabel="Relaxed"    highLabel="Overwhelmed" lowerIsBetter  />
           </div>
         </Card>
 

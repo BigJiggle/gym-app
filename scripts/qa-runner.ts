@@ -260,8 +260,8 @@ section('5. Training plan: structure matches user settings')
 
   const allExercises = plan.sessions.flatMap((s: any) => s.exercises)
   check(
-    'Every exercise in plan has a name and sets array',
-    allExercises.every((e: any) => e.name && Array.isArray(e.sets)),
+    'Every exercise in plan has a name and a sets count',
+    allExercises.every((e: any) => e.name && typeof e.sets === 'number' && e.sets > 0),
     `exercises=${allExercises.length}`
   )
 

@@ -390,6 +390,23 @@ export const FOOD_CATEGORY: Record<string, 'protein' | 'carb' | 'fat' | 'veg'> =
   tomato:'veg', onion:'veg', carrots:'veg', romaine:'veg', arugula:'veg',
   beet:'veg', brussels_sprouts:'veg', bok_choy:'veg',
   olives:'veg', sauerkraut:'veg', kimchi:'veg',
+  saag:'veg', nori_seaweed:'veg', tabbouleh:'veg',
+  celery:'veg', sweet_corn:'veg', peas:'veg',
+
+  // CULTURE-SPECIFIC / REGIONAL DISHES — selectable via the food picker
+  // (exclusions/preferences in src/data/foods.ts) but not used as template
+  // food ids. Categories let getFood() apply preference substitution to them.
+  chicken_tinga:'protein', carne_asada:'protein', dal_red:'protein',
+  paneer:'protein', chicken_tikka:'protein', chana_chickpeas:'protein',
+  falafel:'protein', halloumi:'protein', miso_paste:'protein',
+  egusi_soup:'protein', tilapia_grilled:'protein', black_eyed_peas:'protein',
+  salmon_sashimi:'protein', miso_soup:'protein', yakitori_chicken:'protein',
+  bulgogi:'protein', korean_tofu:'protein', labneh:'protein',
+  lentil_soup_me:'protein', soy_milk:'protein', milk_skim:'protein',
+  basmati_rice:'carb', whole_wheat_roti:'carb', pita_ww:'carb',
+  jasmine_rice:'carb', soba_noodles:'carb', jollof_rice:'carb',
+  plantain:'carb', bibimbap_base:'carb', grapefruit:'carb', oat_milk:'carb',
+  cotija_cheese:'fat', hummus:'fat', sesame_oil:'fat', almond_milk:'fat',
 }
 
 // ─────────────────────────────────────────────

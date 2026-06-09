@@ -188,7 +188,7 @@ export default function Settings() {
               onChange={(e) => setSetting('ui_zoom' as keyof typeof settings, e.target.value)}
               className="w-full accent-brand-500 h-2"
             />
-            <div className="flex justify-between text-xs text-gray-700 mt-0.5">
+            <div className="flex justify-between text-xs text-gray-600 mt-0.5">
               <span>50%</span><span>100%</span><span>200%</span><span>300%</span>
             </div>
           </div>

@@ -29,6 +29,8 @@ export default function Diet() {
   const [aiRefineSuccess, setAiRefineSuccess] = useState<string | null>(null)
   const [aiRefineInfo, setAiRefineInfo] = useState<string | null>(null)
   const [recalcDone, setRecalcDone] = useState(false)
+  const [recalcLoading, setRecalcLoading] = useState(false)
+  const [regenLoading, setRegenLoading] = useState(false)
 
   // Food preferences panel state
   const [prefsOpen, setPrefsOpen] = useState(false)
@@ -276,29 +278,39 @@ export default function Diet() {
         </div>
         <button
           onClick={async () => {
-            await recalculateMacros(user.id)
-            setRecalcDone(true)
-            setTimeout(() => setRecalcDone(false), 2500)
+            setRecalcLoading(true)
+            try {
+              await recalculateMacros(user.id)
+              setRecalcDone(true)
+              setTimeout(() => setRecalcDone(false), 2500)
+            } finally {
+              setRecalcLoading(false)
+            }
           }}
-          disabled={loading}
+          disabled={recalcLoading || regenLoading}
           title="Recalculate macro targets from current body weight — keeps your meal structure"
           className="text-xs text-gray-500 hover:text-green-400 border border-gray-700 hover:border-green-700 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-40"
         >
-          {recalcDone ? '✓ Updated' : '⟳ Update Macros'}
+          {recalcDone ? '✓ Updated' : recalcLoading ? '⟳ Updating...' : '⟳ Update Macros'}
         </button>
         <button
-          onClick={() => {
+          onClick={async () => {
             if (!window.confirm('Regenerate your meal plan? This replaces all current meals and any swaps you have made.')) return
-            generateDietPlan(user.id)
+            setRegenLoading(true)
+            try {
+              await generateDietPlan(user.id)
+            } finally {
+              setRegenLoading(false)
+            }
           }}
-          disabled={loading}
+          disabled={recalcLoading || regenLoading}
           title="Regenerate meal plan with current settings"
           className="text-xs text-amber-600 hover:text-amber-400 border border-amber-900/40 hover:border-amber-700 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-40"
         >
-          {loading ? '...' : '↺ Regenerate'}
+          {regenLoading ? '⚠ Regenerating...' : '⚠ Regenerate'}
         </button>
       </div>
-      <p className="text-xs text-gray-400 -mt-3">⟳ adjusts calorie targets only &nbsp;·&nbsp; <span className="text-amber-500 font-medium">↺ replaces all meals</span></p>
+      <p className="text-xs text-gray-400 -mt-3">⟳ adjusts calorie targets only &nbsp;·&nbsp; <span className="text-amber-500 font-medium">⚠ replaces all meals</span></p>
 
       {/* ─── MEAL PLAN TAB ─── */}
       {tab === 'plan' && (

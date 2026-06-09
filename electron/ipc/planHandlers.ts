@@ -214,7 +214,7 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
       cooking_time_pref: (user.cooking_time_pref as string) ?? 'medium',
       meal_prep_style: (user.meal_prep_style as string) ?? 'daily',
       include_snacks: user.include_snacks === 1,
-      culture_pref: 'any'
+      culture_pref: (user.culture_pref as string) ?? 'any'
     })
 
     db.prepare('DELETE FROM diet_plans WHERE user_id = ?').run(userId)
@@ -307,7 +307,7 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
       food_preferences: (() => { try { return JSON.parse((user.food_preferences as string) ?? '[]') } catch { return [] } })(),
       cooking_time_pref: (user.cooking_time_pref as string) ?? 'medium',
       include_snacks: user.include_snacks === 1,
-      culture_pref: 'any',
+      culture_pref: (user.culture_pref as string) ?? 'any',
     })
     db.prepare('DELETE FROM diet_plans WHERE user_id = ?').run(userId)
     db.prepare(`INSERT INTO diet_plans (user_id, name, calories_target, protein_g, carbs_g, fat_g, meal_count, meals, phase, generated_at_weeks_out) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run([userId, `${dietPlan.phase.charAt(0).toUpperCase() + dietPlan.phase.slice(1)} Nutrition Plan`, dietPlan.calories_target, dietPlan.protein_g, dietPlan.carbs_g, dietPlan.fat_g, dietPlan.meal_count, JSON.stringify(dietPlan.meals), dietPlan.phase, weeksOut ?? null])
@@ -472,7 +472,7 @@ Ensure every exercise respects the constraints above while maintaining phase-app
         food_preferences: (() => { try { return JSON.parse((freshUser.food_preferences as string) ?? '[]') } catch { return [] } })(),
         cooking_time_pref: (freshUser.cooking_time_pref as string) ?? 'medium',
         include_snacks: freshUser.include_snacks === 1,
-        culture_pref: 'any',
+        culture_pref: (freshUser.culture_pref as string) ?? 'any',
       })
       db.prepare('DELETE FROM diet_plans WHERE user_id = ?').run(userId)
       db.prepare(`INSERT INTO diet_plans (user_id, name, calories_target, protein_g, carbs_g, fat_g, meal_count, meals, phase, generated_at_weeks_out) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
@@ -524,7 +524,7 @@ Ensure every exercise respects the constraints above while maintaining phase-app
       (() => { try { return JSON.parse((user.food_preferences as string) ?? '[]') } catch { return [] } })(),
       (user.cooking_time_pref as string) ?? 'medium',
       user.include_snacks === 1,
-      'any',
+      (user.culture_pref as string) ?? 'any',
       (() => { try { return JSON.parse((user.dietary_restrictions as string) ?? '[]') } catch { return [] } })()
     )
     db.prepare(
@@ -848,7 +848,7 @@ Ensure every exercise respects the constraints above while maintaining phase-app
           (() => { try { return JSON.parse((updatedUser.food_preferences as string) ?? '[]') } catch { return [] } })(),
           (updatedUser.cooking_time_pref as string) ?? 'medium',
           updatedUser.include_snacks === 1,
-          'any',
+          (updatedUser.culture_pref as string) ?? 'any',
           (() => { try { return JSON.parse((updatedUser.dietary_restrictions as string) ?? '[]') } catch { return [] } })()
         )
         db.prepare(

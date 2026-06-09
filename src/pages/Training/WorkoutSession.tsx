@@ -79,7 +79,7 @@ function ExerciseCard({ exercise, state, isImperial, lastPerf, onSetUpdate, onSe
           <p className="text-xs text-gray-500">{exercise.sets} sets × {exercise.reps} @ RIR {exercise.rir}</p>
           {lastPerf && (
             <p className="text-xs text-amber-500/70 mt-0.5">
-              Last: {lastPerf.weight}{weightUnit} × {lastPerf.reps}
+              Last: {lastPerf.weight} {weightUnit} × {lastPerf.reps}
             </p>
           )}
         </div>
@@ -89,7 +89,7 @@ function ExerciseCard({ exercise, state, isImperial, lastPerf, onSetUpdate, onSe
             onClick={onSkipExercise}
             className="text-xs text-gray-500 hover:text-red-400 border border-gray-700 hover:border-red-800 rounded-lg px-2 py-1 transition-colors"
           >
-            Skip
+            Skip Exercise
           </button>
         )}
         {state.allSkipped && <span className="text-xs text-gray-600 italic">Skipped</span>}
@@ -483,6 +483,7 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
               </span>
             </div>
             <div className="flex items-center gap-1">
+              <span className="text-xs text-gray-600 mr-0.5">Set:</span>
               {[60, 90, 120, 180].map((s) => (
                 <button
                   key={s}
@@ -538,7 +539,7 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
           disabled={!canComplete || saving}
           className="w-full py-3 rounded-xl font-bold text-white bg-brand-600 hover:bg-brand-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          {saving ? 'Saving...' : !canComplete ? 'Log a set to finish' : 'Complete Workout ✓'}
+          {saving ? 'Saving...' : !canComplete ? 'Log at least 1 set to finish' : 'Complete Workout ✓'}
         </button>
       </div>
 
@@ -577,7 +578,7 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
                   <div key={i} className="flex items-center justify-between">
                     <span className="text-sm text-gray-300 truncate mr-2">{pr.exerciseName}</span>
                     <span className="text-sm font-bold text-brand-300 flex-shrink-0">
-                      {pr.weight}{isImperial ? 'lbs' : 'kg'} × {pr.reps}
+                      {pr.weight} {isImperial ? 'lbs' : 'kg'} × {pr.reps}
                     </span>
                   </div>
                 ))}
