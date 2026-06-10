@@ -323,20 +323,22 @@ export default function Dashboard() {
             </div>
           )
         }
-        const next = meals
+        const unloggedMeals = meals
           .map((meal, idx) => ({ meal, idx }))
           .filter(({ idx }) => !todayMealsDone.has(idx))
-          .find(({ meal }) => {
+        const next = unloggedMeals.find(({ meal }) => {
             const [h, m] = meal.time.split(':').map(Number)
             return h * 60 + m > nowMins
-          })
+          }) ?? unloggedMeals[0] ?? null
         if (!next) return null
         const { meal, idx } = next
         const [mealH, mealM] = meal.time.split(':').map(Number)
         const diffMins = mealH * 60 + mealM - nowMins
-        const countdownStr = diffMins < 60
-          ? `in ${diffMins} min`
-          : `in ${Math.floor(diffMins / 60)}h${diffMins % 60 > 0 ? ` ${diffMins % 60}m` : ''}`
+        const countdownStr = diffMins <= 0
+          ? 'not yet logged'
+          : diffMins < 60
+            ? `in ${diffMins} min`
+            : `in ${Math.floor(diffMins / 60)}h${diffMins % 60 > 0 ? ` ${diffMins % 60}m` : ''}`
         return (
           <div className="bg-gray-900 border border-brand-900/40 rounded-xl p-4">
             <div className="flex items-start justify-between gap-3">
@@ -346,7 +348,7 @@ export default function Dashboard() {
                   <p className="text-base font-semibold text-gray-100">{meal.name}</p>
                   <span className="text-xs text-gray-600">{meal.time}</span>
                 </div>
-                <p className="text-sm text-brand-400 font-medium mb-2">{countdownStr}</p>
+                <p className={`text-sm font-medium mb-2 ${diffMins <= 0 ? 'text-amber-400' : 'text-brand-400'}`}>{countdownStr}</p>
                 {meal.foods.length > 0 && (
                   <div className="space-y-0.5 mb-2">
                     {meal.foods.slice(0, 3).map((food, i) => (

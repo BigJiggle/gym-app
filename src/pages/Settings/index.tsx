@@ -107,8 +107,7 @@ export default function Settings() {
         body_fat_pct: editForm.body_fat_pct !== '' ? Number(editForm.body_fat_pct) : undefined,
       } as any)
       if (regenerate) {
-        generateTrainingPlan(user!.id)
-        generateDietPlan(user!.id)
+        await Promise.all([generateTrainingPlan(user!.id), generateDietPlan(user!.id)])
       }
       setEditSaved(true)
       setTimeout(() => setEditSaved(false), 2500)
