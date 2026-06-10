@@ -122,10 +122,11 @@ interface MissedSlotPanelProps {
   userId: number
   isImperial: boolean
   onFilled: () => void
+  defaultOpen?: boolean
 }
 
-function MissedSlotPanel({ slot, userId, isImperial, onFilled }: MissedSlotPanelProps) {
-  const [open, setOpen] = useState(false)
+function MissedSlotPanel({ slot, userId, isImperial, onFilled, defaultOpen }: MissedSlotPanelProps) {
+  const [open, setOpen] = useState(defaultOpen ?? false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -668,13 +669,14 @@ export default function CheckIn() {
         )}
 
         {/* Missed check-ins (locked screen) */}
-        {missedSlots.map((slot) => (
+        {missedSlots.map((slot, i) => (
           <MissedSlotPanel
             key={slot.expected_date}
             slot={slot}
             userId={user.id}
             isImperial={isImperial}
             onFilled={onMissedFilled}
+            defaultOpen={i === 0}
           />
         ))}
       </div>
@@ -799,13 +801,14 @@ export default function CheckIn() {
           </button>
           {missedBannerOpen && (
             <div className="px-4 pb-4 space-y-3 border-t border-amber-900/30">
-              {missedSlots.map((slot) => (
+              {missedSlots.map((slot, i) => (
                 <MissedSlotPanel
                   key={slot.expected_date}
                   slot={slot}
                   userId={user.id}
                   isImperial={isImperial}
                   onFilled={onMissedFilled}
+                  defaultOpen={i === 0}
                 />
               ))}
             </div>

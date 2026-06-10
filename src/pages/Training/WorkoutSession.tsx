@@ -466,7 +466,7 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
           <p className="text-xs text-brand-400 font-mono">{formatTime(elapsedSeconds)}</p>
         </div>
         <button onClick={handleEndEarly} className="text-red-400 hover:text-red-300 text-sm w-16 text-right">
-          Cancel
+          Abandon
         </button>
       </div>
 
