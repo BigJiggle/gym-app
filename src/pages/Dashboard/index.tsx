@@ -194,6 +194,28 @@ export default function Dashboard() {
     return sorted.find(s => s.day_of_week > todayDow) ?? sorted[0]
   })()
 
+  const lastPerformanceMap = (() => {
+    const map = new Map<string, { weight_kg: number; reps: number }>()
+    const sorted = [...workoutHistory]
+      .filter(l => l.status === 'completed')
+      .sort((a, b) => b.date.localeCompare(a.date))
+    for (const log of sorted) {
+      for (const set of log.sets ?? []) {
+        if (set.skipped || set.weight_kg == null || set.reps_actual == null) continue
+        if (!map.has(set.exercise_name)) {
+          const best = (log.sets ?? [])
+            .filter(s => s.exercise_name === set.exercise_name && !s.skipped && s.weight_kg != null && s.reps_actual != null)
+            .reduce<{ weight_kg: number; reps: number } | null>(
+              (b, s) => !b || s.weight_kg! > b.weight_kg ? { weight_kg: s.weight_kg!, reps: s.reps_actual! } : b,
+              null
+            )
+          if (best) map.set(set.exercise_name, best)
+        }
+      }
+    }
+    return map
+  })()
+
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       {/* Header */}
@@ -514,13 +536,26 @@ export default function Dashboard() {
                   </Button>
                 </Link>
               )}
-              <div className="space-y-1 pt-1">
-                {todaySession.exercises.slice(0, 5).map((ex, i) => (
-                  <div key={i} className="flex justify-between text-sm">
-                    <span className="text-gray-300">{ex.name}</span>
-                    <span className="text-gray-500">{ex.sets} × {ex.reps} @ RIR {ex.rir}</span>
-                  </div>
-                ))}
+              <div className="space-y-1.5 pt-1">
+                {todaySession.exercises.slice(0, 5).map((ex, i) => {
+                  const lp = lastPerformanceMap.get(ex.name)
+                  const lastStr = lp
+                    ? settings.units === 'imperial'
+                      ? `${Math.round(lp.weight_kg * 2.20462 * 2) / 2}lbs × ${lp.reps}`
+                      : `${lp.weight_kg}kg × ${lp.reps}`
+                    : null
+                  return (
+                    <div key={i} className="flex items-start justify-between text-sm gap-2">
+                      <div className="min-w-0">
+                        <span className="text-gray-300">{ex.name}</span>
+                        {lastStr && (
+                          <p className="text-xs text-gray-600 mt-0.5">last: {lastStr}</p>
+                        )}
+                      </div>
+                      <span className="text-gray-500 flex-shrink-0">{ex.sets} × {ex.reps} @ RIR {ex.rir}</span>
+                    </div>
+                  )
+                })}
                 {(todaySession.exercises.length ?? 0) > 5 && (
                   <p className="text-xs text-gray-600">+{todaySession.exercises.length - 5} more exercises</p>
                 )}
@@ -536,13 +571,26 @@ export default function Dashboard() {
                   <p className="text-sm font-medium text-brand-400">
                     {DAY_NAMES[nextSession.day_of_week === 7 ? 0 : nextSession.day_of_week]} — {nextSession.session_name}
                   </p>
-                  <div className="mt-1.5 space-y-0.5">
-                    {nextSession.exercises.slice(0, 4).map((ex, i) => (
-                      <div key={i} className="flex justify-between text-xs">
-                        <span className="text-gray-500">{ex.name}</span>
-                        <span className="text-gray-700">{ex.sets}×{ex.reps}</span>
-                      </div>
-                    ))}
+                  <div className="mt-1.5 space-y-1">
+                    {nextSession.exercises.slice(0, 4).map((ex, i) => {
+                      const lp = lastPerformanceMap.get(ex.name)
+                      const lastStr = lp
+                        ? settings.units === 'imperial'
+                          ? `${Math.round(lp.weight_kg * 2.20462 * 2) / 2}lbs×${lp.reps}`
+                          : `${lp.weight_kg}kg×${lp.reps}`
+                        : null
+                      return (
+                        <div key={i} className="flex items-start justify-between text-xs gap-2">
+                          <div className="min-w-0">
+                            <span className="text-gray-500">{ex.name}</span>
+                            {lastStr && (
+                              <p className="text-xs text-gray-700 mt-0.5">last: {lastStr}</p>
+                            )}
+                          </div>
+                          <span className="text-gray-700 flex-shrink-0">{ex.sets}×{ex.reps}</span>
+                        </div>
+                      )
+                    })}
                     {nextSession.exercises.length > 4 && (
                       <p className="text-xs text-gray-700">+{nextSession.exercises.length - 4} more</p>
                     )}
