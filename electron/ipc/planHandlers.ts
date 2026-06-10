@@ -512,7 +512,12 @@ Ensure every exercise respects the constraints above while maintaining phase-app
     if (!currentPlan) throw new Error('No diet plan found')
     const user = db.prepare('SELECT * FROM users WHERE id=?').get(userId) as Record<string, unknown>
     const calories = currentPlan.calories_target as number
-    const weightKg = user.weight_kg as number
+    // Use the most recent check-in weight when available — user.weight_kg is the
+    // onboarding weight and goes stale as the athlete progresses through their cut.
+    const latestCheckin = db
+      .prepare('SELECT weight_kg FROM weekly_checkins WHERE user_id=? ORDER BY check_in_date DESC LIMIT 1')
+      .get(userId) as { weight_kg: number } | undefined
+    const weightKg = latestCheckin?.weight_kg ?? (user.weight_kg as number)
     const protein_g = Math.round(weightKg * 2.3)
     const fat_g = Math.round(weightKg * 0.9)
     const carbs_g = Math.max(0, Math.round((calories - protein_g * 4 - fat_g * 9) / 4))
