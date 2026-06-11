@@ -297,7 +297,7 @@ function MissedSlotPanel({ slot, userId, isImperial, onFilled, defaultOpen }: Mi
 
 export default function CheckIn() {
   const { user } = useUserStore()
-  const { submitCheckin, checkinHistory, latestCheckin, loadCheckinHistory, loadTrainingPlan, loading, workoutHistory, trainingPlan, loadWorkoutHistory } = usePlanStore()
+  const { submitCheckin, checkinHistory, latestCheckin, loadCheckinHistory, loadTrainingPlan, loadDietPlan, loading, workoutHistory, trainingPlan, loadWorkoutHistory, dietPlan } = usePlanStore()
   const { settings } = useSettingsStore()
 
   const isImperial = settings.units === 'imperial'
@@ -348,6 +348,7 @@ export default function CheckIn() {
   const [trainingAdherence, setTrainingAdherence] = useState(90)
   const [dietAdherence, setDietAdherence] = useState(90)
   const [autoFillSessions, setAutoFillSessions] = useState<{ actual: number; expected: number } | null>(null)
+  const [autoFillMeals, setAutoFillMeals] = useState<{ actual: number; expected: number } | null>(null)
   const [energyLevel, setEnergyLevel] = useState(3)
   const [sleepQuality, setSleepQuality] = useState(3)
   const [stressLevel, setStressLevel] = useState(2)
@@ -373,6 +374,7 @@ export default function CheckIn() {
     loadCheckinHistory(user.id)
     loadWorkoutHistory(user.id)
     loadTrainingPlan(user.id)
+    loadDietPlan(user.id)
     window.api.getNextCheckinDate(user.id)
       .then((iso) => {
         setNextAllowed(iso && new Date(iso) > new Date() ? new Date(iso) : null)
@@ -404,6 +406,23 @@ export default function CheckIn() {
     setTrainingAdherence(adherence)
     setAutoFillSessions({ actual: completedSessions, expected: expectedSessions })
   }, [workoutHistory.length, trainingPlan?.id, latestCheckin?.id])
+
+  // Auto-fill diet adherence from logged meal completions since last check-in
+  useEffect(() => {
+    if (!user || !latestCheckin || !dietPlan?.meals?.length) return
+    const today = new Date().toLocaleDateString('en-CA')
+    const periodStart = latestCheckin.check_in_date
+    window.api.getMealCompletions(user.id, periodStart, today).then((completions) => {
+      const daysSince = Math.max(1, Math.ceil(
+        (Date.now() - new Date(periodStart + 'T12:00:00').getTime()) / (1000 * 60 * 60 * 24)
+      ))
+      const expectedMeals = dietPlan!.meals!.length * daysSince
+      const actualMeals = completions.filter((c) => c.date > periodStart && c.date <= today).length
+      const adherence = Math.min(100, Math.round((actualMeals / expectedMeals) * 100))
+      setDietAdherence(adherence)
+      setAutoFillMeals({ actual: actualMeals, expected: expectedMeals })
+    }).catch(() => {})
+  }, [user?.id, latestCheckin?.id, dietPlan?.id])
 
   if (!user) return null
   if (checkingInterval) {
@@ -871,7 +890,14 @@ export default function CheckIn() {
                 </p>
               )}
             </div>
-            <AdherenceSlider label="Diet Adherence"     value={dietAdherence}     onChange={setDietAdherence}     />
+            <div>
+              <AdherenceSlider label="Diet Adherence" value={dietAdherence} onChange={setDietAdherence} />
+              {autoFillMeals !== null && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Auto-filled: {autoFillMeals.actual} of ~{autoFillMeals.expected} expected meals logged — adjust if needed
+                </p>
+              )}
+            </div>
           </div>
         </Card>
 
