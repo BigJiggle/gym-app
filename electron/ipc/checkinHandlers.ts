@@ -116,15 +116,20 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
         .get(data.user_id) as { meals: string } | undefined
       let mealsJson = currentPlanRow?.meals ?? '[]'
       try {
+        // Scale meal calories by calorie ratio; recalculate protein/fat/carbs
+        // within each meal using new plan-level macro ratios so per-meal values
+        // stay consistent with plan totals (protein fixed by body weight, not ratio).
         const ratio = newCalories / (dietPlan.calories_target as number)
+        const proteinCalRatio = (protein_g * 4) / newCalories
+        const fatCalRatio = (fat_g * 9) / newCalories
         const existingMeals = JSON.parse(mealsJson) as Array<Record<string, unknown>>
-        const scaledMeals = existingMeals.map((m) => ({
-          ...m,
-          calories: Math.round((m.calories as number) * ratio),
-          protein_g: Math.round((m.protein_g as number) * ratio),
-          carbs_g: Math.round((m.carbs_g as number) * ratio),
-          fat_g: Math.round((m.fat_g as number) * ratio),
-        }))
+        const scaledMeals = existingMeals.map((m) => {
+          const newMealCal = Math.round((m.calories as number) * ratio)
+          const pro = Math.round((newMealCal * proteinCalRatio) / 4)
+          const fat = Math.round((newMealCal * fatCalRatio) / 9)
+          const carb = Math.max(0, Math.round((newMealCal - pro * 4 - fat * 9) / 4))
+          return { ...m, calories: newMealCal, protein_g: pro, fat_g: fat, carbs_g: carb }
+        })
         mealsJson = JSON.stringify(scaledMeals)
       } catch { /* keep existing meals if parsing fails */ }
       db.prepare(`

@@ -521,17 +521,18 @@ Ensure every exercise respects the constraints above while maintaining phase-app
     const protein_g = Math.round(weightKg * 2.3)
     const fat_g = Math.round(weightKg * 0.9)
     const carbs_g = Math.max(0, Math.round((calories - protein_g * 4 - fat_g * 9) / 4))
-    const meals = buildMealsPublic(
-      calories, protein_g, carbs_g, fat_g,
-      (user.meal_count as number) ?? 4,
-      (user.dietary_preference as string) ?? 'omnivore',
-      (() => { try { return JSON.parse((user.food_exclusions as string) ?? '[]') } catch { return [] } })(),
-      (() => { try { return JSON.parse((user.food_preferences as string) ?? '[]') } catch { return [] } })(),
-      (user.cooking_time_pref as string) ?? 'medium',
-      user.include_snacks === 1,
-      (user.culture_pref as string) ?? 'any',
-      (() => { try { return JSON.parse((user.dietary_restrictions as string) ?? '[]') } catch { return [] } })()
-    )
+    // Scale per-meal macros using new macro ratios without regenerating food lists,
+    // so any food swaps the athlete made are preserved.
+    const proteinCalRatio = (protein_g * 4) / calories
+    const fatCalRatio = (fat_g * 9) / calories
+    const existingMeals = JSON.parse(currentPlan.meals as string) as Array<Record<string, unknown>>
+    const meals = existingMeals.map((m) => {
+      const cal = m.calories as number
+      const pro = Math.round((cal * proteinCalRatio) / 4)
+      const fat = Math.round((cal * fatCalRatio) / 9)
+      const carb = Math.max(0, Math.round((cal - pro * 4 - fat * 9) / 4))
+      return { ...m, protein_g: pro, fat_g: fat, carbs_g: carb }
+    })
     db.prepare(
       'UPDATE diet_plans SET protein_g=?, carbs_g=?, fat_g=?, meals=? WHERE user_id=? AND id=(SELECT id FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1)'
     ).run([protein_g, carbs_g, fat_g, JSON.stringify(meals), userId, userId])
