@@ -83,3 +83,34 @@
 | `5ca97eb` | `[QA] 2026-06-11: fix per-meal macro accuracy in recalculate and check-in handlers` |
 | `4083edf` | `[FEATURE] 2026-06-11: Eat Now indicator — highlight active meal in diet plan` |
 | `bc51826` | `[UX] 2026-06-11: improve readability of near-invisible hint text` |
+| `3078588` | `[FEATURE] 2026-06-11: Weekly nutrition summary on Diet page` |
+| `e23d1b9` | `[UX] 2026-06-11: Auto-fill diet adherence from meal completion logs` |
+
+---
+
+## Session 2 — 2026-06-11 (continuation)
+
+### Phase 1 — QA (re-run)
+- `npx tsc --noEmit`: **clean** (0 errors)
+- `npm test`: **86/86 passed**
+- Full audit of nutritionEngine.ts + foodDatabase.ts: **0 new bugs** (prior session's fixes are in place and correct)
+- All 7 user flows re-traced: all correct
+
+### Phase 2 — Feature: Weekly Nutrition Summary on Diet page
+
+**File:** `src/pages/Diet/index.tsx`
+
+**What it does:** Inserts a "This Week" card between "Today's Intake" and the meals list on the Diet plan tab. The card shows:
+- A 7-dot grid (Mon–Sun) where each dot displays: future (blank), partial (number of logged meals), fully completed (✓), or missed (—). Today's dot has a ring highlight.
+- A "X/Y days on plan" badge.
+- A 2-column footer row: calories logged this week vs target, protein logged this week vs target (targets prorated to days elapsed).
+
+**IPC calls added:** 0 — uses `mealCompletions` and `dietPlan` already loaded on the plan tab.
+
+### Phase 3 — UX Fix: Diet Adherence Auto-Fill on Check-In
+
+**File:** `src/pages/CheckIn/index.tsx`
+
+**Problem:** Training adherence already auto-fills from logged workout history with a "Auto-filled: X of ~Y sessions" hint. Diet adherence defaulted to 90% with no auto-calculation, forcing athletes to estimate manually — an inconsistency that caused inaccurate data.
+
+**Fix:** A `useEffect` calls `window.api.getMealCompletions()` directly (bypassing the store to avoid overwriting the Diet page's week-range data), computes `logged_meals / (meals_per_day × days_since_last_checkin)` as a percentage, pre-fills the Diet Adherence slider, and displays a matching "Auto-filled: X of ~Y expected meals logged — adjust if needed" hint.
