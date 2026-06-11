@@ -402,7 +402,7 @@ export default function Dashboard() {
                       <p key={i} className="text-xs text-gray-500 truncate">· {food}</p>
                     ))}
                     {meal.foods.length > 3 && (
-                      <p className="text-xs text-gray-700">+{meal.foods.length - 3} more items</p>
+                      <p className="text-xs text-gray-500">+{meal.foods.length - 3} more items</p>
                     )}
                   </div>
                 )}

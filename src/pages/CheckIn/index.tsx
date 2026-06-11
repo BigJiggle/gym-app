@@ -866,7 +866,7 @@ export default function CheckIn() {
             <div>
               <AdherenceSlider label="Training Adherence" value={trainingAdherence} onChange={setTrainingAdherence} />
               {autoFillSessions !== null && (
-                <p className="text-xs text-gray-600 mt-1">
+                <p className="text-xs text-gray-500 mt-1">
                   Auto-filled: {autoFillSessions.actual} of ~{autoFillSessions.expected} planned sessions logged — adjust if needed
                 </p>
               )}
