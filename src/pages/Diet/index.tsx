@@ -215,6 +215,26 @@ export default function Diet() {
     return todayCompletions.some((c) => c.meal_index === mealIndex)
   }
 
+  // First uncompleted meal for today — the one the athlete should eat next.
+  // Based on current time: prefer overdue meals (time already passed) first,
+  // then fall back to the next upcoming meal.
+  const activeMealIndex: number | null = (() => {
+    if (!dietPlan.meals?.length) return null
+    const now = new Date()
+    const nowMinutes = now.getHours() * 60 + now.getMinutes()
+    const uncompletedWithTime = dietPlan.meals
+      .map((meal, i) => {
+        const [h, m] = meal.time.split(':').map(Number)
+        return { i, minutes: h * 60 + m }
+      })
+      .filter(({ i }) => !isMealEaten(i))
+    if (uncompletedWithTime.length === 0) return null
+    const overdue = uncompletedWithTime.filter(({ minutes }) => minutes <= nowMinutes)
+    return overdue.length > 0
+      ? overdue[overdue.length - 1].i
+      : uncompletedWithTime[0].i
+  })()
+
   function toggleMealEaten(mealIndex: number, mealName: string) {
     if (!user) return
     if (isMealEaten(mealIndex)) {
@@ -412,19 +432,30 @@ export default function Diet() {
           <div>
             <h2 className="text-lg font-semibold text-gray-100 mb-3">Daily Meals ({dietPlan.meal_count} meals)</h2>
             <div className="space-y-3">
-              {dietPlan.meals?.map((meal, i) => (
-                <div key={i} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              {dietPlan.meals?.map((meal, i) => {
+                const isActive = i === activeMealIndex
+                return (
+                <div key={i} className={`bg-gray-900 border rounded-xl p-4 transition-colors ${
+                  isMealEaten(i) ? 'border-gray-800 opacity-70' :
+                  isActive ? 'border-brand-500 ring-1 ring-brand-500/30' :
+                  'border-gray-800'
+                }`}>
                   <div
                     className="flex items-center justify-between mb-2 cursor-pointer"
                     onClick={() => toggleMealEaten(i, meal.name)}
                     title={isMealEaten(i) ? 'Mark as not eaten' : 'Mark as eaten'}
                   >
                     <div className="flex items-center gap-2">
-                      <div className={`w-5 h-5 rounded-full flex-shrink-0 border-2 flex items-center justify-center transition-colors ${isMealEaten(i) ? 'border-green-500 bg-green-500 text-white' : 'border-gray-600'}`}>
+                      <div className={`w-5 h-5 rounded-full flex-shrink-0 border-2 flex items-center justify-center transition-colors ${isMealEaten(i) ? 'border-green-500 bg-green-500 text-white' : isActive ? 'border-brand-400' : 'border-gray-600'}`}>
                         {isMealEaten(i) && <span className="text-xs leading-none">✓</span>}
                       </div>
                       <span className="text-xs text-gray-600 font-mono">{meal.time}</span>
                       <h3 className={`text-sm font-semibold ${isMealEaten(i) ? 'text-gray-500 line-through' : 'text-gray-200'}`}>{meal.name}</h3>
+                      {isActive && (
+                        <span className="text-xs font-semibold bg-brand-600/30 text-brand-400 border border-brand-700/50 rounded-full px-2 py-0.5 leading-none">
+                          Eat Now
+                        </span>
+                      )}
                     </div>
                     <div className="flex gap-3 text-xs text-gray-500">
                       <span className="text-brand-400 font-medium">{meal.calories} kcal</span>
@@ -467,7 +498,8 @@ export default function Diet() {
                     </button>
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           </div>
 
