@@ -428,6 +428,84 @@ export default function Diet() {
             </div>
           )}
 
+          {/* This Week — day-by-day meal completion + weekly totals */}
+          {(() => {
+            const totalMealsPerDay = dietPlan.meals?.length ?? 0
+            if (totalMealsPerDay === 0) return null
+            const pastOrToday = weekDays.filter(({ dateStr }) => dateStr <= todayStr)
+            // Per-day completion counts
+            const dayData = weekDays.map(({ dateStr, label }) => {
+              const logged = mealCompletions.filter((c) => c.date === dateStr).length
+              const isPast = dateStr < todayStr
+              const isToday = dateStr === todayStr
+              const isFuture = dateStr > todayStr
+              const allDone = logged >= totalMealsPerDay
+              return { dateStr, label, logged, isPast, isToday, isFuture, allDone }
+            })
+            const daysFullyLogged = dayData.filter((d) => !d.isFuture && d.allDone).length
+            const activeDays = pastOrToday.length
+            // Weekly totals: sum all completions this week
+            const weeklyCalories = mealCompletions
+              .filter((c) => c.date >= mondayStr && c.date <= todayStr)
+              .reduce((sum, c) => sum + (dietPlan.meals?.[c.meal_index]?.calories ?? 0), 0)
+            const weeklyProtein = mealCompletions
+              .filter((c) => c.date >= mondayStr && c.date <= todayStr)
+              .reduce((sum, c) => sum + (dietPlan.meals?.[c.meal_index]?.protein_g ?? 0), 0)
+            const weeklyCalTarget = dietPlan.calories_target * activeDays
+            const weeklyProTarget = dietPlan.protein_g * activeDays
+
+            return (
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-semibold text-gray-200">This Week</p>
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                    activeDays > 0 && daysFullyLogged === activeDays
+                      ? 'bg-green-900/30 text-green-400'
+                      : 'bg-gray-800 text-gray-500'
+                  }`}>
+                    {daysFullyLogged}/{activeDays} days on plan
+                  </span>
+                </div>
+                {/* Day dots */}
+                <div className="flex gap-1 mb-3">
+                  {dayData.map(({ label, logged, isFuture, allDone, isToday }) => (
+                    <div key={label} className="flex-1 flex flex-col items-center gap-1">
+                      <span className="text-xs text-gray-600">{label}</span>
+                      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border ${
+                        isFuture
+                          ? 'border-gray-800 bg-gray-900 text-gray-700'
+                          : allDone
+                            ? 'border-green-600 bg-green-900/40 text-green-400'
+                            : logged > 0
+                              ? 'border-brand-600 bg-brand-900/40 text-brand-400'
+                              : 'border-gray-700 bg-gray-800 text-gray-600'
+                      } ${isToday ? 'ring-1 ring-brand-500/50' : ''}`}>
+                        {isFuture ? '' : allDone ? '✓' : logged > 0 ? logged : '—'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {/* Weekly totals */}
+                {activeDays > 0 && (
+                  <div className="grid grid-cols-2 gap-2 border-t border-gray-800 pt-2">
+                    <div>
+                      <p className="text-xs text-gray-600">Calories this week</p>
+                      <p className="text-sm font-semibold text-brand-400">
+                        {weeklyCalories.toLocaleString()} <span className="text-xs text-gray-600">/ {weeklyCalTarget.toLocaleString()} kcal</span>
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-600">Protein this week</p>
+                      <p className="text-sm font-semibold text-green-400">
+                        {weeklyProtein}g <span className="text-xs text-gray-600">/ {weeklyProTarget}g</span>
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
           {/* Meals */}
           <div>
             <h2 className="text-lg font-semibold text-gray-100 mb-3">Daily Meals ({dietPlan.meal_count} meals)</h2>
