@@ -534,9 +534,10 @@ export const FOOD_CALORIES_PER_100G: Record<string, number> = {
   // Proteins — fish
   salmon: 208, tilapia: 96, cod: 82, tuna_steak: 144, halibut: 111,
   sea_bass: 97, mackerel: 205, trout: 148, mahi_mahi: 109, swordfish: 144,
-  smoked_salmon: 117, herring: 158, tuna_can: 116,
+  smoked_salmon: 117, herring: 158, tuna_can: 116, sardines: 208, anchovies: 131,
   // Proteins — shellfish
   shrimp: 99, crab: 97, lobster: 89, scallops: 88,
+  oysters: 81, mussels: 86, clams: 74, squid: 92,
   // Proteins — eggs
   eggs: 155, egg_whites: 52,
   // Proteins — dairy
@@ -551,7 +552,7 @@ export const FOOD_CALORIES_PER_100G: Record<string, number> = {
   chicken_tikka: 148, carne_asada: 180, dal: 116, halloumi: 321,
   // Carbs — grains
   white_rice: 130, brown_rice: 111, oats: 389, quinoa: 120,
-  sweet_potato: 86, pasta: 131, rice_cakes: 387, cream_of_rice: 359,
+  sweet_potato: 86, white_potato: 77, pasta: 131, rice_cakes: 387, cream_of_rice: 359,
   wild_rice: 101, millet: 119, buckwheat: 343, barley: 123,
   couscous: 112, bulgur_wheat: 83, bread_ww: 247, ezekiel_bread: 243,
   rye_bread: 259, sourdough_bread: 289, pita_bread: 275,
@@ -570,8 +571,11 @@ export const FOOD_CALORIES_PER_100G: Record<string, number> = {
   almonds: 579, almond_butter: 614, olive_oil: 884, avocado: 160, walnuts: 654,
   cashews: 553, peanut_butter: 588, chia_seeds: 486, flaxseed: 534,
   hemp_seeds: 553, pumpkin_seeds: 559, sunflower_seeds: 584,
+  sunflower_seed_butter: 614,
   ghee: 900, butter: 717, coconut_oil: 892, avocado_oil: 884,
   tahini: 595, sesame_seeds: 573,
+  // Plant milks (kcal per 100ml; used as substitute for dairy milk/yogurt)
+  soy_milk: 33, oat_milk: 43, almond_milk: 17,
   // Cheese / dairy fat
   mozzarella: 280, cheddar: 403, parmesan: 431, feta: 264,
   swiss_cheese: 380, goat_cheese: 364, cream_cheese: 342,

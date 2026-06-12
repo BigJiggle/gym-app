@@ -585,7 +585,7 @@ export default function CheckIn() {
           </div>
           <div className="pt-2">
             <Link to="/settings">
-              <Button variant="secondary" size="sm">Adjust in Settings</Button>
+              <Button variant="secondary" size="sm">Change Schedule</Button>
             </Link>
           </div>
         </div>
