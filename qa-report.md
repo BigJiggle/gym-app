@@ -114,3 +114,95 @@
 **Problem:** Training adherence already auto-fills from logged workout history with a "Auto-filled: X of ~Y sessions" hint. Diet adherence defaulted to 90% with no auto-calculation, forcing athletes to estimate manually — an inconsistency that caused inaccurate data.
 
 **Fix:** A `useEffect` calls `window.api.getMealCompletions()` directly (bypassing the store to avoid overwriting the Diet page's week-range data), computes `logged_meals / (meals_per_day × days_since_last_checkin)` as a percentage, pre-fills the Diet Adherence slider, and displays a matching "Auto-filled: X of ~Y expected meals logged — adjust if needed" hint.
+
+---
+
+## Session 3 — 2026-06-12
+
+### Phase 1 — QA Engineer
+
+#### TypeScript & Tests
+- `npx tsc --noEmit` (web): **clean** (0 errors)
+- `npx tsc -p tsconfig.node.json --noEmit` (electron): **clean** (0 errors)
+- `npx tsc -p tsconfig.test.json --noEmit` (tests): **clean** (0 errors, new config)
+- `npm test`: **86/86 passed** (6 test files)
+
+#### Nutrition Engine Audit
+- `buildMeals()` calorie distribution: SNACK_CAL=200, mainCal=max(800, total-snacksCal), correctly distributed — ✓
+- `generateNutritionPlan()` snack_count resolution: `input.snack_count ?? (input.include_snacks ? 1 : 0)` — ✓
+- Macro math: `protein_g = weight_kg×2.3, fat_g = weight_kg×0.9, carbs fill rest` — ✓
+- `calcPortionStr()` ROLE_FIXED_G clamps and MEAL_CAL_FRACTIONS verified correct — ✓
+- Two spot-checks: 80 kg deficit cut (2,000 kcal, 4 meals) and 95 kg maintenance (3,000 kcal, 3 meals) — portions and macros correct
+
+#### 7 User Flows — all verified correct after fixes
+
+#### Bugs Fixed — 7 bugs (Phase 2 skipped)
+
+**Bug 1 — 4 culture food objects had plain strings instead of TemplateFoodItem objects**
+- **Files**: `electron/services/nutritionEngine.ts`
+- **Cultures affected**: `west_african`, `japanese`, `korean`, `middle_eastern`
+- **Root cause**: Each culture object's properties were plain strings (e.g., `"protein_main: 'tilapia'"`) instead of typed objects with `{ id, display, role }` shape.
+- **Impact**: 32 TypeScript compilation errors AND runtime "undefined (100g)" portion strings for any user with those cultural preferences — completely broken food output.
+- **Fix**: Replaced all 4 culture entries with properly structured `TemplateFoodItem` objects matching the interface.
+
+**Bug 2 — `culture_pref` hardcoded to `'any'` in 5 IPC locations**
+- **Files**: `electron/ipc/planHandlers.ts` (3 locations), `electron/ipc/showHandlers.ts` (1 location)
+- **Root cause**: Diet plan generation handlers used `culture_pref: 'any'` literal instead of reading from the user record.
+- **Impact**: Users who selected a cultural food preference during onboarding always got generic `'any'` culture foods — setting was silently ignored.
+- **Fix**: All 5 locations changed to `(user.culture_pref as string) ?? 'any'`.
+
+**Bug 3 — `namedParams()` returned `Record<string, unknown>` instead of `Record<string, JSValue>`**
+- **File**: `electron/database/db.ts`
+- **Root cause**: Return type was too broad; SQLite binding functions require `JSValue = boolean | number | bigint | string | Uint8Array | null`.
+- **Impact**: TypeScript errors in every handler using named parameter binding.
+- **Fix**: Return type narrowed to `Record<string, JSValue>` with explicit `as JSValue` cast.
+
+**Bug 4 — Multiple `unknown` typed DB values passed to SQLite `.run()` without casts**
+- **Files**: `electron/ipc/checkinHandlers.ts`, `electron/ipc/planHandlers.ts`, `electron/ipc/showHandlers.ts`, `electron/ipc/workoutHandlers.ts`
+- **Root cause**: SQLite rows typed as `Record<string, unknown>` — properties extracted from rows need explicit casts before passing to `.run()`.
+- **Fix**: Added explicit `as number`, `as string`, `as string | number | null` casts at each bind site.
+
+**Bug 5 — `claudeService.ts` snack_count type error**
+- **File**: `electron/services/claudeService.ts` line 79
+- **Root cause**: `((userProfile.snack_count as number) ?? 0) > 0` — TypeScript inferred `{}` type from the double-cast.
+- **Fix**: Changed to `((userProfile.snack_count as number | undefined) ?? 0) > 0`.
+
+**Bug 6 — `trainingEngine.ts` impossible branch comparison**
+- **File**: `electron/services/trainingEngine.ts` line 293
+- **Root cause**: `s.cat !== 'core'` when `cat` was already narrowed to `'push' | 'pull' | 'legs'`, making the comparison always true and flagged by TypeScript.
+- **Fix**: Removed the dead branch; the narrowed type already guarantees non-core.
+
+**Bug 7 — `checkinSchedule.ts` cross-project import + test tsconfig architecture**
+- **Files**: `electron/services/checkinSchedule.ts`, `tsconfig.node.json`, new `tsconfig.test.json`
+- **Root cause**: `checkinSchedule.ts` imported `CheckIn` from `../../src/types` — a cross-project boundary violation. Previous "fix" added `src/types/**/*` to `tsconfig.node.json` which pulled in `src/store/*.ts` (needing DOM types) and caused 37+ `Cannot find name 'window'` errors.
+- **Fix**: Replaced the import with a local `CheckIn` interface (4 fields used by the module). Reverted `tsconfig.node.json` to electron-only scope. Created `tsconfig.test.json` with DOM lib + JSX for proper test type-checking.
+
+**Bonus — `Progress/index.tsx` Recharts tooltip formatter type**
+- **File**: `src/pages/Progress/index.tsx` line 411
+- **Root cause**: `entry: { payload: WeekConsistency }` but Recharts types `payload` as optional.
+- **Fix**: Made `payload?` optional; used `?.` access in the template.
+
+---
+
+### Phase 2 — Skipped (≥ 3 bugs fixed in Phase 1)
+
+---
+
+### Phase 3 — UX Reviewer
+
+**Fix 1 — Dashboard Next Meal card: critical food/macro text near-invisible**
+- **File**: `src/pages/Dashboard/index.tsx`
+- **Issue**: Food items used `text-gray-500` (#6b7280 on dark) — very dim for fatigued athletes reading what they need to eat. Calorie count was `text-gray-500`, protein was `text-blue-400/70` (opacity dimmed).
+- **Fix**: Food items → `text-gray-300`, calories → `text-gray-300 font-medium`, protein → `text-blue-400` (removed `/70` opacity). The three most critical pieces of "what do I eat and how much" are now clearly legible.
+
+**Fix 2 — Diet page Mark Eaten button: tap target too small**
+- **File**: `src/pages/Diet/index.tsx`
+- **Issue**: Button was `text-xs px-2.5 py-1` — a very small touch target on a fingertip-operated UI.
+- **Fix**: Changed to `text-sm px-3 py-1.5` — larger hit area reduces mis-taps post-workout when hands may be shaky.
+
+### Commits
+
+| Hash | Message |
+|------|---------|
+| `e665f95` | `[QA] 2026-06-12: fix 7 bugs — culture food objects, culture_pref hardcoding, namedParams types, unknown casts, cross-project import, test tsconfig architecture, Recharts formatter type` |
+| `d7245d8` | `[UX] 2026-06-12: boost Next Meal card contrast and Mark Eaten tap target for fatigued athletes` |
