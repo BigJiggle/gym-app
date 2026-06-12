@@ -408,8 +408,8 @@ export default function Progress() {
               <XAxis dataKey="week" tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} />
               <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${v}%`} />
               <Tooltip
-                formatter={(val: number, _: string, entry: { payload: WeekConsistency }) =>
-                  [`${val}% (${entry.payload.meals}/${entry.payload.target} meals)`, 'Diet adherence']
+                formatter={(val: number, _: string, entry: { payload?: WeekConsistency }) =>
+                  [`${val}% (${entry.payload?.meals ?? '?'}/${entry.payload?.target ?? '?'} meals)`, 'Diet adherence']
                 }
                 contentStyle={{ background: '#111827', border: '1px solid #1f2937', borderRadius: 8, fontSize: 11 }}
                 labelStyle={{ color: '#9ca3af' }}

@@ -14,10 +14,10 @@ function syncPrimaryToNearest(db: ReturnType<typeof getDb>, userId: number): voi
   db.prepare('UPDATE shows SET is_primary=0 WHERE user_id=?').run([userId])
 
   if (next) {
-    db.prepare('UPDATE shows SET is_primary=1 WHERE id=?').run([next.id])
+    db.prepare('UPDATE shows SET is_primary=1 WHERE id=?').run([next.id as number])
     db.prepare('UPDATE users SET show_date=?, division=? WHERE id=?').run([
-      next.show_date,
-      next.division ?? null,
+      next.show_date as string | null,
+      (next.division as string | null) ?? null,
       userId,
     ])
   } else {
@@ -58,7 +58,7 @@ export function regenerateDietForGoal(
     food_preferences: (() => { try { return JSON.parse((user.food_preferences as string) ?? '[]') } catch { return [] } })(),
     cooking_time_pref: (user.cooking_time_pref as string) ?? 'medium',
     snack_count: (user.snack_count as number) ?? 0,
-    culture_pref: 'any',
+    culture_pref: (user.culture_pref as string) ?? 'any',
   })
   const planLabel = weeksOut !== undefined
     ? `${newDiet.phase.charAt(0).toUpperCase() + newDiet.phase.slice(1)} Nutrition Plan`
@@ -89,7 +89,7 @@ export async function transitionTrainingToOffSeason(
 
   if (userModified) {
     if (lastTraining) {
-      db.prepare('UPDATE training_plans SET generated_at_weeks_out=NULL WHERE id=?').run([lastTraining.id])
+      db.prepare('UPDATE training_plans SET generated_at_weeks_out=NULL WHERE id=?').run([lastTraining.id as number])
     }
     return { trainingUpdated: false, message: 'Show cancelled. Your custom training plan has been kept.' }
   }
@@ -175,11 +175,11 @@ export function registerShowHandlers(ipcMain: IpcMain): void {
       VALUES (?, ?, ?, ?, ?, ?, 0)
     `).run([
       userId,
-      data.name ?? 'Competition',
-      data.show_date,
-      data.division ?? null,
-      data.federation ?? null,
-      data.notes ?? null,
+      (data.name as string | undefined) ?? 'Competition',
+      data.show_date as string,
+      (data.division as string | null) ?? null,
+      (data.federation as string | null) ?? null,
+      (data.notes as string | null) ?? null,
     ])
     syncPrimaryToNearest(db, userId)
 
@@ -199,25 +199,25 @@ export function registerShowHandlers(ipcMain: IpcMain): void {
     if (!show) throw new Error('Show not found')
     const dateChanged = data.show_date && data.show_date !== show.show_date
     db.prepare('UPDATE shows SET name=?, show_date=?, division=?, federation=?, notes=? WHERE id=?').run([
-      data.name ?? show.name,
-      data.show_date ?? show.show_date,
-      data.division ?? null,
-      data.federation ?? null,
-      data.notes ?? null,
+      (data.name as string | undefined) ?? (show.name as string),
+      (data.show_date as string | undefined) ?? (show.show_date as string),
+      (data.division as string | null) ?? null,
+      (data.federation as string | null) ?? null,
+      (data.notes as string | null) ?? null,
       showId,
     ])
     syncPrimaryToNearest(db, show.user_id as number)
 
     // Immediately recalculate diet if the show date changed
     if (dateChanged) {
-      const user = db.prepare('SELECT * FROM users WHERE id=?').get([show.user_id]) as Record<string, unknown> | null
+      const user = db.prepare('SELECT * FROM users WHERE id=?').get([show.user_id as number]) as Record<string, unknown> | null
       if (user?.show_date) {
         const weeksOut = computeWeeksOut(user.show_date as string)
         regenerateDietForGoal(db, show.user_id as number, user.goal as string, weeksOut)
       }
     }
 
-    return db.prepare('SELECT * FROM shows WHERE user_id=? ORDER BY show_date ASC').all([show.user_id])
+    return db.prepare('SELECT * FROM shows WHERE user_id=? ORDER BY show_date ASC').all([show.user_id as number])
   })
 
   ipcMain.handle('shows:delete', async (_event, showId: number) => {
@@ -226,7 +226,7 @@ export function registerShowHandlers(ipcMain: IpcMain): void {
     if (!show) return { shows: [], message: null, needs_goal_selection: false }
     db.prepare('DELETE FROM shows WHERE id=?').run([showId])
     syncPrimaryToNearest(db, show.user_id as number)
-    const remaining = db.prepare('SELECT * FROM shows WHERE user_id=? ORDER BY show_date ASC').all([show.user_id]) as Record<string, unknown>[]
+    const remaining = db.prepare('SELECT * FROM shows WHERE user_id=? ORDER BY show_date ASC').all([show.user_id as number]) as Record<string, unknown>[]
     const today = new Date().toLocaleDateString('en-CA')
     const hasUpcoming = remaining.some(s => (s.show_date as string) >= today)
 
@@ -250,7 +250,7 @@ export function registerShowHandlers(ipcMain: IpcMain): void {
     if (!show) return { shows: [], transitionType: 'offseason', message: null, needs_goal_selection: false }
     db.prepare('DELETE FROM shows WHERE id=?').run([showId])
     syncPrimaryToNearest(db, show.user_id as number)
-    const remaining = db.prepare('SELECT * FROM shows WHERE user_id=? ORDER BY show_date ASC').all([show.user_id]) as Record<string, unknown>[]
+    const remaining = db.prepare('SELECT * FROM shows WHERE user_id=? ORDER BY show_date ASC').all([show.user_id as number]) as Record<string, unknown>[]
     const today = new Date().toLocaleDateString('en-CA')
     const hasNextShow = remaining.some((s) => (s.show_date as string) >= today)
 
@@ -267,7 +267,7 @@ export function registerShowHandlers(ipcMain: IpcMain): void {
     }
 
     // Another show coming — immediately recalculate diet for the next show
-    const user = db.prepare('SELECT * FROM users WHERE id=?').get([show.user_id]) as Record<string, unknown> | null
+    const user = db.prepare('SELECT * FROM users WHERE id=?').get([show.user_id as number]) as Record<string, unknown> | null
     if (user?.show_date) {
       const weeksOut = computeWeeksOut(user.show_date as string)
       regenerateDietForGoal(db, show.user_id as number, user.goal as string, weeksOut)
@@ -287,7 +287,7 @@ export function registerShowHandlers(ipcMain: IpcMain): void {
     db.prepare('UPDATE shows SET is_primary=0 WHERE user_id=?').run([userId])
     db.prepare('UPDATE shows SET is_primary=1 WHERE id=?').run([showId])
     const show = db.prepare('SELECT * FROM shows WHERE id=?').get([showId]) as Record<string, unknown>
-    db.prepare('UPDATE users SET show_date=?, division=? WHERE id=?').run([show.show_date, show.division ?? null, userId])
+    db.prepare('UPDATE users SET show_date=?, division=? WHERE id=?').run([show.show_date as string, (show.division as string | null) ?? null, userId])
     return db.prepare('SELECT * FROM shows WHERE user_id=? ORDER BY show_date ASC').all([userId])
   })
 }

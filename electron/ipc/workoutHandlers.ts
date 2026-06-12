@@ -22,14 +22,14 @@ export function registerWorkoutHandlers(ipcMain: IpcMain): void {
       `)
       .run([
         workoutLogId,
-        data.exercise_name,
-        data.set_number,
-        data.reps_prescribed ?? null,
-        data.reps_actual ?? null,
-        data.weight_kg ?? null,
-        data.rir_actual ?? null,
+        data.exercise_name as string,
+        data.set_number as number,
+        (data.reps_prescribed as number | null) ?? null,
+        (data.reps_actual as number | null) ?? null,
+        (data.weight_kg as number | null) ?? null,
+        (data.rir_actual as number | null) ?? null,
         data.skipped ? 1 : 0,
-        data.notes ?? null
+        (data.notes as string | null) ?? null
       ])
     return db.prepare('SELECT * FROM exercise_logs WHERE id = ?').get(result.lastInsertRowid)
   })
@@ -54,7 +54,7 @@ export function registerWorkoutHandlers(ipcMain: IpcMain): void {
       .prepare(`SELECT * FROM workout_logs WHERE user_id=? AND status='in_progress' ORDER BY id DESC LIMIT 1`)
       .get(userId) as Record<string, unknown> | null
     if (!log) return null
-    const sets = db.prepare('SELECT * FROM exercise_logs WHERE workout_log_id=?').all([log.id]) as Record<string, unknown>[]
+    const sets = db.prepare('SELECT * FROM exercise_logs WHERE workout_log_id=?').all([log.id as number]) as Record<string, unknown>[]
     return { ...log, sets: sets.map(parseLog) }
   })
 
@@ -65,7 +65,7 @@ export function registerWorkoutHandlers(ipcMain: IpcMain): void {
       .prepare(`SELECT * FROM workout_logs WHERE user_id=? AND status != 'in_progress' ORDER BY id DESC LIMIT ?`)
       .all([userId, limit]) as Record<string, unknown>[]
     return logs.map((log) => {
-      const sets = db.prepare('SELECT * FROM exercise_logs WHERE workout_log_id=?').all([log.id]) as Record<string, unknown>[]
+      const sets = db.prepare('SELECT * FROM exercise_logs WHERE workout_log_id=?').all([log.id as number]) as Record<string, unknown>[]
       return { ...log, sets: sets.map(parseLog) }
     })
   })
@@ -82,7 +82,7 @@ export function registerWorkoutHandlers(ipcMain: IpcMain): void {
     const allowed = ['reps_actual', 'weight_kg', 'rir_actual', 'notes', 'skipped']
     const updates = Object.entries(data).filter(([k]) => allowed.includes(k))
     if (!updates.length) return null
-    const values = updates.map(([k, v]) => k === 'skipped' ? (v ? 1 : 0) : v)
+    const values = updates.map(([k, v]) => k === 'skipped' ? (v ? 1 : 0) : v as string | number | null)
     const sql = `UPDATE exercise_logs SET ${updates.map(([k]) => `${k}=?`).join(', ')} WHERE id=?`
     db.prepare(sql).run([...values, setId])
     return db.prepare('SELECT * FROM exercise_logs WHERE id=?').get([setId])
@@ -106,14 +106,14 @@ export function registerWorkoutHandlers(ipcMain: IpcMain): void {
     for (const s of sets) {
       stmt.run([
         workoutLogId,
-        s.exercise_name,
-        s.set_number,
-        s.reps_prescribed ?? null,
-        s.reps_actual ?? null,
-        s.weight_kg ?? null,
-        s.rir_actual ?? null,
+        s.exercise_name as string,
+        s.set_number as number,
+        (s.reps_prescribed as number | null) ?? null,
+        (s.reps_actual as number | null) ?? null,
+        (s.weight_kg as number | null) ?? null,
+        (s.rir_actual as number | null) ?? null,
         s.skipped ? 1 : 0,
-        s.notes ?? null,
+        (s.notes as string | null) ?? null,
       ])
     }
     return { count: sets.length }

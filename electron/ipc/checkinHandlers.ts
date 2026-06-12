@@ -265,12 +265,12 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
     const existing = db.prepare('SELECT * FROM weekly_checkins WHERE id=?').get(checkinId) as Record<string, unknown> | undefined
     if (!existing) throw new Error('Check-in not found')
 
-    const user = db.prepare('SELECT * FROM users WHERE id=?').get(existing.user_id) as Record<string, unknown>
-    const dietPlan = db.prepare('SELECT calories_target FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1').get(existing.user_id) as { calories_target: number } | undefined
+    const user = db.prepare('SELECT * FROM users WHERE id=?').get(existing.user_id as number) as Record<string, unknown>
+    const dietPlan = db.prepare('SELECT calories_target FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1').get(existing.user_id as number) as { calories_target: number } | undefined
 
     const previous = db.prepare(
       'SELECT weight_kg, week_number FROM weekly_checkins WHERE user_id=? AND id<? ORDER BY id DESC LIMIT 1'
-    ).get([existing.user_id, checkinId]) as { weight_kg: number; week_number: number } | undefined
+    ).get([existing.user_id as number, checkinId]) as { weight_kg: number; week_number: number } | undefined
 
     const adjustments = calculateAdjustments(
       {
@@ -299,7 +299,7 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
       })
     if (!updates.length) throw new Error('No valid fields to update')
     const sql = `UPDATE weekly_checkins SET ${updates.map(([k]) => `${k}=?`).join(', ')}, adjustments=? WHERE id=?`
-    db.prepare(sql).run([...updates.map(([, v]) => v), JSON.stringify(adjustments), checkinId])
+    db.prepare(sql).run([...updates.map(([, v]) => v as string | number | null), JSON.stringify(adjustments), checkinId])
     const saved = db.prepare('SELECT * FROM weekly_checkins WHERE id=?').get(checkinId) as Record<string, unknown>
     return { ...saved, adjustments: JSON.parse(saved.adjustments as string) }
   })

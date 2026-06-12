@@ -27,18 +27,19 @@ function makeSet(overrides = {}) {
 }
 
 function makeWorkoutLog(overrides = {}) {
-  return { id: 1, user_id: 1, session_id: 1, date: '2026-05-18', status: 'in_progress', started_at: new Date().toISOString(), ended_at: null, notes: null, sets: [], ...overrides }
+  return { id: 1, user_id: 1, session_id: 1, date: '2026-05-18', status: 'in_progress' as const, started_at: new Date().toISOString(), ended_at: null, notes: null, sets: [], ...overrides }
 }
 
 function makeDietPlan(calories: number, overrides = {}) {
   return {
-    id: 1, user_id: 1, calories_target: calories, protein_g: 180, carbs_g: 200, fat_g: 60,
+    id: 1, user_id: 1, name: 'Prep Plan', calories_target: calories, protein_g: 180, carbs_g: 200, fat_g: 60,
+    meal_count: 3,
     meals: [
-      { name: 'Breakfast', calories: Math.round(calories * 0.25), protein_g: 45, carbs_g: 50, fat_g: 15 },
-      { name: 'Lunch',     calories: Math.round(calories * 0.35), protein_g: 63, carbs_g: 70, fat_g: 21 },
-      { name: 'Dinner',    calories: Math.round(calories * 0.40), protein_g: 72, carbs_g: 80, fat_g: 24 },
+      { name: 'Breakfast', time: '07:00', calories: Math.round(calories * 0.25), protein_g: 45, carbs_g: 50, fat_g: 15, foods: ['Oats (80g)', 'Eggs x2'] },
+      { name: 'Lunch',     time: '12:00', calories: Math.round(calories * 0.35), protein_g: 63, carbs_g: 70, fat_g: 21, foods: ['Chicken (150g)', 'Rice (200g)'] },
+      { name: 'Dinner',    time: '18:00', calories: Math.round(calories * 0.40), protein_g: 72, carbs_g: 80, fat_g: 24, foods: ['Salmon (200g)', 'Sweet Potato (200g)'] },
     ],
-    phase: 'deficit', created_at: new Date().toISOString(),
+    phase: 'deficit' as const, created_at: new Date().toISOString(),
     ...overrides
   }
 }
@@ -49,7 +50,7 @@ function makeCheckin(weekNumber: number, overrides = {}) {
     weight_kg: 84, training_adherence: 90, diet_adherence: 85,
     energy_level: 4, sleep_quality: 4, stress_level: 2,
     adjustments: { calories_delta: 0, cardio_change: 'no change', training_volume_change: 'no change', notes: ['On track.'] },
-    schedule_type: 'day', interval_days: 7,
+    schedule_type: 'day' as const, interval_days: 7,
     ...overrides,
   }
 }

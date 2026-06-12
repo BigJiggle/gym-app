@@ -76,7 +76,7 @@ Requirements:
 - Protein = ${Math.round((userProfile.weight_kg as number) * 2.3)}g (2.3g/kg)
 - Fat = ${Math.round((userProfile.weight_kg as number) * 0.9)}g (0.9g/kg)
 - Carbs fill remaining calories
-- Include ${userProfile.meal_count ?? 4} main meals${(userProfile.snack_count ?? 0) > 0 ? ` + ${userProfile.snack_count} snack${userProfile.snack_count !== 1 ? 's' : ''} (~200 kcal each, placed between main meals)` : ''}
+- Include ${userProfile.meal_count ?? 4} main meals${((userProfile.snack_count as number) ?? 0) > 0 ? ` + ${userProfile.snack_count} snack${(userProfile.snack_count as number) !== 1 ? 's' : ''} (~200 kcal each, placed between main meals)` : ''}
 - Cultural preference: ${userProfile.culture_pref ?? 'any'}
 - Dietary type: ${userProfile.dietary_preference ?? 'omnivore'}
 - Exclude these food IDs: ${JSON.stringify(userProfile.food_exclusions ?? [])}

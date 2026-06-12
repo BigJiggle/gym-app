@@ -1,4 +1,5 @@
 import { Database } from 'node-sqlite3-wasm'
+import type { JSValue } from 'node-sqlite3-wasm'
 import { app } from 'electron'
 import { join } from 'path'
 import { existsSync, unlinkSync, rmdirSync } from 'fs'
@@ -121,8 +122,8 @@ export function closeDb(): void {
 
 // node-sqlite3-wasm requires named param keys to include the @ prefix.
 // This helper transforms {key: value} → {'@key': value} and converts undefined → null.
-export function namedParams(obj: Record<string, unknown>): Record<string, unknown> {
+export function namedParams(obj: Record<string, unknown>): Record<string, JSValue> {
   return Object.fromEntries(
     Object.entries(obj).map(([k, v]) => [`@${k}`, v ?? null])
-  )
+  ) as Record<string, JSValue>
 }

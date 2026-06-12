@@ -290,7 +290,7 @@ function buildPPLSessions(
 
   return cycle.slice(0, freq).map((s, i) => {
     const entries = getExercises(s.cat, equipment, exCount(s.cat))
-    const coreEntries = s.cat !== 'core' ? getExercises('core', equipment, 2) : []
+    const coreEntries = getExercises('core', equipment, 2)
     return {
       day_of_week: days[i],
       session_name: s.name,

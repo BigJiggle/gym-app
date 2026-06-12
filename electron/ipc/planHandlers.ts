@@ -96,9 +96,9 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
     const existing = db.prepare('SELECT id FROM training_plans WHERE user_id = ?').get(userId)
     if (existing) {
       const e = existing as Record<string, unknown>
-      db.prepare('UPDATE workout_logs SET session_id = NULL WHERE session_id IN (SELECT id FROM training_sessions WHERE plan_id = ?)').run([e.id])
-      db.prepare('DELETE FROM training_sessions WHERE plan_id = ?').run(e.id)
-      db.prepare('DELETE FROM training_plans WHERE id = ?').run(e.id)
+      db.prepare('UPDATE workout_logs SET session_id = NULL WHERE session_id IN (SELECT id FROM training_sessions WHERE plan_id = ?)').run([e.id as number])
+      db.prepare('DELETE FROM training_sessions WHERE plan_id = ?').run(e.id as number)
+      db.prepare('DELETE FROM training_plans WHERE id = ?').run(e.id as number)
     }
 
     const planResult = db
@@ -132,7 +132,7 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
 
     const sessions = db
       .prepare('SELECT * FROM training_sessions WHERE plan_id = ? AND week_number = 1 ORDER BY day_of_week')
-      .all(plan.id) as Record<string, unknown>[]
+      .all(plan.id as number) as Record<string, unknown>[]
 
     return {
       ...plan,
@@ -214,7 +214,7 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
       cooking_time_pref: (user.cooking_time_pref as string) ?? 'medium',
       meal_prep_style: (user.meal_prep_style as string) ?? 'daily',
       snack_count: (user.snack_count as number) ?? 0,
-      culture_pref: 'any'
+      culture_pref: (user.culture_pref as string) ?? 'any'
     })
 
     db.prepare('DELETE FROM diet_plans WHERE user_id = ?').run(userId)
@@ -307,7 +307,7 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
       food_preferences: (() => { try { return JSON.parse((user.food_preferences as string) ?? '[]') } catch { return [] } })(),
       cooking_time_pref: (user.cooking_time_pref as string) ?? 'medium',
       snack_count: (user.snack_count as number) ?? 0,
-      culture_pref: 'any',
+      culture_pref: (user.culture_pref as string) ?? 'any',
     })
     db.prepare('DELETE FROM diet_plans WHERE user_id = ?').run(userId)
     db.prepare(`INSERT INTO diet_plans (user_id, name, calories_target, protein_g, carbs_g, fat_g, meal_count, meals, phase, generated_at_weeks_out, engine_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run([userId, `${dietPlan.phase.charAt(0).toUpperCase() + dietPlan.phase.slice(1)} Nutrition Plan`, dietPlan.calories_target, dietPlan.protein_g, dietPlan.carbs_g, dietPlan.fat_g, dietPlan.meal_count, JSON.stringify(dietPlan.meals), dietPlan.phase, weeksOut ?? null, 2])
@@ -329,8 +329,8 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
     ).get([userId]) as Record<string, unknown> | null
     db.prepare('UPDATE shows SET is_primary=0 WHERE user_id=?').run([userId])
     if (nextShow) {
-      db.prepare('UPDATE shows SET is_primary=1 WHERE id=?').run([nextShow.id])
-      db.prepare('UPDATE users SET show_date=?, division=? WHERE id=?').run([nextShow.show_date, nextShow.division ?? null, userId])
+      db.prepare('UPDATE shows SET is_primary=1 WHERE id=?').run([nextShow.id as number])
+      db.prepare('UPDATE users SET show_date=?, division=? WHERE id=?').run([nextShow.show_date as string | null, (nextShow.division as string | null) ?? null, userId])
     } else {
       db.prepare('UPDATE users SET show_date=NULL, division=NULL WHERE id=?').run([userId])
     }
@@ -363,7 +363,7 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
     if (justWentOffSeason && storedUserModified) {
       // User-modified plan: keep all sessions, just clear the weeks_out context marker
       if (lastTraining) {
-        db.prepare('UPDATE training_plans SET generated_at_weeks_out=NULL WHERE id=?').run([lastTraining.id])
+        db.prepare('UPDATE training_plans SET generated_at_weeks_out=NULL WHERE id=?').run([lastTraining.id as number])
       }
     } else if (showTransitioned || currentPhase !== storedPhase || trainingContextChanged) {
       const trainingInput = {
@@ -473,7 +473,7 @@ Ensure every exercise respects the constraints above while maintaining phase-app
         food_preferences: (() => { try { return JSON.parse((freshUser.food_preferences as string) ?? '[]') } catch { return [] } })(),
         cooking_time_pref: (freshUser.cooking_time_pref as string) ?? 'medium',
         snack_count: (freshUser.snack_count as number) ?? 0,
-        culture_pref: 'any',
+        culture_pref: (freshUser.culture_pref as string) ?? 'any',
       })
       db.prepare('DELETE FROM diet_plans WHERE user_id = ?').run(userId)
       db.prepare(`INSERT INTO diet_plans (user_id, name, calories_target, protein_g, carbs_g, fat_g, meal_count, meals, phase, generated_at_weeks_out, engine_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
@@ -593,7 +593,7 @@ Ensure every exercise respects the constraints above while maintaining phase-app
       const matching = sessions.find((orig) => orig.day_of_week === s.day_of_week)
       if (matching) {
         db.prepare('UPDATE training_sessions SET exercises=? WHERE id=?')
-          .run([JSON.stringify(s.exercises), matching.id])
+          .run([JSON.stringify(s.exercises), matching.id as number])
       }
     }
     const updatedSessions = db.prepare('SELECT * FROM training_sessions WHERE plan_id=? ORDER BY day_of_week').all(plan.id as number) as Record<string,unknown>[]
@@ -660,7 +660,7 @@ Ensure every exercise respects the constraints above while maintaining phase-app
         const matching = sessions.find((orig) => orig.day_of_week === session.day_of_week)
         if (matching) {
           db.prepare('UPDATE training_sessions SET exercises=? WHERE id=?')
-            .run([JSON.stringify(session.exercises), matching.id])
+            .run([JSON.stringify(session.exercises), matching.id as number])
         }
       }
       const updatedSessions = db.prepare('SELECT * FROM training_sessions WHERE plan_id=? ORDER BY day_of_week').all(plan.id as number) as Record<string,unknown>[]
@@ -812,7 +812,7 @@ Ensure every exercise respects the constraints above while maintaining phase-app
             const matching = finalSessions.find((orig: any) => orig.day_of_week === session.day_of_week)
             if (matching) {
               db.prepare('UPDATE training_sessions SET exercises=? WHERE id=?')
-                .run([JSON.stringify(session.exercises), matching.id])
+                .run([JSON.stringify(session.exercises), matching.id as number])
             }
           }
           finalSessions = db.prepare('SELECT * FROM training_sessions WHERE plan_id=? ORDER BY day_of_week').all(planId as number) as Record<string,unknown>[]
@@ -827,7 +827,7 @@ Ensure every exercise respects the constraints above while maintaining phase-app
           const clamped = exercises.map(ex => ({ ...ex, sets: Math.min(ex.sets, cap) }))
           if (clamped.some((ex, i) => ex.sets !== exercises[i].sets)) {
             db.prepare('UPDATE training_sessions SET exercises=? WHERE id=?')
-              .run([JSON.stringify(clamped), s.id])
+              .run([JSON.stringify(clamped), s.id as number])
           }
         }
         finalSessions = db.prepare('SELECT * FROM training_sessions WHERE plan_id=? ORDER BY day_of_week').all(planId as number) as Record<string,unknown>[]
@@ -854,7 +854,7 @@ Ensure every exercise respects the constraints above while maintaining phase-app
           (() => { try { return JSON.parse((updatedUser.food_preferences as string) ?? '[]') } catch { return [] } })(),
           (updatedUser.cooking_time_pref as string) ?? 'medium',
           (updatedUser.snack_count as number) ?? 0,
-          'any',
+          (updatedUser.culture_pref as string) ?? 'any',
           (() => { try { return JSON.parse((updatedUser.dietary_restrictions as string) ?? '[]') } catch { return [] } })()
         )
         db.prepare(
@@ -875,7 +875,7 @@ Ensure every exercise respects the constraints above while maintaining phase-app
     const meals = JSON.parse(plan.meals as string) as Array<Record<string, unknown>>
     if (mealIndex < 0 || mealIndex >= meals.length) throw new Error('Invalid meal index')
     meals[mealIndex] = { ...meals[mealIndex], foods: newFoods }
-    db.prepare('UPDATE diet_plans SET meals = ? WHERE id = ?').run([JSON.stringify(meals), plan.id])
+    db.prepare('UPDATE diet_plans SET meals = ? WHERE id = ?').run([JSON.stringify(meals), plan.id as number])
     const saved = db.prepare('SELECT * FROM diet_plans WHERE id = ?').get(plan.id as number) as Record<string, unknown>
     return { ...saved, meals: JSON.parse(saved.meals as string) }
   })
@@ -886,7 +886,7 @@ Ensure every exercise respects the constraints above while maintaining phase-app
     if (!plan) throw new Error('No diet plan found')
     const existing = JSON.parse(plan.meals as string) as unknown[]
     if ((newMeals as unknown[]).length !== existing.length) throw new Error('Meal count mismatch')
-    db.prepare('UPDATE diet_plans SET meals = ? WHERE id = ?').run([JSON.stringify(newMeals), plan.id])
+    db.prepare('UPDATE diet_plans SET meals = ? WHERE id = ?').run([JSON.stringify(newMeals), plan.id as number])
     const saved = db.prepare('SELECT * FROM diet_plans WHERE id = ?').get(plan.id as number) as Record<string, unknown>
     return { ...saved, meals: JSON.parse(saved.meals as string) }
   })

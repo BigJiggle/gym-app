@@ -3,7 +3,12 @@
  * Extracted so they can be unit-tested independently of Electron.
  */
 
-import type { CheckIn } from '../../src/types'
+interface CheckIn {
+  check_in_date: string
+  week_number: number
+  schedule_type?: 'day' | 'interval'
+  interval_days?: number
+}
 
 // ── Next allowed check-in date ─────────────────────────────────────────────
 
