@@ -591,7 +591,7 @@ export default function Diet() {
                         </button>
                         <button
                           onClick={() => toggleMealEaten(i, meal.name)}
-                          className={`text-xs font-medium rounded-lg px-2.5 py-1 transition-colors flex items-center gap-1 ${
+                          className={`text-sm font-medium rounded-lg px-3 py-1.5 transition-colors flex items-center gap-1 ${
                             isMealEaten(i)
                               ? 'bg-green-900/30 border border-green-800/50 text-green-400'
                               : 'bg-brand-900/20 border border-brand-700 text-brand-400 hover:bg-brand-900/40'

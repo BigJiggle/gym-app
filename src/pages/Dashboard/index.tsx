@@ -399,16 +399,16 @@ export default function Dashboard() {
                 {meal.foods.length > 0 && (
                   <div className="space-y-0.5 mb-2">
                     {meal.foods.slice(0, 3).map((food, i) => (
-                      <p key={i} className="text-xs text-gray-500 truncate">· {food}</p>
+                      <p key={i} className="text-xs text-gray-300 truncate">· {food}</p>
                     ))}
                     {meal.foods.length > 3 && (
-                      <p className="text-xs text-gray-500">+{meal.foods.length - 3} more items</p>
+                      <p className="text-xs text-gray-400">+{meal.foods.length - 3} more items</p>
                     )}
                   </div>
                 )}
                 <div className="flex items-center gap-3 text-xs">
-                  <span className="text-gray-500">{meal.calories} kcal</span>
-                  <span className="text-blue-400/70">{meal.protein_g}g protein</span>
+                  <span className="text-gray-300 font-medium">{meal.calories} kcal</span>
+                  <span className="text-blue-400">{meal.protein_g}g protein</span>
                 </div>
               </div>
               <button
