@@ -501,6 +501,23 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
           </div>
         </div>
 
+        {/* Rest target selector — always visible so athletes can set duration before first set */}
+        {restSecsLeft === null && (
+          <div className="mb-3 flex items-center gap-2">
+            <span className="text-xs text-gray-600">Rest:</span>
+            {[60, 90, 120, 180].map((s) => (
+              <button
+                key={s}
+                onClick={() => setRestTarget(s)}
+                className={`text-xs px-2 py-0.5 rounded-lg border transition-colors ${
+                  restTarget === s ? 'border-brand-500 text-brand-400 bg-brand-900/30' : 'border-gray-800 text-gray-600 hover:border-gray-700 hover:text-gray-500'
+                }`}
+              >
+                {s < 120 ? `${s}s` : `${s / 60}m`}
+              </button>
+            ))}
+          </div>
+        )}
         {/* Rest timer — shows after each set is logged */}
         {restSecsLeft !== null && restSecsLeft > 0 && (
           <div className="mb-3 flex items-center justify-between bg-brand-900/30 border border-brand-700/50 rounded-xl px-3 py-2">

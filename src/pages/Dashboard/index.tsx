@@ -75,6 +75,11 @@ export default function Dashboard() {
     saveCardioLog(cardioLog.filter(e => e.date !== todayStr))
   }
 
+  function quickLogCardio(type: string, minutes: number) {
+    const updated = [...cardioLog.filter(e => e.date !== todayStr), { date: todayStr, type, minutes }]
+    saveCardioLog(updated)
+  }
+
   useEffect(() => {
     if (!user) return
     loadTrainingPlan(user.id)
@@ -977,18 +982,36 @@ export default function Dashboard() {
                   {[['LISS', 30], ['LISS', 45], ['HIIT', 20], ['HIIT', 25]].map(([t, m]) => (
                     <button
                       key={`${t}-${m}`}
-                      onClick={() => { setCardioType(t as string); setCardioMinutes(String(m)); }}
+                      onClick={() => { quickLogCardio(t as string, Number(m)); setCardioInputOpen(false); setCardioMinutes('') }}
                       className="text-xs px-2 py-1 bg-gray-800 border border-gray-700 rounded-lg text-gray-400 hover:border-brand-700 hover:text-brand-400 transition-colors"
                     >{t} {m}m</button>
                   ))}
                 </div>
+              </div>
+            ) : !todayEntry ? (
+              <div className="space-y-2">
+                <div className="flex gap-1.5 flex-wrap">
+                  {[['LISS', 30], ['LISS', 45], ['HIIT', 20], ['HIIT', 25]].map(([t, m]) => (
+                    <button
+                      key={`${t}-${m}`}
+                      onClick={() => quickLogCardio(t as string, Number(m))}
+                      className="text-xs font-medium px-3 py-1.5 bg-gray-800 border border-gray-700 text-gray-400 hover:bg-brand-900/20 hover:border-brand-700 hover:text-brand-400 rounded-lg transition-colors"
+                    >{t} {m}m</button>
+                  ))}
+                </div>
+                <button
+                  onClick={() => { setCardioType('LISS'); setCardioMinutes(''); setCardioInputOpen(true) }}
+                  className="w-full py-1.5 rounded-xl border border-dashed border-gray-700 text-gray-500 hover:border-brand-700 hover:text-brand-400 text-xs transition-colors"
+                >
+                  + Custom duration
+                </button>
               </div>
             ) : (
               <button
                 onClick={() => { setCardioType('LISS'); setCardioMinutes(''); setCardioInputOpen(true) }}
                 className="w-full py-2 rounded-xl border border-dashed border-gray-700 text-gray-500 hover:border-brand-700 hover:text-brand-400 text-sm transition-colors"
               >
-                + Log {todayEntry ? 'another' : 'today\'s'} cardio
+                + Log another cardio
               </button>
             )}
           </div>
