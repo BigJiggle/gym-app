@@ -518,7 +518,7 @@ export default function Training() {
                   disabled={aiRefining || !aiPrompt.trim()}
                   className="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-medium transition-colors disabled:opacity-40"
                 >
-                  {aiRefining ? '...' : 'Ask AI'}
+                  {aiRefining ? 'Asking...' : 'Ask AI'}
                 </button>
               </div>
               {aiError && <p className="text-xs text-red-400">{aiError}</p>}

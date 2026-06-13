@@ -329,7 +329,7 @@ export default function Diet() {
           title="Regenerate meal plan with current settings"
           className="text-xs text-amber-600 hover:text-amber-400 border border-amber-900/40 hover:border-amber-700 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-40"
         >
-          {regenLoading ? '⚠ Regenerating...' : '⚠ Regenerate Meals'}
+          {regenLoading ? 'Regenerating...' : '⚠ Regenerate Meals'}
         </button>
       </div>
       <p className="text-xs text-gray-400 -mt-3">⟳ adjusts calorie targets only &nbsp;·&nbsp; <span className="text-amber-500 font-medium">⚠ replaces all meals</span></p>
