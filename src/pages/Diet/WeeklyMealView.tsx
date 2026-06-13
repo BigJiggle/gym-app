@@ -65,6 +65,19 @@ export default function WeeklyMealView({ mealCount, meals }: Props) {
     return mealCompletions.filter((c) => c.date === date).length
   }
 
+  function dayMacros(date: string): { cal: number; protein: number } {
+    const loggedIndices = mealCompletions
+      .filter((c) => c.date === date)
+      .map((c) => c.meal_index)
+    return loggedIndices.reduce(
+      (acc, idx) => {
+        const meal = meals[idx]
+        return meal ? { cal: acc.cal + meal.calories, protein: acc.protein + meal.protein_g } : acc
+      },
+      { cal: 0, protein: 0 }
+    )
+  }
+
   async function toggleMeal(date: string, mealIndex: number, mealName: string) {
     if (!user) return
     if (isCompleted(date, mealIndex)) {
@@ -118,6 +131,8 @@ export default function WeeklyMealView({ mealCount, meals }: Props) {
           const isFutureDay = dateStr > todayStr
           const done = completedCountForDay(dateStr)
           const hasMeals = done > 0
+          const { cal, protein } = hasMeals ? dayMacros(dateStr) : { cal: 0, protein: 0 }
+          const calLabel = cal >= 1000 ? `${(cal / 1000).toFixed(1)}k` : `${cal}`
 
           return (
             <button
@@ -138,10 +153,19 @@ export default function WeeklyMealView({ mealCount, meals }: Props) {
               <span className={`text-base font-bold mt-0.5 ${isSelected ? 'text-brand-400' : isToday ? 'text-gray-200' : 'text-gray-500'}`}>
                 {day.getDate()}
               </span>
-              {hasMeals && (
-                <span className="text-xs text-green-400 mt-0.5 font-medium">{done}/{meals.length}</span>
+              {hasMeals ? (
+                <>
+                  <span className="text-xs text-green-400 mt-0.5 font-medium">{done}/{meals.length}</span>
+                  <span className="text-[10px] leading-none text-brand-400 mt-0.5">{calLabel}</span>
+                  <span className="text-[10px] leading-none text-purple-400">{protein}g P</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-xs text-transparent mt-0.5">-</span>
+                  <span className="text-[10px] leading-none text-transparent mt-0.5">-</span>
+                  <span className="text-[10px] leading-none text-transparent">-</span>
+                </>
               )}
-              {!hasMeals && <span className="text-xs text-transparent mt-0.5">-</span>}
             </button>
           )
         })}
