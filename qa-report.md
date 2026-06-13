@@ -32,7 +32,7 @@
 
 ---
 
-## Phase 2: Prep Athlete Feature
+## Phase 2: Prep Athlete Feature (session 5)
 
 **Feature implemented**: Body Composition Tracker on Progress page
 
@@ -58,7 +58,7 @@
 
 ---
 
-## Phase 3: UX Simplicity Reviewer
+## Phase 3: UX Simplicity Reviewer (session 5)
 
 **Fix 1: WorkoutSession — Rest timer pre-set visible before first set**
 
@@ -78,14 +78,57 @@ Previously logging cardio required: (1) tap "+ Log today's cardio" to open the f
 
 ---
 
+## Phase 2: Prep Athlete Feature (session 5 continuation)
+
+**Feature implemented**: Per-day calorie & protein totals in Weekly Meal View
+
+**File changed**: `src/pages/Diet/WeeklyMealView.tsx`
+
+**What it does**:
+- Each day button in the Diet › Weekly tab now shows two new micro-stat lines when meals have been logged: calories consumed (e.g. "1.9k") in brand color, and protein (e.g. "145g P") in purple
+- Uses a new `dayMacros(date)` helper that joins `mealCompletions` for the given date against the `meals` array to sum calories and protein from logged meals only
+- Calories ≥1000 are formatted as `X.Xk` for the narrow 7-column grid; values <1000 show as integers
+- Placeholder `text-transparent` spans preserve button height uniformity on days with no logged meals
+- No new API calls — uses `mealCompletions` already loaded into the Zustand store
+
+**Why this feature**: The Weekly View already showed per-day meal counts (e.g. "3/6") but gave no calorie or protein feedback. A prep athlete 12 weeks out needs to see at a glance which days they hit their macro targets — the difference between "I logged 3 meals" and "I hit 1,850 kcal and 145g P" is significant for weekly review and course correction.
+
+**TypeScript**: 0 errors after change.
+
+**Commit**: `0eca6e0` — `[FEATURE] 2026-06-13: Per-day calorie & protein totals in Weekly Meal View`
+
+---
+
+## Phase 3: UX Simplicity Reviewer (session 5 continuation)
+
+**Fix 1: Training — AI button loading state clarity**
+
+**File**: `src/pages/Training/index.tsx`
+
+The AI refine button showed `'...'` while waiting for a response. A user who tapped "Ask AI" had no textual feedback that a network call was in-flight — just three dots that could be confused with a placeholder. Changed to `'Asking...'`, which communicates active progress in plain English.
+
+**Fix 2: Diet — Regenerate button loading state clarity**
+
+**File**: `src/pages/Diet/index.tsx`
+
+The "Regenerate Meals" button showed `'⚠ Regenerating...'` during the API call. The ⚠ glyph is a static warning symbol that correctly warns of destructive action on the idle label; carrying it into the loading state made it look like an error was occurring. Stripped the ⚠ in the loading state so it reads `'Regenerating...'`, reserving the warning icon for the idle button where it conveys appropriate caution.
+
+**TypeScript**: 0 errors after changes.
+
+**Commit**: `f31f4d1` — `[UX] 2026-06-13: Clearer loading states in Training AI button and Diet regenerate button`
+
+---
+
 ## Summary
 
-| Phase | Result |
-|-------|--------|
-| TypeScript | 0 errors |
-| Unit tests | 86/86 pass |
-| Bugs fixed (P1) | 0 |
-| Feature added (P2) | Body composition tracker (BF%, Lean Mass, Fat Mass) on Progress page |
-| UX fixes (P3) | 2: rest timer pre-set selector; cardio one-tap quick-log |
-| New commits | 2 |
-| Push | master up to date |
+| Phase | Session | Result |
+|-------|---------|--------|
+| TypeScript | both | 0 errors |
+| Unit tests | 5 | 86/86 pass |
+| Bugs fixed (P1) | both | 0 |
+| Feature added (P2) | 5 | Body composition tracker (BF%, Lean Mass, Fat Mass) on Progress page |
+| Feature added (P2) | 5-cont | Per-day calorie & protein totals in Diet Weekly View |
+| UX fixes (P3) | 5 | 2: rest timer pre-set selector; cardio one-tap quick-log |
+| UX fixes (P3) | 5-cont | 2: AI button loading label; Diet regenerate loading label |
+| New commits | both | 4 total this report |
+| Push | pending | see below |
