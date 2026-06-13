@@ -25,6 +25,15 @@ function computeWeeklyRate(checkins: CheckIn[]): number | null {
   return (newest.weight_kg - oldest.weight_kg) / weeksDiff
 }
 
+function computeEstimatedBF(weightKg: number, waistCm: number, sex: 'male' | 'female' | 'other'): number {
+  const weightLbs = weightKg * 2.20462
+  const waistIn = waistCm / 2.54
+  const bf = sex === 'female'
+    ? ((4.15 * waistIn - 0.082 * weightLbs - 76.76) / weightLbs) * 100
+    : ((4.15 * waistIn - 0.082 * weightLbs - 98.42) / weightLbs) * 100
+  return Math.round(Math.max(3, Math.min(60, bf)) * 10) / 10
+}
+
 function weeksUntil(dateStr: string): number | null {
   const show = new Date(dateStr + 'T12:00:00')
   const now = new Date()
@@ -370,6 +379,74 @@ export default function Progress() {
                 )
               })}
             </div>
+          </div>
+        )
+      })()}
+
+      {/* Body composition estimate — shown when ≥1 check-in has waist measurement */}
+      {(() => {
+        const withWaist = [...checkinHistory].reverse().filter(c => c.waist_cm != null)
+        if (withWaist.length === 0) return null
+        const bfEntries = withWaist.map(c => {
+          const bf = computeEstimatedBF(c.weight_kg, c.waist_cm!, user!.sex)
+          const lbmKg = Math.round(c.weight_kg * (1 - bf / 100) * 10) / 10
+          const fatKg = Math.round(c.weight_kg * (bf / 100) * 10) / 10
+          return {
+            label: `Wk ${c.week_number}`,
+            bf,
+            lbm: isImperial ? Math.round(lbmKg * 2.20462 * 10) / 10 : lbmKg,
+            fat: isImperial ? Math.round(fatKg * 2.20462 * 10) / 10 : fatKg,
+          }
+        })
+        const latest = bfEntries[bfEntries.length - 1]
+        const bfChange = bfEntries.length >= 2 ? Math.round((latest.bf - bfEntries[0].bf) * 10) / 10 : null
+        const lbmChange = bfEntries.length >= 2 ? Math.round((latest.lbm - bfEntries[0].lbm) * 10) / 10 : null
+        return (
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="font-semibold text-gray-100">Body Composition</h2>
+              <span className="text-xs text-gray-600">YMCA estimate · directional only</span>
+            </div>
+            <p className="text-xs text-gray-600 mb-4">Estimated from waist and weight. Useful for tracking direction, not absolute accuracy.</p>
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="bg-gray-800/60 rounded-xl p-3 text-center">
+                <p className="text-xs text-gray-500 mb-1">Est. Body Fat</p>
+                <p className="text-xl font-bold text-brand-400">{latest.bf}%</p>
+                {bfChange !== null && (
+                  <p className={`text-xs font-semibold mt-0.5 ${bfChange < 0 ? 'text-green-400' : bfChange > 0 ? 'text-amber-400' : 'text-gray-500'}`}>
+                    {bfChange > 0 ? '+' : ''}{bfChange}% since start
+                  </p>
+                )}
+              </div>
+              <div className="bg-gray-800/60 rounded-xl p-3 text-center">
+                <p className="text-xs text-gray-500 mb-1">Lean Mass</p>
+                <p className="text-xl font-bold text-green-400">{latest.lbm} {wUnit}</p>
+                {lbmChange !== null && (
+                  <p className={`text-xs font-semibold mt-0.5 ${lbmChange > 0 ? 'text-green-400' : lbmChange < 0 ? 'text-amber-400' : 'text-gray-500'}`}>
+                    {lbmChange > 0 ? '+' : ''}{lbmChange} {wUnit}
+                  </p>
+                )}
+              </div>
+              <div className="bg-gray-800/60 rounded-xl p-3 text-center">
+                <p className="text-xs text-gray-500 mb-1">Fat Mass</p>
+                <p className="text-xl font-bold text-gray-300">{latest.fat} {wUnit}</p>
+              </div>
+            </div>
+            {bfEntries.length >= 2 && (
+              <ResponsiveContainer width="100%" height={140}>
+                <LineChart data={bfEntries} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                  <XAxis dataKey="label" tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={{ stroke: '#374151' }} tickLine={false} />
+                  <YAxis domain={['auto', 'auto']} tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={{ stroke: '#374151' }} tickLine={false} tickFormatter={(v: number) => `${v}%`} />
+                  <Tooltip
+                    formatter={(val: number) => [`${val}%`, 'Est. BF%']}
+                    contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px', fontSize: '12px' }}
+                    labelStyle={{ color: '#9ca3af' }}
+                  />
+                  <Line type="monotone" dataKey="bf" stroke="#7c3aed" strokeWidth={2} dot={{ r: 3, fill: '#7c3aed', strokeWidth: 0 }} activeDot={{ r: 5 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
           </div>
         )
       })()}
