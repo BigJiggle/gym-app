@@ -327,7 +327,7 @@ export default function Diet() {
           }}
           disabled={recalcLoading || regenLoading}
           title="Regenerate meal plan with current settings"
-          className="text-xs text-amber-600 hover:text-amber-400 border border-amber-900/40 hover:border-amber-700 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-40"
+          className="text-xs text-amber-500 font-medium bg-amber-900/20 hover:bg-amber-900/40 border border-amber-800/60 hover:border-amber-700 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-40"
         >
           {regenLoading ? 'Regenerating...' : '⚠ Regenerate Meals'}
         </button>
@@ -563,7 +563,7 @@ export default function Diet() {
                           {snack && (
                             <span className="text-gray-600 cursor-grab select-none text-base leading-none">⠿</span>
                           )}
-                          <span className="text-xs text-gray-600 font-mono">{meal.time}</span>
+                          <span className={`text-xs font-mono ${i === activeMealIndex && !isMealEaten(i) ? 'text-brand-400 font-semibold' : 'text-gray-600'}`}>{meal.time}</span>
                           <h3 className="text-sm font-semibold text-gray-200">{meal.name}</h3>
                           {i === activeMealIndex && !isMealEaten(i) && (
                             <span className="text-xs bg-brand-600/20 text-brand-400 border border-brand-600/50 rounded-full px-2 py-0.5 leading-none font-semibold">
