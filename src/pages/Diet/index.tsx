@@ -313,7 +313,7 @@ export default function Diet() {
           title="Recalculate macro targets from current body weight — keeps your meal structure"
           className="text-xs text-gray-500 hover:text-green-400 border border-gray-700 hover:border-green-700 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-40"
         >
-          {recalcDone ? '✓ Updated' : recalcLoading ? '⟳ Updating...' : '⟳ Update Macros'}
+          {recalcDone ? '✓ Updated' : recalcLoading ? '⟳ Updating...' : '⟳ Recalculate Macros'}
         </button>
         <button
           onClick={async () => {
@@ -545,7 +545,15 @@ export default function Diet() {
                       />
                     )}
                     <div
-                      className={`rounded-xl p-4 mb-2 ${snack ? 'bg-orange-900/10 border border-orange-800/40' : 'bg-gray-900 border border-gray-800'} ${dragIndex === i ? 'opacity-50' : ''}`}
+                      className={`rounded-xl p-4 mb-2 transition-opacity ${
+                        isMealEaten(i)
+                          ? 'bg-gray-900/50 border border-gray-800/50 opacity-50'
+                          : i === activeMealIndex
+                            ? 'bg-brand-950/30 border border-brand-600/60'
+                            : snack
+                              ? 'bg-orange-900/10 border border-orange-800/40'
+                              : 'bg-gray-900 border border-gray-800'
+                      } ${dragIndex === i ? 'opacity-30' : ''}`}
                       draggable={snack ? true : undefined}
                       onDragStart={snack ? (e) => { setDragIndex(i); e.dataTransfer.effectAllowed = 'move' } : undefined}
                       onDragEnd={snack ? () => { setDragIndex(null); setDragOverIndex(null) } : undefined}
@@ -557,6 +565,11 @@ export default function Diet() {
                           )}
                           <span className="text-xs text-gray-600 font-mono">{meal.time}</span>
                           <h3 className="text-sm font-semibold text-gray-200">{meal.name}</h3>
+                          {i === activeMealIndex && !isMealEaten(i) && (
+                            <span className="text-xs bg-brand-600/20 text-brand-400 border border-brand-600/50 rounded-full px-2 py-0.5 leading-none font-semibold">
+                              Next
+                            </span>
+                          )}
                           {snack && (
                             <span className="text-xs bg-orange-900/30 text-orange-400 border border-orange-800/40 rounded-full px-2 py-0.5 leading-none">Snack</span>
                           )}
