@@ -374,14 +374,16 @@ const cultureFoods: Record<string, Record<string, TemplateFoodItem>> = {
   },
 }
 
-function getCultureFood(culturePref: string, key: string, pref: string, fallback: TemplateFoodItem): TemplateFoodItem {
+function getCultureFood(culturePref: string, key: string, pref: string, fallback: TemplateFoodItem, exclusions: string[] = []): TemplateFoodItem {
   if (culturePref === 'any') return fallback
   const culture = cultureFoods[culturePref]
   if (!culture) return fallback
   if (key === 'protein_main' && (pref === 'vegan' || pref === 'vegetarian')) {
-    return culture.plant_protein ?? fallback
+    const item = culture.plant_protein ?? fallback
+    return isExcluded(item.id, exclusions) ? fallback : item
   }
-  return culture[key] ?? fallback
+  const item = culture[key] ?? fallback
+  return isExcluded(item.id, exclusions) ? fallback : item
 }
 
 function getMealTemplates(
@@ -408,7 +410,7 @@ function getMealTemplates(
             getFood('soy_protein',  exclusions, { id: 'soy_protein',  display: 'Soy Protein Shake', role: 'powder' }, preferences),
             getFood('banana',       exclusions, { id: 'banana',       display: 'Banana',            role: 'fruit' },  preferences),
             getCultureFood(culturePref, 'fat', p,
-              getFood('almond_butter', exclusions, { id: 'almond_butter', display: 'Almond Butter', role: 'fat' }, preferences)
+              getFood('almond_butter', exclusions, { id: 'almond_butter', display: 'Almond Butter', role: 'fat' }, preferences), exclusions
             ),
           ]
         }
@@ -416,7 +418,7 @@ function getMealTemplates(
           return [
             getFood('oats', exclusions, { id: 'oats', display: 'Oats', role: 'carb', unitSuffix: 'dry' }, preferences),
             getCultureFood(culturePref, 'dairy', p,
-              getFood('greek_yogurt', exclusions, { id: 'greek_yogurt', display: 'Greek Yogurt', role: 'protein' }, preferences)
+              getFood('greek_yogurt', exclusions, { id: 'greek_yogurt', display: 'Greek Yogurt', role: 'protein' }, preferences), exclusions
             ),
             getFood('banana',  exclusions, { id: 'banana',  display: 'Banana',  role: 'fruit' }, preferences),
             getFood('almonds', exclusions, { id: 'almonds', display: 'Almonds', role: 'fat' },   preferences),
@@ -467,31 +469,31 @@ function getMealTemplates(
         if (p === 'vegan') {
           return [
             getCultureFood(culturePref, 'plant_protein', p,
-              getFood('tempeh', exclusions, { id: 'tempeh', display: 'Tempeh', role: 'protein' }, preferences)
+              getFood('tempeh', exclusions, { id: 'tempeh', display: 'Tempeh', role: 'protein' }, preferences), exclusions
             ),
             getCultureFood(culturePref, 'carb_main', p,
-              getFood('sweet_potato', exclusions, { id: 'sweet_potato', display: 'Sweet Potato', role: 'carb' }, preferences)
+              getFood('sweet_potato', exclusions, { id: 'sweet_potato', display: 'Sweet Potato', role: 'carb' }, preferences), exclusions
             ),
             getCultureFood(culturePref, 'veg', p,
-              getFood('spinach', exclusions, { id: 'spinach', display: 'Spinach', role: 'veg' }, preferences)
+              getFood('spinach', exclusions, { id: 'spinach', display: 'Spinach', role: 'veg' }, preferences), exclusions
             ),
             getCultureFood(culturePref, 'fat', p,
-              getFood('avocado', exclusions, { id: 'avocado', display: 'Avocado', role: 'fat' }, preferences)
+              getFood('avocado', exclusions, { id: 'avocado', display: 'Avocado', role: 'fat' }, preferences), exclusions
             ),
           ]
         }
         return [
           getCultureFood(culturePref, 'protein_main', p,
-            getFood('chicken_breast', exclusions, { id: 'chicken_breast', display: 'Chicken Breast', role: 'protein' }, preferences)
+            getFood('chicken_breast', exclusions, { id: 'chicken_breast', display: 'Chicken Breast', role: 'protein' }, preferences), exclusions
           ),
           getCultureFood(culturePref, 'carb_main', p,
-            getFood('white_rice', exclusions, { id: 'white_rice', display: 'White Rice', role: 'carb', unitSuffix: 'cooked' }, preferences)
+            getFood('white_rice', exclusions, { id: 'white_rice', display: 'White Rice', role: 'carb', unitSuffix: 'cooked' }, preferences), exclusions
           ),
           getCultureFood(culturePref, 'veg', p,
-            getFood('broccoli', exclusions, { id: 'broccoli', display: 'Broccoli', role: 'veg' }, preferences)
+            getFood('broccoli', exclusions, { id: 'broccoli', display: 'Broccoli', role: 'veg' }, preferences), exclusions
           ),
           getCultureFood(culturePref, 'fat', p,
-            getFood('almonds', exclusions, { id: 'almonds', display: 'Almonds', role: 'fat' }, preferences)
+            getFood('almonds', exclusions, { id: 'almonds', display: 'Almonds', role: 'fat' }, preferences), exclusions
           ),
         ]
       }
@@ -543,36 +545,36 @@ function getMealTemplates(
           return [
             getFood('quinoa', exclusions, { id: 'quinoa', display: 'Quinoa', role: 'carb', unitSuffix: 'cooked' }, preferences),
             getCultureFood(culturePref, 'plant_protein', p,
-              getFood('black_beans', exclusions, { id: 'black_beans', display: 'Black Beans', role: 'protein' }, preferences)
+              getFood('black_beans', exclusions, { id: 'black_beans', display: 'Black Beans', role: 'protein' }, preferences), exclusions
             ),
             getFood('mixed_veg', exclusions, { id: 'mixed_veg', display: 'Roasted Vegetables', role: 'veg' }, preferences),
             getCultureFood(culturePref, 'fat', p,
-              getFood('walnuts', exclusions, { id: 'walnuts', display: 'Walnuts', role: 'fat' }, preferences)
+              getFood('walnuts', exclusions, { id: 'walnuts', display: 'Walnuts', role: 'fat' }, preferences), exclusions
             ),
           ]
         }
         if (p === 'vegetarian') {
           return [
             getCultureFood(culturePref, 'carb_alt', p,
-              getFood('pasta', exclusions, { id: 'pasta', display: 'Pasta', role: 'carb', unitSuffix: 'cooked' }, preferences)
+              getFood('pasta', exclusions, { id: 'pasta', display: 'Pasta', role: 'carb', unitSuffix: 'cooked' }, preferences), exclusions
             ),
             getCultureFood(culturePref, 'plant_protein', p,
-              getFood('ricotta', exclusions, { id: 'ricotta', display: 'Ricotta', role: 'protein' }, preferences)
+              getFood('ricotta', exclusions, { id: 'ricotta', display: 'Ricotta', role: 'protein' }, preferences), exclusions
             ),
             getCultureFood(culturePref, 'veg', p,
-              getFood('mixed_veg', exclusions, { id: 'mixed_veg', display: 'Vegetables', role: 'veg' }, preferences)
+              getFood('mixed_veg', exclusions, { id: 'mixed_veg', display: 'Vegetables', role: 'veg' }, preferences), exclusions
             ),
           ]
         }
         return [
           getCultureFood(culturePref, 'carb_main', p,
-            getFood('white_rice', exclusions, { id: 'white_rice', display: 'White Rice', role: 'carb', unitSuffix: 'cooked' }, preferences)
+            getFood('white_rice', exclusions, { id: 'white_rice', display: 'White Rice', role: 'carb', unitSuffix: 'cooked' }, preferences), exclusions
           ),
           getCultureFood(culturePref, 'protein_main', p,
-            getFood('salmon', exclusions, { id: 'salmon', display: 'Salmon Fillet', role: 'protein' }, preferences)
+            getFood('salmon', exclusions, { id: 'salmon', display: 'Salmon Fillet', role: 'protein' }, preferences), exclusions
           ),
           getCultureFood(culturePref, 'veg', p,
-            getFood('asparagus', exclusions, { id: 'asparagus', display: 'Asparagus', role: 'veg' }, preferences)
+            getFood('asparagus', exclusions, { id: 'asparagus', display: 'Asparagus', role: 'veg' }, preferences), exclusions
           ),
         ]
       }

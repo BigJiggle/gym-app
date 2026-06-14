@@ -304,6 +304,8 @@ export const FOOD_SUBSTITUTES: Record<string, FoodSubstituteTuple[]> = {
   sauerkraut:         [['kimchi','Kimchi (100g)'],['mixed_veg','Mixed Veg (100g)']],
   kimchi:             [['sauerkraut','Sauerkraut (100g)'],['mixed_veg','Mixed Veg (100g)']],
   onion:              [['bell_pepper','Bell Pepper (100g)'],['tomato','Tomato (100g)']],
+  // Indian / lentil
+  dal:                [['lentils','Lentils (200g cooked)'],['black_beans','Black Beans (200g cooked)'],['chickpeas','Chickpeas (200g cooked)']],
 }
 
 // ─────────────────────────────────────────────
@@ -396,7 +398,7 @@ export const FOOD_CATEGORY: Record<string, 'protein' | 'carb' | 'fat' | 'veg'> =
   // CULTURE-SPECIFIC / REGIONAL DISHES — selectable via the food picker
   // (exclusions/preferences in src/data/foods.ts) but not used as template
   // food ids. Categories let getFood() apply preference substitution to them.
-  chicken_tinga:'protein', carne_asada:'protein', dal_red:'protein',
+  chicken_tinga:'protein', carne_asada:'protein', dal:'protein', dal_red:'protein',
   paneer:'protein', chicken_tikka:'protein', chana_chickpeas:'protein',
   falafel:'protein', halloumi:'protein', miso_paste:'protein',
   egusi_soup:'protein', tilapia_grilled:'protein', black_eyed_peas:'protein',
@@ -579,6 +581,45 @@ export const FOOD_CALORIES_PER_100G: Record<string, number> = {
   // Cheese / dairy fat
   mozzarella: 280, cheddar: 403, parmesan: 431, feta: 264,
   swiss_cheese: 380, goat_cheese: 364, cream_cheese: 342,
+  // Additional dairy fats / condiments
+  sour_cream: 198, heavy_cream: 340, coconut_cream: 330, whole_milk: 61,
+  dark_chocolate: 598,
+  // Additional nuts (all serve as fat-slot foods at ≤30g portions)
+  macadamia_nuts: 718, hazelnut: 628, pecan: 691, pistachio: 562,
+  brazil_nut: 659, pine_nuts: 673,
+  cashew_butter: 587, hazelnut_butter: 640,
+  // Condiment fats
+  sesame_oil: 884, hummus: 177,
+  // Culture proteins — Mexican
+  chicken_tinga: 140, cotija_cheese: 360, chana_chickpeas: 164, falafel: 333,
+  // Culture proteins — Indian
+  dal_red: 116, miso_paste: 199,
+  // Culture proteins — West African
+  egusi_soup: 180, tilapia_grilled: 130, black_eyed_peas: 116,
+  // Culture proteins — Japanese / Korean / Middle Eastern
+  salmon_sashimi: 179, miso_soup: 35, yakitori_chicken: 165,
+  bulgogi: 190, korean_tofu: 80,
+  labneh: 190, lentil_soup_me: 70,
+  // Culture carbs
+  whole_wheat_roti: 264, pita_ww: 266, soba_noodles: 99,
+  jollof_rice: 150, plantain: 116, bibimbap_base: 130,
+  // Fruits used as carb substitutes
+  grapefruit: 42,
+  // Dairy milks (kcal per 100ml)
+  milk_skim: 34,
+  // Processed / snack proteins
+  beyond_burger: 249, nutritional_yeast: 325,
+  quest_bar: 310, protein_bar_generic: 340,
+  // Pork products (excluded for most users; entries prevent 100g fallback if selected as pref)
+  pork: 242, bacon: 541, ham: 145, sausage: 301,
+  // Fast food / processed (entries prevent 100g fallback)
+  hot_dog: 290, chicken_nuggets: 296, chipotle_chicken_bowl: 140,
+  subway_6in_turkey: 145, mcdonalds_grilled_chicken_sandwich: 155,
+  breakfast_burrito: 200,
+  // Snack carbs with non-trivial calorie density
+  white_bread: 265, bagel: 250, english_muffin: 220,
+  crackers: 430, pretzels: 380, popcorn: 375, granola: 471,
+  pizza_slice_cheese: 266, protein_chips: 390,
 }
 
 // ─────────────────────────────────────────────
