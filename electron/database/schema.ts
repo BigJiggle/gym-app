@@ -266,5 +266,9 @@ export const MIGRATIONS: { version: number; sql: string }[] = [
   {
     version: 12,
     sql: `ALTER TABLE diet_plans ADD COLUMN engine_version INTEGER NOT NULL DEFAULT 1`
+  },
+  {
+    version: 13,
+    sql: `UPDATE diet_plans SET engine_version=0 WHERE 1=1`
   }
 ]

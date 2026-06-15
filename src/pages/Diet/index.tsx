@@ -217,26 +217,6 @@ export default function Diet() {
     return todayCompletions.some((c) => c.meal_index === mealIndex)
   }
 
-  // First uncompleted meal for today — the one the athlete should eat next.
-  // Based on current time: prefer overdue meals (time already passed) first,
-  // then fall back to the next upcoming meal.
-  const activeMealIndex: number | null = (() => {
-    if (!dietPlan.meals?.length) return null
-    const now = new Date()
-    const nowMinutes = now.getHours() * 60 + now.getMinutes()
-    const uncompletedWithTime = dietPlan.meals
-      .map((meal, i) => {
-        const [h, m] = meal.time.split(':').map(Number)
-        return { i, minutes: h * 60 + m }
-      })
-      .filter(({ i }) => !isMealEaten(i))
-    if (uncompletedWithTime.length === 0) return null
-    const overdue = uncompletedWithTime.filter(({ minutes }) => minutes <= nowMinutes)
-    return overdue.length > 0
-      ? overdue[overdue.length - 1].i
-      : uncompletedWithTime[0].i
-  })()
-
   function toggleMealEaten(mealIndex: number, mealName: string) {
     if (!user) return
     if (isMealEaten(mealIndex)) {

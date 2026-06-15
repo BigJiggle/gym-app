@@ -564,6 +564,9 @@ function getMealTemplates(
             getCultureFood(culturePref, 'veg', p,
               getFood('mixed_veg', exclusions, { id: 'mixed_veg', display: 'Vegetables', role: 'veg' }, preferences), exclusions
             ),
+            getCultureFood(culturePref, 'fat', p,
+              getFood('olive_oil', exclusions, { id: 'olive_oil', display: 'Olive Oil', role: 'fat', fixedLabel: 'Olive Oil (15g)' }, preferences)
+            ),
           ]
         }
         return [
@@ -575,6 +578,9 @@ function getMealTemplates(
           ),
           getCultureFood(culturePref, 'veg', p,
             getFood('asparagus', exclusions, { id: 'asparagus', display: 'Asparagus', role: 'veg' }, preferences), exclusions
+          ),
+          getCultureFood(culturePref, 'fat', p,
+            getFood('olive_oil', exclusions, { id: 'olive_oil', display: 'Olive Oil', role: 'fat', fixedLabel: 'Olive Oil (15g)' }, preferences)
           ),
         ]
       }

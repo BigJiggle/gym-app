@@ -72,7 +72,7 @@ export function regenerateDietForGoal(
   ).run([
     userId, planLabel,
     newDiet.calories_target, newDiet.protein_g, newDiet.carbs_g, newDiet.fat_g,
-    newDiet.meal_count, JSON.stringify(newDiet.meals), newDiet.phase, weeksOut ?? null, 2,
+    newDiet.meal_count, JSON.stringify(newDiet.meals), newDiet.phase, weeksOut ?? null, 3,
   ])
 }
 
@@ -284,10 +284,13 @@ export function registerShowHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle('shows:setPrimary', (_event, showId: number, userId: number) => {
     const db = getDb()
+    const show = db.prepare('SELECT * FROM shows WHERE id=?').get([showId]) as Record<string, unknown> | null
+    if (!show) throw new Error('Show not found')
+    const today = new Date().toLocaleDateString('en-CA')
+    if ((show.show_date as string) < today) throw new Error('Cannot set a past show as primary')
     db.prepare('UPDATE shows SET is_primary=0 WHERE user_id=?').run([userId])
     db.prepare('UPDATE shows SET is_primary=1 WHERE id=?').run([showId])
-    const show = db.prepare('SELECT * FROM shows WHERE id=?').get([showId]) as Record<string, unknown>
-    db.prepare('UPDATE users SET show_date=?, division=? WHERE id=?').run([show.show_date as string, (show.division as string | null) ?? null, userId])
+    db.prepare('UPDATE users SET show_date=?, division=? WHERE id=?').run([show.show_date, show.division ?? null, userId])
     return db.prepare('SELECT * FROM shows WHERE user_id=? ORDER BY show_date ASC').all([userId])
   })
 }
