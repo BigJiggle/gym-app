@@ -790,8 +790,23 @@ export default function Diet() {
                   const weeklyChange = Math.abs(dailyDelta) * 7 / (isImperial ? 3500 : 7700)
                   const isDeficit = dailyDelta < 0
                   const isSurplus = dailyDelta > 0
+
+                  const avgDailyProtein = Math.round(weekProtein / pastDays.length)
+                  const proteinTarget = dietPlan.protein_g
+                  const proteinPctAvg = proteinTarget > 0 ? Math.round((avgDailyProtein / proteinTarget) * 100) : 0
+                  // Protein streak: consecutive days ending today where logged protein >= 90% of target
+                  let proStreak = 0
+                  for (let i = pastDays.length - 1; i >= 0; i--) {
+                    const { dateStr } = pastDays[i]
+                    const dayProtein = (dietPlan.meals ?? []).reduce((sum, m, idx) =>
+                      sum + (mealCompletions.some(c => c.date === dateStr && c.meal_index === idx) ? m.protein_g : 0), 0
+                    )
+                    if (dayProtein >= proteinTarget * 0.9) proStreak++
+                    else break
+                  }
+
                   return (
-                    <div className="pt-2 border-t border-gray-800">
+                    <div className="pt-2 border-t border-gray-800 space-y-2">
                       <div className="flex items-center justify-between text-xs">
                         <span className="text-gray-500">Avg daily calories</span>
                         <div className="text-right">
@@ -803,6 +818,19 @@ export default function Diet() {
                               ({isDeficit ? '−' : '+'}{Math.abs(dailyDelta)} kcal → ~{weeklyChange.toFixed(1)} {isImperial ? 'lbs' : 'kg'}/wk)
                             </span>
                           )}
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-gray-500">Avg daily protein</span>
+                        <div className="flex items-center gap-2">
+                          {proStreak >= 2 && (
+                            <span className="bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded text-[10px] font-semibold">
+                              {proStreak}d streak
+                            </span>
+                          )}
+                          <span className={proteinPctAvg >= 90 ? 'text-green-400' : proteinPctAvg >= 75 ? 'text-amber-400' : 'text-red-400'}>
+                            {avgDailyProtein}g / {proteinTarget}g ({proteinPctAvg}%)
+                          </span>
                         </div>
                       </div>
                     </div>
