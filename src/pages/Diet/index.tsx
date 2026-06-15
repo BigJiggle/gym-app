@@ -703,6 +703,7 @@ export default function Diet() {
           {/* Weekly macro totals — calories, protein, carbs, and fat hit across all logged days this week */}
           {totalMeals > 0 && (() => {
             const pastDays = weekDays.filter(d => d.dateStr <= todayStr)
+            const daysWithMeals = pastDays.filter(({ dateStr }) => mealCompletions.some(c => c.date === dateStr)).length
             const weekCals = pastDays.reduce((acc, { dateStr }) =>
               acc + (dietPlan.meals ?? []).reduce((sum, m, idx) =>
                 sum + (mealCompletions.some(c => c.date === dateStr && c.meal_index === idx) ? m.calories : 0), 0
@@ -735,7 +736,7 @@ export default function Diet() {
               <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-semibold text-gray-200">Weekly Macro Totals</p>
-                  <span className="text-xs text-gray-500">{pastDays.length} day{pastDays.length !== 1 ? 's' : ''} logged</span>
+                  <span className="text-xs text-gray-500">{daysWithMeals}/{pastDays.length} day{pastDays.length !== 1 ? 's' : ''} fed</span>
                 </div>
                 <div>
                   <div className="flex justify-between text-xs mb-1.5">

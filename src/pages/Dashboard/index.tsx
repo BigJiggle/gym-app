@@ -481,7 +481,7 @@ export default function Dashboard() {
                 }`}>
                   {weeklyRateDisplay > 0 ? '+' : ''}{weeklyRateDisplay} {wUnit}/wk
                 </p>
-                <p className="text-xs text-gray-600 mt-0.5">avg last {Math.min(checkinHistory.length, 4)} check-ins · tap for full chart</p>
+                <p className="text-xs text-gray-600 mt-0.5">avg last {Math.min(checkinHistory.length, 4)} check-ins · click for full chart</p>
               </div>
               <span className={`text-xs font-medium px-3 py-1.5 rounded-full border ${STATUS_COLOR[status]}`}>
                 {STATUS_LABEL[status]}
