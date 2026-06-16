@@ -1,4 +1,4 @@
-# App Health Report — 2026-06-16
+# App Health Report — 2026-06-16 (run 2)
 
 ## Phase 1: QA Engineer
 - TypeScript: PASS (0 errors)
@@ -23,7 +23,20 @@
 
 ---
 
-## Phase 2: Prep Athlete Feature
+## Phase 2: Prep Athlete Feature (run 2)
+**Feature added:** Projected show-day weight on Dashboard Prep Pace card
+
+**Why this matters:** A 12-weeks-out athlete checks their current weekly rate daily and needs to know immediately where it puts them on show day — without opening the Progress page and scrolling to the Weight Trend card. This puts the projection right on the Dashboard alongside the weekly rate that drives it.
+
+**What was added** (`src/pages/Dashboard/index.tsx`):
+- Uses already-available `nearestShow.show_date` + `settings.target_weight_kg` — zero new API calls
+- Computes `projectedKg = currentWeightKg + weeklyRateKg × weeksToShow`
+- Shows `"Show day (12w): ~78.3 kg"` with color-coded delta vs target (green = ±0.5 kg on target, amber = off course)
+- Also fixed target range sign convention: cuts now show `-1.0–-0.3 kg/wk` (signed, matching the rate above) instead of unsigned `0.3–1.0 kg/wk`
+
+---
+
+## Phase 2: Prep Athlete Feature (run 1 — earlier this session)
 **Feature added:** Daily Posing Practice Tracker on Dashboard
 
 **Why this matters:** Contest prep athletes must practice posing daily — especially quarter turns and mandatory poses — yet the app had no way to log or track posing sessions. The Education page has a posing guide but nothing to record daily practice. This adds a Posing Practice card to the Dashboard, mirrors the existing Cardio Tracker pattern exactly, and requires zero new IPC calls (localStorage-only).
@@ -37,7 +50,22 @@
 
 ---
 
-## Phase 3: UX Reviewer
+## Phase 3: UX Reviewer (run 2)
+**2 surgical fixes applied:**
+
+### Fix 1: Projected show-day weight target range — signed sign convention (Dashboard)
+- **Before:** Prep Pace card showed "Target: 0.3–1.0 kg/wk" (unsigned) while the rate displayed above it was signed (e.g. "-0.5 kg/wk") — athletes on a cut would see negative rate vs positive target range and second-guess whether they were on track
+- **After:** Cuts now show `Target: -1.0–-0.3 kg/wk` and bulks show `Target: +0.2–+1.0 kg/wk`, matching sign convention of the displayed rate
+- **File:** `src/pages/Dashboard/index.tsx`
+
+### Fix 2: Misleading CTA in training history empty state (Training page)
+- **Before:** When History tab has no workouts, the button read "Start Today's Workout →" but `onClick` only called `setTab('plan')` — user tapping it expecting to start a workout would be confused
+- **After:** Renamed to "Go to My Plan →" which accurately describes the navigation action
+- **File:** `src/pages/Training/index.tsx`
+
+---
+
+## Phase 3: UX Reviewer (run 1 — earlier this session)
 **2 surgical fixes applied:**
 
 ### Fix 1: Live weight delta on check-in form (CheckIn page)
@@ -61,7 +89,8 @@
 | 2026-06-13 | — | Weekly Macro Totals card (week-to-date bars) | 2 label fixes |
 | 2026-06-14 | 3 | Next meal highlight on Diet page | Amber fill on Regenerate; brand-accent meal time |
 | 2026-06-15 | 0 | Avg daily protein + streak in Weekly Macro Totals | "X/Y days fed" counter; click vs tap |
-| 2026-06-16 | **0** | Daily Posing Practice Tracker on Dashboard | Weight delta on check-in form; target rate on Prep Pace card |
+| 2026-06-16 (r1) | **0** | Daily Posing Practice Tracker on Dashboard | Weight delta on check-in form; target rate on Prep Pace card |
+| 2026-06-16 (r2) | **0** | Projected show-day weight on Prep Pace card | Signed target range for cuts; misleading CTA in training history |
 
 ---
 
