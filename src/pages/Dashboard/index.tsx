@@ -513,6 +513,19 @@ export default function Dashboard() {
                   {weeklyRateDisplay > 0 ? '+' : ''}{weeklyRateDisplay} {wUnit}/wk
                 </p>
                 <p className="text-xs text-gray-600 mt-0.5">avg last {Math.min(checkinHistory.length, 4)} check-ins · click for full chart</p>
+                {(user.goal === 'cut' || user.goal === 'bulk') && (() => {
+                  const minKg = user.goal === 'cut' ? currentWeightKg * 0.003 : currentWeightKg * 0.002
+                  const maxKg = user.goal === 'cut' ? currentWeightKg * 0.012 : currentWeightKg * 0.010
+                  const fmt = (kg: number) => isImperial
+                    ? `${Math.round(kg * 2.20462 * 10) / 10}`
+                    : `${Math.round(kg * 10) / 10}`
+                  const prefix = user.goal === 'bulk' ? '+' : ''
+                  return (
+                    <p className="text-xs text-gray-700 mt-0.5">
+                      Target: {prefix}{fmt(minKg)}–{prefix}{fmt(maxKg)} {wUnit}/wk
+                    </p>
+                  )
+                })()}
               </div>
               <span className={`text-xs font-medium px-3 py-1.5 rounded-full border ${STATUS_COLOR[status]}`}>
                 {STATUS_LABEL[status]}

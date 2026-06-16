@@ -847,11 +847,30 @@ export default function CheckIn() {
             required
             className="w-36 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200"
           />
-          {latestCheckin && (
-            <p className="text-xs text-gray-600 mt-1.5">
-              Pre-filled from {checkinLabel(latestCheckin)} · {latestCheckin.check_in_date}
-            </p>
-          )}
+          {latestCheckin && (() => {
+            const currentKg = toKg(weightDisplay)
+            const deltaKg = currentKg !== null ? currentKg - latestCheckin.weight_kg : null
+            const deltaDisplay = deltaKg !== null
+              ? isImperial
+                ? `${deltaKg > 0 ? '+' : ''}${Math.round(deltaKg / 0.453592 * 10) / 10} lbs`
+                : `${deltaKg > 0 ? '+' : ''}${Math.round(deltaKg * 10) / 10} kg`
+              : null
+            const deltaColor = deltaKg === null || Math.abs(deltaKg) < 0.05
+              ? 'text-gray-500'
+              : deltaKg < 0 ? 'text-green-500' : 'text-amber-400'
+            return (
+              <div className="mt-1.5 space-y-0.5">
+                <p className="text-xs text-gray-600">
+                  Pre-filled from {checkinLabel(latestCheckin)} · {latestCheckin.check_in_date}
+                </p>
+                {deltaDisplay !== null && Math.abs(deltaKg!) >= 0.05 && (
+                  <p className={`text-xs font-medium ${deltaColor}`}>
+                    {deltaDisplay} from last check-in
+                  </p>
+                )}
+              </div>
+            )
+          })()}
         </Card>
 
         {/* Measurements */}
