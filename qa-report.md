@@ -1,4 +1,4 @@
-# App Health Report — 2026-06-15
+# App Health Report — 2026-06-16
 
 ## Phase 1: QA Engineer
 - TypeScript: PASS (0 errors)
@@ -24,31 +24,31 @@
 ---
 
 ## Phase 2: Prep Athlete Feature
-**Feature added:** Avg daily protein row in Weekly Macro Totals (Diet page)
+**Feature added:** Daily Posing Practice Tracker on Dashboard
 
-**Why this matters:** A competitive prep athlete's #1 daily metric is protein. The Weekly Macro Totals card already showed avg daily calories with a deficit/surplus projection, but protein — the key muscle-preservation lever — was absent from that daily average view. Weekly totals existed (e.g., "142g / 182g protein this week") but no per-day average or streak.
+**Why this matters:** Contest prep athletes must practice posing daily — especially quarter turns and mandatory poses — yet the app had no way to log or track posing sessions. The Education page has a posing guide but nothing to record daily practice. This adds a Posing Practice card to the Dashboard, mirrors the existing Cardio Tracker pattern exactly, and requires zero new IPC calls (localStorage-only).
 
-**What was added** (`src/pages/Diet/index.tsx`, inside the weekly totals IIFE at ~line 795):
-- `avgDailyProtein`: `weekProtein / pastDays.length` — daily average from logged days
-- `proteinPctAvg`: percentage of daily target hit on average
-- `proStreak`: consecutive days (most recent first) where logged protein ≥ 90% of target
-- New row below "Avg daily calories" showing `Xg / Yg (Z%)` in green/amber/red depending on % hit
-- Streak badge (shown when ≥ 2 days): `"Nd streak"` in amber, helps athletes maintain consistency
+**What was added** (`src/pages/Dashboard/index.tsx`):
+- `PosingEntry` interface: `{ date: string; focus: string; minutes: number }`
+- `posingLog` state persisted in `localStorage('posing_log')`
+- `savePosingLog`, `logPosing`, `removePosingToday`, `quickLogPosing` handlers
+- Posing Practice card with: today's logged session (focus + minutes), weekly session count + total minutes, one-tap presets (Full 15m, Full 20m, QT 15m, Mandatory 20m), custom duration entry, Edit/Remove for today's entry, "Log another posing session" when today is already logged
+- Posing focused on 6 categories: Full Routine, Quarter Turns, Front Double, Side Poses, Symmetry Round, Mandatory Poses
 
 ---
 
 ## Phase 3: UX Reviewer
 **2 surgical fixes applied:**
 
-### Fix 1: Misleading "X days logged" counter (Diet page)
-- **Before:** `{pastDays.length} days logged` — counted elapsed weekdays (Mon–today), so Wednesday showed "3 days logged" even with zero meals eaten
-- **After:** `{daysWithMeals}/{pastDays.length} days fed` — shows actual days with ≥1 logged meal over elapsed days
-- **File:** `src/pages/Diet/index.tsx` line 739
+### Fix 1: Live weight delta on check-in form (CheckIn page)
+- **Before:** Weight field showed "Pre-filled from Week N · date" with no context on progress
+- **After:** Adds a live delta line below weight input (e.g. "−0.5 kg from last check-in" in green, "+0.3 kg from last check-in" in amber) that updates as the athlete types. Hidden when change < 50g to avoid noise from decimal rounding.
+- **File:** `src/pages/CheckIn/index.tsx`
 
-### Fix 2: Mobile language in desktop app (Dashboard)
-- **Before:** `"avg last N check-ins · tap for full chart"` — "tap" is a touchscreen affordance
-- **After:** `"avg last N check-ins · click for full chart"` — correct for Electron desktop
-- **File:** `src/pages/Dashboard/index.tsx` line 484
+### Fix 2: Target rate range on Prep Pace card (Dashboard)
+- **Before:** Prep Pace showed rate + status badge (On Track / Too Slow / etc.) but not what the target range IS, requiring navigation to Progress to understand
+- **After:** Adds "Target: 0.3–0.9 kg/wk" (cut) or "Target: +0.2–0.9 kg/wk" (bulk) below the avg check-ins line, computed from 0.3–1.2% of bodyweight per week per evidence-based cut protocol
+- **File:** `src/pages/Dashboard/index.tsx`
 
 ---
 
@@ -60,7 +60,8 @@
 | 2026-06-13 | 0 | Per-day cal+protein totals in Weekly Meal View | Clearer loading states |
 | 2026-06-13 | — | Weekly Macro Totals card (week-to-date bars) | 2 label fixes |
 | 2026-06-14 | 3 | Next meal highlight on Diet page | Amber fill on Regenerate; brand-accent meal time |
-| 2026-06-15 | **0** | Avg daily protein + streak in Weekly Macro Totals | "X/Y days fed" counter; click vs tap |
+| 2026-06-15 | 0 | Avg daily protein + streak in Weekly Macro Totals | "X/Y days fed" counter; click vs tap |
+| 2026-06-16 | **0** | Daily Posing Practice Tracker on Dashboard | Weight delta on check-in form; target rate on Prep Pace card |
 
 ---
 
