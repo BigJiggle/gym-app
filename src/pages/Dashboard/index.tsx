@@ -519,11 +519,37 @@ export default function Dashboard() {
                   const fmt = (kg: number) => isImperial
                     ? `${Math.round(kg * 2.20462 * 10) / 10}`
                     : `${Math.round(kg * 10) / 10}`
-                  const prefix = user.goal === 'bulk' ? '+' : ''
+                  const showDateStr = nearestShow?.show_date
+                  const weeksToShow = showDateStr
+                    ? Math.max(0, (new Date(showDateStr + 'T12:00:00').getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 7))
+                    : null
+                  const projectedKg = weeksToShow !== null ? currentWeightKg + weeklyRateKg * weeksToShow : null
+                  const targetKg = settings.target_weight_kg ? parseFloat(settings.target_weight_kg as string) : null
                   return (
-                    <p className="text-xs text-gray-700 mt-0.5">
-                      Target: {prefix}{fmt(minKg)}–{prefix}{fmt(maxKg)} {wUnit}/wk
-                    </p>
+                    <>
+                      <p className="text-xs text-gray-700 mt-0.5">
+                        Target: {user.goal === 'cut' ? `-${fmt(maxKg)}–-${fmt(minKg)}` : `+${fmt(minKg)}–+${fmt(maxKg)}`} {wUnit}/wk
+                      </p>
+                      {projectedKg !== null && weeksToShow !== null && weeksToShow > 0 && (
+                        <p className="text-xs mt-1">
+                          <span className="text-gray-500">Show day ({Math.round(weeksToShow)}w): </span>
+                          <span className="font-semibold text-gray-300">~{fmt(projectedKg)} {wUnit}</span>
+                          {targetKg !== null && (
+                            <span className={`ml-1.5 font-medium ${
+                              Math.abs(projectedKg - targetKg) < 0.5
+                                ? 'text-green-400'
+                                : (user.goal === 'cut' ? projectedKg > targetKg : projectedKg < targetKg)
+                                  ? 'text-amber-400'
+                                  : 'text-green-400'
+                            }`}>
+                              {Math.abs(projectedKg - targetKg) < 0.5
+                                ? '✓ on target'
+                                : `(${fmt(Math.abs(projectedKg - targetKg))} ${wUnit} ${user.goal === 'cut' ? (projectedKg > targetKg ? 'above' : 'below') : (projectedKg < targetKg ? 'below' : 'above')} target)`}
+                            </span>
+                          )}
+                        </p>
+                      )}
+                    </>
                   )
                 })()}
               </div>
