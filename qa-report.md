@@ -1,3 +1,65 @@
+# App Health Report — 2026-06-17 (run 2)
+
+## Phase 1: QA Engineer
+- TypeScript: PASS (0 errors)
+- Unit tests: PASS (86 tests, 6 test files)
+- Bugs fixed: **0** — codebase clean; all previous fixes holding
+
+### Nutrition Engine Audit
+- calcPortionStr logic: OK — MEAL_CAL_FRACTIONS (protein 0.45, carb 0.35, fat 0.15), ROLE_FIXED_G (veg 120g, fruit 100g, powder 30g), ROLE_MIN/MAX_G clamps all sensible.
+- Template TemplateFoodItems: OK — all 9 meal templates pass valid `{ id, display, role, unitSuffix?, fixedLabel? }` objects.
+- getCultureFood coverage: OK — all 8 cultures define protein_main, carb_main, veg, fat, dairy, plant_protein; exclusion logic confirmed intact.
+- FOOD_CALORIES_PER_100G coverage: OK — all food IDs in culture profiles and templates have calorie entries.
+- Macro math: OK — protein = weight_kg × 2.3g, fat = weight_kg × 0.9g, carbs fill remainder; resolvedSnackCount correctly falls back to include_snacks.
+
+### User Flow Audit (all 7 flows traced through source)
+- Onboarding → plan gen: OK
+- Diet page portions: OK
+- Meal completion: OK
+- Check-in → recalc: OK
+- Settings → regen: OK
+- Training plan generation: OK
+- Progress tracking: OK
+
+---
+
+## Phase 2: Prep Athlete Feature
+**Feature added:** Quick progressive overload buttons in WorkoutSession
+
+**Why this matters:** A prep athlete in a caloric deficit trains 4–6 days/week with depleted energy. When setting their working weight for each exercise, they currently see "Last: 80kg × 8" and must manually calculate and retype the new value (e.g. 82.5 for a small PR). One-tap `−2.5 / Same / +2.5` buttons (or `−5 / Same / +5` lbs in imperial) eliminate that arithmetic entirely — saving cognitive load at the moment it costs most.
+
+**What was added** (`src/pages/Training/WorkoutSession.tsx`):
+- Below the "Last: X kg × Y" display on each `ExerciseCard`, a row of 3 buttons appears whenever `lastPerf` exists and at least one set is still undone
+- Buttons: `−step`, `Same`, `+step` where step = 2.5 kg / 5 lbs (matches the existing `weightStep` constant)
+- Tapping any button calls `onSetUpdate(i, 'weight', target)` for every undone set — applies the chosen load to the whole exercise at once
+- Uses `Math.max(0, ...)` to prevent negative weights
+- Color-coded: green for increase, neutral for Same, dim red for decrease
+- Hidden once all sets are marked done (no-op after exercise is complete)
+- Zero new IPC calls or schema changes
+
+---
+
+## Phase 3: UX Reviewer
+**2 surgical fixes applied:**
+
+### Fix 1: "View Progress →" link on CheckIn success screen
+- **Before:** After submitting a weekly check-in, the success screen showed coach feedback + a single "Done" button. The natural next step — seeing the updated weight chart — required navigating manually.
+- **After:** Added a "View Progress →" primary button alongside "Done" that navigates directly to `/progress`.
+- **File:** `src/pages/CheckIn/index.tsx`
+
+### Fix 2: Live set count in WorkoutSession bottom bar
+- **Before:** Bottom bar showed "X/Y exercises done" — no indication of total sets logged while mid-workout.
+- **After:** Now shows "X/Y exercises · N sets" when at least one set is logged, giving a quick volume reference without scrolling.
+- **File:** `src/pages/Training/WorkoutSession.tsx`
+
+---
+
+| Date | QA bugs | Feature | UX fixes |
+|------|---------|---------|----------|
+| 2026-06-17 (r2) | **0** | Progressive overload buttons in WorkoutSession | View Progress link on check-in success; live set count in session bar |
+
+---
+
 # App Health Report — 2026-06-17
 
 ## Phase 1: QA Engineer
@@ -145,7 +207,8 @@
 | 2026-06-15 | 0 | Avg daily protein + streak in Weekly Macro Totals | "X/Y days fed" counter; click vs tap |
 | 2026-06-16 (r1) | **0** | Daily Posing Practice Tracker on Dashboard | Weight delta on check-in form; target rate on Prep Pace card |
 | 2026-06-16 (r2) | **0** | Projected show-day weight on Prep Pace card | Signed target range for cuts; misleading CTA in training history |
-| 2026-06-17 | **0** | Per-set RIR logging in workout session | "tap" → "click" on Progress; clarify recalculate button subtitle |
+| 2026-06-17 (r1) | **0** | Per-set RIR logging in workout session | "tap" → "click" on Progress; clarify recalculate button subtitle |
+| 2026-06-17 (r2) | **0** | Progressive overload buttons in WorkoutSession | View Progress link on check-in success; live set count in session bar |
 
 ---
 
