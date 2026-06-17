@@ -1,3 +1,57 @@
+# App Health Report — 2026-06-17
+
+## Phase 1: QA Engineer
+- TypeScript: PASS (0 errors)
+- Unit tests: PASS (86 tests, 6 test files)
+- Bugs fixed: **0** — codebase clean; all previous fixes holding
+
+### Nutrition Engine Audit
+- calcPortionStr logic: OK — MEAL_CAL_FRACTIONS (protein 0.45, carb 0.35, fat 0.15), ROLE_FIXED_G (veg 120g, fruit 100g, powder 30g), ROLE_MIN/MAX_G clamps all sensible.
+- Template TemplateFoodItems: OK — all 9 meal templates pass valid `{ id, display, role, unitSuffix?, fixedLabel? }` objects to every `getFood()` call.
+- getCultureFood coverage: OK — all 8 cultures define protein_main, carb_main, veg, fat, dairy, plant_protein; exclusion logic confirmed intact.
+- FOOD_CALORIES_PER_100G coverage: OK — all food IDs in culture profiles and templates have calorie entries.
+- Macro math: OK — protein = weight_kg × 2.3g, fat = weight_kg × 0.9g, carbs fill remainder; resolvedSnackCount correctly falls back to include_snacks.
+
+### User Flow Audit
+- Onboarding → plan gen: OK
+- Diet page portions: OK
+- Meal completion: OK
+- Check-in → recalc: OK
+- Settings → regen: OK
+- Training plan generation: OK
+- Progress tracking: OK
+
+---
+
+## Phase 2: Prep Athlete Feature
+**Feature added:** Per-set RIR (Reps In Reserve) logging during workout sessions
+
+**Why this matters:** A prep athlete 12 weeks out uses RIR to manage fatigue load across the week. The program already shows prescribed RIR (e.g. "3 × 8-12 @ RIR 2") and the DB stores `rir_actual` per set — but there was no UI to record what RIR the athlete actually achieved. Without this, the athlete can't distinguish a hard week (RIR 0–1) from a recovery week (RIR 3+) in their log history or stats.
+
+**What was added** (`src/pages/Training/WorkoutSession.tsx`):
+- Added a number input (0–5, labeled "RIR") per set row in `ExerciseCard`, placed between the weight unit label and the done button
+- Defaults to the session's programmed RIR (`exercise.rir`), so the common case (athlete hit prescribed RIR) requires no extra input
+- Clamped 0–5 via `Math.max(0, Math.min(5, ...))` to prevent invalid values
+- Disabled once the set is marked done (consistent with reps/weight fields)
+- Persists to `exercise_logs.rir_actual` on workout completion via the existing `handleComplete` batch-save path — no new IPC calls or schema changes needed
+
+---
+
+## Phase 3: UX Reviewer
+**2 surgical fixes applied:**
+
+### Fix 1: "tap" → "click" on Progress page Stage Weight Goal (Progress page)
+- **Before:** Empty state for Stage Weight Goal read "Not set — tap 'Set goal' to track your target stage weight" — "tap" is touch-screen UX language in a desktop Electron app
+- **After:** Changed to "click" to match the pointer/mouse interaction model
+- **File:** `src/pages/Progress/index.tsx`
+
+### Fix 2: Clarified "Recalculate Macros" button subtitle (Diet page)
+- **Before:** Below the Recalculate / Regenerate buttons, the note read "⟳ adjusts calorie targets only" — misleading because recalculate updates ALL macro targets (protein, carbs, fat, calories) proportionally from the latest check-in weight
+- **After:** Changed to "⟳ adjusts macro targets" — accurate and more informative
+- **File:** `src/pages/Diet/index.tsx`
+
+---
+
 # App Health Report — 2026-06-16 (run 2)
 
 ## Phase 1: QA Engineer
@@ -91,6 +145,7 @@
 | 2026-06-15 | 0 | Avg daily protein + streak in Weekly Macro Totals | "X/Y days fed" counter; click vs tap |
 | 2026-06-16 (r1) | **0** | Daily Posing Practice Tracker on Dashboard | Weight delta on check-in form; target rate on Prep Pace card |
 | 2026-06-16 (r2) | **0** | Projected show-day weight on Prep Pace card | Signed target range for cuts; misleading CTA in training history |
+| 2026-06-17 | **0** | Per-set RIR logging in workout session | "tap" → "click" on Progress; clarify recalculate button subtitle |
 
 ---
 
