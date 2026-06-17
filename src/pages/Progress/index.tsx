@@ -318,7 +318,7 @@ export default function Progress() {
                 )}
               </div>
             ) : (
-              <p className="text-sm text-gray-600 mt-1">Not set — tap "Set goal" to track your target stage weight</p>
+              <p className="text-sm text-gray-600 mt-1">Not set — click "Set goal" to track your target stage weight</p>
             )}
           </div>
           {user.goal === 'cut' && weeklyRateKg !== null && (
