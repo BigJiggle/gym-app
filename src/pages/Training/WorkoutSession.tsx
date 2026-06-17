@@ -88,6 +88,30 @@ function ExerciseCard({ exercise, state, isImperial, lastPerf, pr, onSetUpdate, 
               PR: {pr.weight} {weightUnit} × {pr.reps}
             </p>
           )}
+          {lastPerf && !state.allSkipped && state.sets.some((s) => !s.done) && (
+            <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+              <span className="text-xs text-gray-700 mr-0.5">Load:</span>
+              {[-weightStep, 0, weightStep].map((delta) => {
+                const target = Math.max(0, Math.round((lastPerf.weight + delta) * 100) / 100)
+                const label = delta === 0 ? 'Same' : delta > 0 ? `+${delta}` : `${delta}`
+                return (
+                  <button
+                    key={delta}
+                    onClick={() => state.sets.forEach((s, i) => { if (!s.done) onSetUpdate(i, 'weight', target) })}
+                    className={`text-xs px-2 py-0.5 rounded-lg border transition-colors ${
+                      delta === 0
+                        ? 'border-gray-700 text-gray-500 hover:border-gray-500 hover:text-gray-300'
+                        : delta > 0
+                          ? 'border-green-800/60 text-green-600 hover:border-green-600 hover:text-green-400 hover:bg-green-900/20'
+                          : 'border-red-900/40 text-red-700 hover:border-red-700 hover:text-red-400 hover:bg-red-900/20'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
         {allSetsDone && <span className="text-xs text-green-400 font-medium">✓ Done</span>}
         {!state.allSkipped && !allSetsDone && (
@@ -501,7 +525,8 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
       <div className="border-t border-gray-800 bg-gray-900 px-4 py-3">
         <div className="flex items-center justify-between mb-3">
           <p className="text-sm text-gray-400">
-            {doneCount}/{session.exercises.length} exercises done
+            {doneCount}/{session.exercises.length} exercises
+            {totalSetsLogged > 0 && <span className="text-gray-600"> · {totalSetsLogged} sets</span>}
           </p>
           <div className="w-32 h-1.5 bg-gray-800 rounded-full overflow-hidden">
             <div

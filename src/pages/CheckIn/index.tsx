@@ -740,17 +740,22 @@ export default function CheckIn() {
             </div>
           )}
         </div>
-        <Button onClick={async () => {
-          setSubmitted(null)
-          try {
-            const iso = await window.api.getNextCheckinDate(user!.id)
-            setNextAllowed(iso && new Date(iso) > new Date() ? new Date(iso) : null)
-          } catch {
-            setNextAllowed(null)
-          }
-        }} variant="secondary">
-          Done
-        </Button>
+        <div className="flex gap-3">
+          <Button onClick={async () => {
+            setSubmitted(null)
+            try {
+              const iso = await window.api.getNextCheckinDate(user!.id)
+              setNextAllowed(iso && new Date(iso) > new Date() ? new Date(iso) : null)
+            } catch {
+              setNextAllowed(null)
+            }
+          }} variant="secondary">
+            Done
+          </Button>
+          <Link to="/progress">
+            <Button variant="primary">View Progress →</Button>
+          </Link>
+        </div>
       </div>
     )
   }
