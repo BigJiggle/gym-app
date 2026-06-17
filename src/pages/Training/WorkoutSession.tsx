@@ -125,6 +125,16 @@ function ExerciseCard({ exercise, state, isImperial, lastPerf, pr, onSetUpdate, 
                 className="w-16 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-gray-200 text-center"
               />
               <span className="text-gray-600 text-xs">{weightUnit}</span>
+              <span className="text-gray-600 text-xs ml-1">RIR</span>
+              <input
+                type="number"
+                min={0}
+                max={5}
+                value={s.rir}
+                onChange={(e) => onSetUpdate(i, 'rir', Math.max(0, Math.min(5, Number(e.target.value))))}
+                disabled={s.done}
+                className="w-10 bg-gray-800 border border-gray-700 rounded-lg px-1 py-1 text-sm text-gray-200 text-center"
+              />
               <button
                 onClick={() => onSetDone(i)}
                 disabled={s.done}
