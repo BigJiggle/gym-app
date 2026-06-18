@@ -681,11 +681,19 @@ export default function Diet() {
                             )}
                             <span className={`text-xs font-mono ${i === activeMealIndex && !isMealEaten(i) ? 'text-brand-400 font-semibold' : 'text-gray-600'}`}>{meal.time}</span>
                             <h3 className="text-sm font-semibold text-gray-200">{meal.name}</h3>
-                            {i === activeMealIndex && !isMealEaten(i) && (
-                              <span className="text-xs bg-brand-600/20 text-brand-400 border border-brand-600/50 rounded-full px-2 py-0.5 leading-none font-semibold">
-                                Next
-                              </span>
-                            )}
+                            {i === activeMealIndex && !isMealEaten(i) && (() => {
+                              const [mh, mm] = meal.time.split(':').map(Number)
+                              const isPast = (mh * 60 + mm) <= (new Date().getHours() * 60 + new Date().getMinutes())
+                              return (
+                                <span className={`text-xs rounded-full px-2 py-0.5 leading-none font-semibold ${
+                                  isPast
+                                    ? 'bg-amber-900/20 text-amber-400 border border-amber-700/50'
+                                    : 'bg-brand-600/20 text-brand-400 border border-brand-600/50'
+                                }`}>
+                                  {isPast ? 'Due' : 'Next'}
+                                </span>
+                              )
+                            })()}
                             {snack && (
                               <span className="text-xs bg-orange-900/30 text-orange-400 border border-orange-800/40 rounded-full px-2 py-0.5 leading-none">Snack</span>
                             )}
@@ -721,6 +729,7 @@ export default function Diet() {
                         </button>
                         <button
                           onClick={() => toggleMealEaten(i, meal.name)}
+                          title={isMealEaten(i) ? 'Click to mark as not eaten' : undefined}
                           className={`text-sm font-medium rounded-lg px-3 py-1.5 transition-colors flex items-center gap-1 ${
                             isMealEaten(i)
                               ? 'bg-green-900/30 border border-green-800/50 text-green-400 hover:bg-red-900/20 hover:border-red-800/50 hover:text-red-400'
