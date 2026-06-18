@@ -1,4 +1,4 @@
-# App Health Report — 2026-06-18
+# App Health Report — 2026-06-18 (Run 2)
 
 ## Phase 1: QA Engineer
 - TypeScript: PASS (0 errors)
@@ -59,8 +59,47 @@
 
 ---
 
+---
+
+## Run 2 — 2026-06-18
+
+### Phase 1: QA Engineer
+- TypeScript: PASS (0 errors)
+- Unit tests: PASS (86 tests)
+- Bugs fixed: **0** — codebase still clean
+
+### Phase 2: Prep Athlete Feature
+**Feature added:** Daily Physique Condition Log on Dashboard
+
+**Why this matters:** Competitive prep athletes obsess over daily condition — "full" (glycogen topped up), "flat" (depleted), "watery" (sodium/water retention), "dry/vascular" (ready to step on stage). This reading changes day-to-day based on food, sodium, sleep, and training. Previously there was no way in the app to record this. Athletes want to correlate condition tags over a week to see patterns: "I'm always flat Tuesdays after HIIT" or "refeed Sundays make me full Monday". Without a log, these insights are lost.
+
+**What was added** (`src/pages/Dashboard/index.tsx`):
+- New "Daily Condition" card on Dashboard, positioned between Posing Practice and This Week's Volume
+- Quick-select tag buttons: Full, Flat, Dry, Watery, Tight, Vascular, Bloated, Smooth — each with sport-specific color coding (Full/Tight = green, Flat/Bloated = amber, Dry = blue, Vascular = red)
+- Multiple tags can be selected per day (e.g., "Full + Vascular" for a peak-week day)
+- Optional free-text note field (e.g., "great separation after last night's carb load")
+- 7-day history strip at the bottom — each day shows its primary condition tag so athletes can spot weekly patterns at a glance
+- Today's date is highlighted in brand color in the strip
+- Pure localStorage storage (`condition_log`), same pattern as cardio_log and posing_log — zero new IPC calls
+
+### Phase 3: UX Reviewer
+**2 surgical fixes applied:**
+
+#### Fix 1: Diet — "✓ Eaten" button now has undo hint
+- **Before:** When a meal was marked eaten, the button showed "✓ Eaten" and turned red on hover — but there was no tooltip or label explaining this was a toggle. Athletes who fat-fingered a meal had to guess whether clicking the green button would help or break something.
+- **After:** `title="Click to mark as not eaten"` added to the "✓ Eaten" state. Hover still turns red (danger signal), but now a native tooltip confirms the action on desktop.
+- **File:** `src/pages/Diet/index.tsx`
+
+#### Fix 2: Diet — Overdue meals now show "Due" badge instead of "Next"
+- **Before:** The active meal badge always read "Next" in brand blue, even if the scheduled meal time had already passed (e.g., it was 2pm and the 12pm meal was still not logged). This was misleading — "Next" implies something upcoming, not something already overdue.
+- **After:** Badge computes whether the meal's scheduled time has already passed. If past: amber "Due" badge. If upcoming: brand-blue "Next" badge. Prep athletes eating on a strict timed schedule now immediately see they are behind.
+- **File:** `src/pages/Diet/index.tsx`
+
+---
+
 | Date | QA bugs | Feature | UX fixes |
 |------|---------|---------|----------|
+| 2026-06-18 (r2) | **0** | Daily Physique Condition Log on Dashboard | "✓ Eaten" undo hint; "Due" vs "Next" badge for overdue meals |
 | 2026-06-18 | **0** | Meal Schedule Timeline on Diet page | Day names on completed session boxes; eaten-meal button opacity fix |
 | 2026-06-17 (r2) | **0** | Progressive overload buttons in WorkoutSession | View Progress link on check-in success; live set count in session bar |
 | 2026-06-17 | **0** | Per-set RIR (Reps in Reserve) logging | Two UX copy fixes |
