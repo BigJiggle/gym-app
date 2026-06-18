@@ -508,6 +508,120 @@ export default function Diet() {
             )
           })()}
 
+          {/* ── Meal Schedule Timeline ── */}
+          {totalMeals > 0 && dietPlan.meals && (() => {
+            const START_MIN = 5 * 60   // 5 am
+            const TOTAL_MINS = 17 * 60 // 5 am – 10 pm
+            const now = new Date()
+            const nowMinutes = now.getHours() * 60 + now.getMinutes()
+            const nowPct = Math.max(0, Math.min(100, ((nowMinutes - START_MIN) / TOTAL_MINS) * 100))
+
+            const missedMeals = (dietPlan.meals ?? []).filter((meal, i) => {
+              if (isMealEaten(i) || i === activeMealIndex) return false
+              const [h, m] = meal.time.split(':').map(Number)
+              return (h * 60 + m) < nowMinutes
+            })
+
+            const tickHours = [6, 9, 12, 15, 18, 21]
+            const tickLabels: Record<number, string> = { 6: '6am', 9: '9am', 12: '12pm', 15: '3pm', 18: '6pm', 21: '9pm' }
+
+            return (
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-semibold text-gray-200">Meal Schedule</p>
+                  {mealsEaten === totalMeals ? (
+                    <span className="text-xs text-green-400 font-medium">All meals done today</span>
+                  ) : activeMealIndex !== null ? (
+                    <span className="text-xs text-brand-400">
+                      Next: <span className="font-semibold">{dietPlan.meals[activeMealIndex].name}</span> at {dietPlan.meals[activeMealIndex].time}
+                    </span>
+                  ) : null}
+                </div>
+
+                {/* Timeline bar */}
+                <div className="relative h-6 mb-1">
+                  <div className="absolute inset-0 bg-gray-800 rounded-full" />
+                  {tickHours.map((hour) => {
+                    const pct = ((hour * 60 - START_MIN) / TOTAL_MINS) * 100
+                    return (
+                      <div key={hour} className="absolute top-0 bottom-0 w-px bg-gray-700/60" style={{ left: `${pct}%` }} />
+                    )
+                  })}
+                  {nowPct > 0 && nowPct < 100 && (
+                    <div
+                      className="absolute top-0 bottom-0 w-0.5 bg-white/30 rounded-full z-10"
+                      style={{ left: `${nowPct}%` }}
+                    />
+                  )}
+                  {dietPlan.meals.map((meal, i) => {
+                    const [h, m] = meal.time.split(':').map(Number)
+                    const mealMin = h * 60 + m
+                    const pct = Math.max(2, Math.min(98, ((mealMin - START_MIN) / TOTAL_MINS) * 100))
+                    const eaten = isMealEaten(i)
+                    const isActive = i === activeMealIndex && !eaten
+                    const isMissed = !eaten && !isActive && mealMin < nowMinutes
+                    return (
+                      <div
+                        key={i}
+                        title={`${meal.name} — ${meal.time}`}
+                        className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-20 flex items-center justify-center rounded-full border-2 text-[9px] font-bold cursor-default ${
+                          eaten
+                            ? 'w-5 h-5 bg-green-700 border-green-400 text-green-200'
+                            : isActive
+                              ? 'w-6 h-6 bg-brand-600 border-brand-300 text-white ring-2 ring-brand-400/40'
+                              : isMissed
+                                ? 'w-5 h-5 bg-amber-900/60 border-amber-600 text-amber-300'
+                                : 'w-5 h-5 bg-gray-700 border-gray-500 text-gray-400'
+                        }`}
+                        style={{ left: `${pct}%` }}
+                      >
+                        {i + 1}
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Hour labels */}
+                <div className="relative h-4">
+                  {tickHours.map((hour) => {
+                    const pct = ((hour * 60 - START_MIN) / TOTAL_MINS) * 100
+                    return (
+                      <span
+                        key={hour}
+                        className="absolute text-[10px] text-gray-600 -translate-x-1/2"
+                        style={{ left: `${pct}%` }}
+                      >
+                        {tickLabels[hour]}
+                      </span>
+                    )
+                  })}
+                </div>
+
+                {/* Legend */}
+                <div className="flex items-center gap-3 mt-2 text-[10px] text-gray-500">
+                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-full bg-green-700 border border-green-400" />eaten</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-full bg-brand-600 border border-brand-300" />next</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-full bg-amber-900/60 border border-amber-600" />missed</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-full bg-gray-700 border border-gray-500" />upcoming</span>
+                  <span className="flex items-center gap-1 ml-auto"><span className="inline-block w-0.5 h-3 bg-white/30 rounded" />now</span>
+                </div>
+
+                {/* Missed meal alert */}
+                {missedMeals.length > 0 && (
+                  <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-400 bg-amber-900/20 border border-amber-800/40 rounded-lg px-3 py-1.5">
+                    <span>⚠</span>
+                    <span>
+                      {missedMeals.length === 1
+                        ? `${missedMeals[0].name} (${missedMeals[0].time}) was missed — eat it when you can.`
+                        : `${missedMeals.length} meals past their scheduled time — eat them when you can.`
+                      }
+                    </span>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
           {/* Meals */}
           <div>
             {(() => {
