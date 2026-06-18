@@ -659,9 +659,9 @@ export default function Diet() {
                       />
                     )}
                     <div
-                      className={`rounded-xl p-4 mb-2 transition-opacity ${
+                      className={`rounded-xl p-4 mb-2 ${
                         isMealEaten(i)
-                          ? 'bg-gray-900/50 border border-gray-800/50 opacity-50'
+                          ? 'bg-gray-900/50 border border-gray-800/50'
                           : i === activeMealIndex
                             ? 'bg-brand-950/30 border border-brand-600/60'
                             : snack
@@ -672,44 +672,47 @@ export default function Diet() {
                       onDragStart={snack ? (e) => { setDragIndex(i); e.dataTransfer.effectAllowed = 'move' } : undefined}
                       onDragEnd={snack ? () => { setDragIndex(null); setDragOverIndex(null) } : undefined}
                     >
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          {snack && (
-                            <span className="text-gray-600 cursor-grab select-none text-base leading-none">⠿</span>
-                          )}
-                          <span className={`text-xs font-mono ${i === activeMealIndex && !isMealEaten(i) ? 'text-brand-400 font-semibold' : 'text-gray-600'}`}>{meal.time}</span>
-                          <h3 className="text-sm font-semibold text-gray-200">{meal.name}</h3>
-                          {i === activeMealIndex && !isMealEaten(i) && (
-                            <span className="text-xs bg-brand-600/20 text-brand-400 border border-brand-600/50 rounded-full px-2 py-0.5 leading-none font-semibold">
-                              Next
+                      {/* Content fades when eaten; buttons stay fully visible so undo is discoverable */}
+                      <div className={`transition-opacity ${isMealEaten(i) ? 'opacity-40' : ''}`}>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            {snack && (
+                              <span className="text-gray-600 cursor-grab select-none text-base leading-none">⠿</span>
+                            )}
+                            <span className={`text-xs font-mono ${i === activeMealIndex && !isMealEaten(i) ? 'text-brand-400 font-semibold' : 'text-gray-600'}`}>{meal.time}</span>
+                            <h3 className="text-sm font-semibold text-gray-200">{meal.name}</h3>
+                            {i === activeMealIndex && !isMealEaten(i) && (
+                              <span className="text-xs bg-brand-600/20 text-brand-400 border border-brand-600/50 rounded-full px-2 py-0.5 leading-none font-semibold">
+                                Next
+                              </span>
+                            )}
+                            {snack && (
+                              <span className="text-xs bg-orange-900/30 text-orange-400 border border-orange-800/40 rounded-full px-2 py-0.5 leading-none">Snack</span>
+                            )}
+                          </div>
+                          <div className="flex gap-3 text-xs text-gray-500">
+                            <span className="text-brand-400 font-medium">{meal.calories} kcal</span>
+                            <span className="text-green-400">P {meal.protein_g}g</span>
+                            <span className="text-blue-400">C {meal.carbs_g}g</span>
+                            <span className="text-yellow-400">F {meal.fat_g}g</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {meal.foods.map((food, fi) => (
+                            <span key={fi} className="flex items-center gap-1 text-xs bg-gray-800 text-gray-400 px-2 py-1 rounded-md">
+                              {food}
+                              <button
+                                onClick={() => setExcludePending(food)}
+                                className="opacity-40 hover:opacity-100 text-gray-500 hover:text-red-400 transition-opacity ml-0.5 flex-shrink-0"
+                                title="Exclude this food from future plans"
+                              >
+                                &#10005;
+                              </button>
                             </span>
-                          )}
-                          {snack && (
-                            <span className="text-xs bg-orange-900/30 text-orange-400 border border-orange-800/40 rounded-full px-2 py-0.5 leading-none">Snack</span>
-                          )}
-                        </div>
-                        <div className="flex gap-3 text-xs text-gray-500">
-                          <span className="text-brand-400 font-medium">{meal.calories} kcal</span>
-                          <span className="text-green-400">P {meal.protein_g}g</span>
-                          <span className="text-blue-400">C {meal.carbs_g}g</span>
-                          <span className="text-yellow-400">F {meal.fat_g}g</span>
+                          ))}
                         </div>
                       </div>
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        {meal.foods.map((food, fi) => (
-                          <span key={fi} className="flex items-center gap-1 text-xs bg-gray-800 text-gray-400 px-2 py-1 rounded-md">
-                            {food}
-                            <button
-                              onClick={() => setExcludePending(food)}
-                              className="opacity-40 hover:opacity-100 text-gray-500 hover:text-red-400 transition-opacity ml-0.5 flex-shrink-0"
-                              title="Exclude this food from future plans"
-                            >
-                              &#10005;
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                      <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-800">
+                      <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-800/60">
                         <button
                           onClick={() => { setSwapError(null); setSwapTarget({ mealIndex: i, meal }) }}
                           className="text-xs text-gray-400 hover:text-brand-300 border border-gray-700 hover:border-brand-700 rounded-lg px-2.5 py-1 transition-colors flex items-center gap-1"
@@ -720,7 +723,7 @@ export default function Diet() {
                           onClick={() => toggleMealEaten(i, meal.name)}
                           className={`text-sm font-medium rounded-lg px-3 py-1.5 transition-colors flex items-center gap-1 ${
                             isMealEaten(i)
-                              ? 'bg-green-900/30 border border-green-800/50 text-green-400'
+                              ? 'bg-green-900/30 border border-green-800/50 text-green-400 hover:bg-red-900/20 hover:border-red-800/50 hover:text-red-400'
                               : 'bg-brand-900/20 border border-brand-700 text-brand-400 hover:bg-brand-900/40'
                           }`}
                         >

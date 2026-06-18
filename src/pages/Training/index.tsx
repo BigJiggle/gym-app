@@ -370,8 +370,8 @@ export default function Training() {
                               : 'bg-gray-800 text-gray-600'
                         }`}
                       >
-                        <span>{done ? '✓' : DAY_NAMES[dow]}</span>
-                        {!done && <span className="text-xs leading-none opacity-60 mt-0.5 truncate max-w-full px-0.5">{session.session_name.split(' ')[0]}</span>}
+                        <span>{done ? '✓ ' + DAY_NAMES[dow] : DAY_NAMES[dow]}</span>
+                        <span className="text-xs leading-none opacity-60 mt-0.5 truncate max-w-full px-0.5">{session.session_name.split(' ')[0]}</span>
                       </div>
                     )
                   })}
