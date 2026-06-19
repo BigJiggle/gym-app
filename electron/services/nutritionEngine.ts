@@ -683,7 +683,7 @@ export function generateNutritionPlan(input: NutritionInput): NutritionPlan {
     protein_g,
     carbs_g,
     fat_g,
-    input.meal_count,
+    Math.max(3, input.meal_count),
     input.dietary_preference,
     input.food_exclusions,
     input.food_preferences,
