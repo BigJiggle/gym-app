@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ChangeEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useUserStore } from '../../store/userStore'
 import { usePlanStore } from '../../store/planStore'
@@ -9,7 +9,7 @@ import { StatCard } from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import { displayWeight, displayLength, weightLabel, lengthLabel } from '../../utils/units'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LineChart, Line, CartesianGrid, Legend } from 'recharts'
-import type { CheckIn } from '../../types'
+import type { CheckIn, ProgressPhoto } from '../../types'
 
 function computeWeeklyRate(checkins: CheckIn[]): number | null {
   // Need at least 2 entries; checkins are newest-first
@@ -51,11 +51,18 @@ export default function Progress() {
   const [dietConsistency, setDietConsistency] = useState<WeekConsistency[]>([])
   const [targetEditStr, setTargetEditStr] = useState('')
   const [editingTarget, setEditingTarget] = useState(false)
+  const [photos, setPhotos] = useState<ProgressPhoto[]>([])
+  const [selectedPose, setSelectedPose] = useState<ProgressPhoto['pose']>('front')
 
   useEffect(() => {
     if (!user?.id) return
     loadProgressEntries(user.id)
     loadCheckinHistory(user.id)
+  }, [user?.id])
+
+  useEffect(() => {
+    if (!user?.id) return
+    window.api.getProgressPhotos(user.id).then(setPhotos).catch(() => {})
   }, [user?.id])
 
   useEffect(() => {
@@ -90,6 +97,19 @@ export default function Progress() {
 
   if (!user) return null
 
+  async function handlePhotoFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !user) return
+    const filePath = (file as unknown as { path?: string }).path
+    if (!filePath) return
+    try {
+      const photo = await window.api.addProgressPhoto({ user_id: user.id, file_path: filePath, pose: selectedPose })
+      setPhotos(prev => [photo, ...prev])
+    } catch { /* non-fatal */ } finally {
+      e.target.value = ''
+    }
+  }
+
   if (checkinHistory.length === 0) {
     return (
       <div className="p-6 max-w-5xl mx-auto space-y-6">
@@ -103,6 +123,7 @@ export default function Progress() {
             </button>
           </Link>
         </div>
+        <PhotosSection photos={photos} selectedPose={selectedPose} setSelectedPose={setSelectedPose} onFileChange={handlePhotoFile} />
       </div>
     )
   }
@@ -673,13 +694,57 @@ export default function Progress() {
         </div>
       )}
 
-      {checkinHistory.length === 0 && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center space-y-3">
-          <p className="text-gray-400 font-medium">No progress data yet.</p>
-          <p className="text-gray-600 text-sm">Your weight chart appears here after your first weekly check-in.</p>
-          <Link to="/checkin">
-            <Button>Do First Check-In</Button>
-          </Link>
+      <PhotosSection photos={photos} selectedPose={selectedPose} setSelectedPose={setSelectedPose} onFileChange={handlePhotoFile} />
+    </div>
+  )
+}
+
+interface PhotosSectionProps {
+  photos: ProgressPhoto[]
+  selectedPose: ProgressPhoto['pose']
+  setSelectedPose: (p: ProgressPhoto['pose']) => void
+  onFileChange: (e: ChangeEvent<HTMLInputElement>) => void
+}
+
+function PhotosSection({ photos, selectedPose, setSelectedPose, onFileChange }: PhotosSectionProps) {
+  const POSES: ProgressPhoto['pose'][] = ['front', 'back', 'side', 'custom']
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-semibold text-gray-100">Progress Photos</h2>
+        <div className="flex items-center gap-2">
+          <select
+            value={selectedPose}
+            onChange={e => setSelectedPose(e.target.value as ProgressPhoto['pose'])}
+            className="text-xs bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-gray-300 focus:outline-none focus:border-brand-500"
+          >
+            {POSES.map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
+          </select>
+          <label className="cursor-pointer text-xs font-medium px-3 py-1.5 bg-brand-900/30 border border-brand-700/50 text-brand-400 rounded-lg hover:bg-brand-900/50 transition-colors">
+            + Add Photo
+            <input type="file" accept="image/*" className="hidden" onChange={onFileChange} />
+          </label>
+        </div>
+      </div>
+      {photos.length === 0 ? (
+        <p className="text-sm text-gray-600 text-center py-6">No photos yet — add your first to start tracking visual progress.</p>
+      ) : (
+        <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
+          {photos.map(photo => (
+            <div key={photo.id} className="relative rounded-lg overflow-hidden bg-gray-800 aspect-[3/4]">
+              <img
+                src={`file://${photo.file_path}`}
+                alt={`${photo.pose} pose`}
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1.5">
+                <p className="text-xs font-medium text-white capitalize">{photo.pose}</p>
+                <p className="text-xs text-gray-400">
+                  {new Date(photo.taken_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
+                </p>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
