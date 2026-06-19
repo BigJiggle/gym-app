@@ -519,7 +519,7 @@ export default function Settings() {
                 title="Save profile and rebuild your training and nutrition plans from scratch"
                 className="flex-1 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold transition-colors disabled:opacity-50"
               >
-                Save &amp; Regenerate Plans
+                {editSaving ? 'Generating...' : 'Save & Regenerate Plans'}
               </button>
             </div>
           </div>
