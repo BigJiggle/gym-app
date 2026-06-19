@@ -111,6 +111,14 @@ export default function Progress() {
   const latest = progressEntries[progressEntries.length - 1]
   const totalChange = progressEntries.length >= 2 ? (latest.weight_kg - first.weight_kg).toFixed(1) : null
   const weeksCompleted = checkinHistory.length
+  // Actual elapsed weeks between oldest and newest check-in (more accurate than check-in count)
+  const elapsedWeeks = checkinHistory.length >= 2
+    ? Math.round(
+        (new Date(checkinHistory[0].check_in_date).getTime() -
+         new Date(checkinHistory[checkinHistory.length - 1].check_in_date).getTime()) /
+        (7 * 24 * 60 * 60 * 1000) * 10
+      ) / 10
+    : null
 
   // Trend computation
   const weeklyRateKg = computeWeeklyRate(checkinHistory)
@@ -192,7 +200,7 @@ export default function Progress() {
               label={isLoss ? 'Lost' : isGain ? 'Gained' : 'Total Change'}
               value={changeVal ? `${isLoss ? '↓ ' : isGain ? '↑ ' : ''}${Math.abs(parseFloat(changeVal)).toFixed(1)}` : '—'}
               unit={changeVal ? wUnit : undefined}
-              delta={weeksCompleted > 0 ? `over ${weeksCompleted} weeks` : 'no data yet'}
+              delta={elapsedWeeks !== null ? `over ${elapsedWeeks} week${elapsedWeeks === 1 ? '' : 's'}` : weeksCompleted > 0 ? `${weeksCompleted} check-in${weeksCompleted === 1 ? '' : 's'}` : 'no data yet'}
               color={isLoss ? 'green' : isGain ? 'brand' : 'brand'}
             />
           )
