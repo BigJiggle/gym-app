@@ -168,6 +168,47 @@ export default function Dashboard() {
     setConditionNote('')
   }
 
+  const DEFAULT_SUPPLEMENTS = ['Creatine', 'Fish Oil', 'Vitamin D', 'Multi-Vitamin']
+  interface SupplementLog { date: string; taken: string[] }
+  const [supplementList, setSupplementList] = useState<string[]>(() => {
+    try { const s = localStorage.getItem('supplement_list'); return s ? JSON.parse(s) : DEFAULT_SUPPLEMENTS } catch { return DEFAULT_SUPPLEMENTS }
+  })
+  const [supplementLog, setSupplementLog] = useState<SupplementLog[]>(() => {
+    try { return JSON.parse(localStorage.getItem('supplement_log') ?? '[]') } catch { return [] }
+  })
+  const [newSupplementName, setNewSupplementName] = useState('')
+  const [addingSupp, setAddingSupp] = useState(false)
+
+  function saveSupplementLog(entries: SupplementLog[]) {
+    setSupplementLog(entries)
+    localStorage.setItem('supplement_log', JSON.stringify(entries))
+  }
+
+  function toggleSupplement(name: string) {
+    const existing = supplementLog.find(e => e.date === todayStr) ?? { date: todayStr, taken: [] }
+    const taken = existing.taken.includes(name)
+      ? existing.taken.filter(t => t !== name)
+      : [...existing.taken, name]
+    saveSupplementLog([...supplementLog.filter(e => e.date !== todayStr), { date: todayStr, taken }])
+  }
+
+  function addSupplement() {
+    const name = newSupplementName.trim()
+    if (!name || supplementList.includes(name)) return
+    const next = [...supplementList, name]
+    setSupplementList(next)
+    localStorage.setItem('supplement_list', JSON.stringify(next))
+    setNewSupplementName('')
+    setAddingSupp(false)
+  }
+
+  function removeSupplement(name: string) {
+    const next = supplementList.filter(s => s !== name)
+    setSupplementList(next)
+    localStorage.setItem('supplement_list', JSON.stringify(next))
+    saveSupplementLog(supplementLog.map(e => ({ ...e, taken: e.taken.filter(t => t !== name) })))
+  }
+
   useEffect(() => {
     if (!user) return
     loadTrainingPlan(user.id)
@@ -1356,6 +1397,97 @@ export default function Dashboard() {
                   </div>
                 )
               })}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Supplement Tracker */}
+      {supplementList.length > 0 && (() => {
+        const todayTaken = new Set(supplementLog.find(e => e.date === todayStr)?.taken ?? [])
+        const takenCount = supplementList.filter(s => todayTaken.has(s)).length
+        const allTaken = takenCount === supplementList.length
+        const last7 = Array.from({ length: 7 }, (_, i) => {
+          const d = new Date()
+          d.setDate(d.getDate() - (6 - i))
+          const dateStr = d.toLocaleDateString('en-CA')
+          const entry = supplementLog.find(e => e.date === dateStr)
+          const count = entry ? supplementList.filter(s => entry.taken.includes(s)).length : 0
+          return {
+            dateStr,
+            label: d.toLocaleDateString('en-US', { weekday: 'short' }).slice(0, 1) + d.getDate(),
+            pct: supplementList.length > 0 ? Math.round((count / supplementList.length) * 100) : 0,
+            isToday: dateStr === todayStr,
+          }
+        })
+        return (
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold text-gray-100">Supplements</h2>
+              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${allTaken ? 'bg-green-900/30 text-green-400' : 'bg-gray-800 text-gray-500'}`}>
+                {takenCount}/{supplementList.length} taken
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {supplementList.map(name => {
+                const taken = todayTaken.has(name)
+                return (
+                  <div key={name} className="flex items-center gap-1 group">
+                    <button
+                      onClick={() => toggleSupplement(name)}
+                      className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors ${
+                        taken
+                          ? 'bg-green-900/20 border-green-700/50 text-green-400'
+                          : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600 hover:text-gray-300'
+                      }`}
+                    >
+                      {taken ? '✓ ' : ''}{name}
+                    </button>
+                    <button
+                      onClick={() => removeSupplement(name)}
+                      className="opacity-0 group-hover:opacity-100 text-gray-700 hover:text-red-400 text-xs w-4 h-4 flex items-center justify-center transition-all"
+                      title={`Remove ${name}`}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )
+              })}
+              {addingSupp ? (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    value={newSupplementName}
+                    onChange={e => setNewSupplementName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') addSupplement(); if (e.key === 'Escape') { setAddingSupp(false); setNewSupplementName('') } }}
+                    placeholder="Supplement name"
+                    autoFocus
+                    className="w-36 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-brand-500"
+                  />
+                  <button onClick={addSupplement} className="text-xs bg-brand-600 hover:bg-brand-500 text-white px-2 py-1 rounded-lg transition-colors">Add</button>
+                  <button onClick={() => { setAddingSupp(false); setNewSupplementName('') }} className="text-xs text-gray-500 hover:text-gray-400 transition-colors">✕</button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setAddingSupp(true)}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-dashed border-gray-700 text-gray-600 hover:border-brand-700 hover:text-brand-400 transition-colors"
+                >
+                  + Add
+                </button>
+              )}
+            </div>
+            <div className="flex gap-1">
+              {last7.map(({ dateStr, label, pct, isToday }) => (
+                <div
+                  key={dateStr}
+                  className={`flex-1 rounded-lg py-1.5 text-center ${isToday ? 'bg-brand-900/20 border border-brand-800/40' : 'bg-gray-800/60'}`}
+                >
+                  <p className={`text-xs font-medium ${isToday ? 'text-brand-400' : 'text-gray-600'}`}>{label}</p>
+                  <p className={`text-xs mt-0.5 font-medium ${pct === 100 ? 'text-green-400' : pct >= 50 ? 'text-yellow-400' : pct > 0 ? 'text-gray-500' : 'text-gray-700'}`}>
+                    {pct > 0 ? `${pct}%` : '—'}
+                  </p>
+                </div>
+              ))}
             </div>
           </div>
         )
