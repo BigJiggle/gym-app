@@ -199,7 +199,7 @@ function MissedSlotPanel({ slot, userId, isImperial, onFilled, defaultOpen }: Mi
       >
         <div>
           <p className="text-sm font-semibold text-amber-400">⚠ {slot.expected_label}</p>
-          <p className="text-xs text-gray-500 mt-0.5">Tap to fill in retroactively</p>
+          <p className="text-xs text-gray-500 mt-0.5">Log data for this missed check-in</p>
         </div>
         <span className="text-xs text-gray-500">{open ? '▲' : '▼'}</span>
       </button>

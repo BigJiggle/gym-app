@@ -511,7 +511,7 @@ export default function Settings() {
                 title="Save profile data without regenerating training or nutrition plans"
                 className="flex-1 py-2 rounded-xl border border-gray-700 text-sm text-gray-300 hover:border-gray-600 transition-colors disabled:opacity-50"
               >
-                {editSaving ? 'Saving...' : editSaved ? '✓ Saved' : 'Save Only'}
+                {editSaving ? 'Saving...' : editSaved ? '✓ Saved' : 'Save (Keep Plans)'}
               </button>
               <button
                 onClick={() => handleSaveProfile(true)}
