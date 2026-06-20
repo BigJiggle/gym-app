@@ -548,7 +548,7 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
                   restTarget === s ? 'border-brand-500 text-brand-400 bg-brand-900/30' : 'border-gray-800 text-gray-600 hover:border-gray-700 hover:text-gray-500'
                 }`}
               >
-                {s % 60 === 0 ? `${s / 60}m` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`}
+                {`${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`}
               </button>
             ))}
           </div>
@@ -572,7 +572,7 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
                     restTarget === s ? 'border-brand-500 text-brand-400 bg-brand-900/30' : 'border-gray-700 text-gray-500 hover:border-gray-600'
                   }`}
                 >
-                  {s % 60 === 0 ? `${s / 60}m` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`}
+                  {`${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`}
                 </button>
               ))}
               <button

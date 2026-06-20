@@ -372,9 +372,25 @@ export default function Dashboard() {
             )}
           </div>
         </div>
-        <Link to="/checkin">
-          <Button size="sm">+ Check-In</Button>
-        </Link>
+        {(() => {
+          const now = new Date()
+          const locked = nextCheckinAt !== null && nextCheckinAt > now
+          if (locked) {
+            const daysLeft = Math.ceil((nextCheckinAt!.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+            return (
+              <div title={`Next check-in opens ${nextCheckinAt!.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}`}>
+                <Button size="sm" variant="secondary" disabled>
+                  Check-In in {daysLeft}d
+                </Button>
+              </div>
+            )
+          }
+          return (
+            <Link to="/checkin">
+              <Button size="sm">+ Check-In</Button>
+            </Link>
+          )
+        })()}
       </div>
 
       {/* Auto-refresh notification — shown when plans were updated on startup */}
@@ -1403,10 +1419,10 @@ export default function Dashboard() {
       })()}
 
       {/* Supplement Tracker */}
-      {supplementList.length > 0 && (() => {
+      {(() => {
         const todayTaken = new Set(supplementLog.find(e => e.date === todayStr)?.taken ?? [])
         const takenCount = supplementList.filter(s => todayTaken.has(s)).length
-        const allTaken = takenCount === supplementList.length
+        const allTaken = supplementList.length > 0 && takenCount === supplementList.length
         const last7 = Array.from({ length: 7 }, (_, i) => {
           const d = new Date()
           d.setDate(d.getDate() - (6 - i))
@@ -1424,10 +1440,15 @@ export default function Dashboard() {
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-semibold text-gray-100">Supplements</h2>
-              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${allTaken ? 'bg-green-900/30 text-green-400' : 'bg-gray-800 text-gray-500'}`}>
-                {takenCount}/{supplementList.length} taken
-              </span>
+              {supplementList.length > 0 && (
+                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${allTaken ? 'bg-green-900/30 text-green-400' : 'bg-gray-800 text-gray-500'}`}>
+                  {takenCount}/{supplementList.length} taken
+                </span>
+              )}
             </div>
+            {supplementList.length === 0 && !addingSupp && (
+              <p className="text-sm text-gray-600 mb-3">Add your daily supplements to track them here.</p>
+            )}
             <div className="flex flex-wrap gap-2 mb-3">
               {supplementList.map(name => {
                 const taken = todayTaken.has(name)
@@ -1476,7 +1497,7 @@ export default function Dashboard() {
                 </button>
               )}
             </div>
-            <div className="flex gap-1">
+            {supplementList.length > 0 && <div className="flex gap-1">
               {last7.map(({ dateStr, label, pct, isToday }) => (
                 <div
                   key={dateStr}
@@ -1488,7 +1509,7 @@ export default function Dashboard() {
                   </p>
                 </div>
               ))}
-            </div>
+            </div>}
           </div>
         )
       })()}
