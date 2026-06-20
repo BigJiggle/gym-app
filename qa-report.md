@@ -1,4 +1,4 @@
-# PrepCoach QA Report — 2026-06-19 (run 2)
+# PrepCoach QA Report — 2026-06-20 (run 3)
 
 ## Phase 1 — QA Engineer
 
@@ -10,68 +10,70 @@
 
 ### Nutrition Engine Audit (`electron/services/nutritionEngine.ts`)
 
-- All meal templates pass valid food objects to `getFood()`
-- `buildMeals()` snack/main split math is correct
-- `calcPortionStr()` correctly applies role-based portion logic with MIN/MAX clamps
-- `generateNutritionPlan()` `snack_count` resolution is backwards-compatible
-- `getCultureFood()` correctly checks dietary preference keys for all 8 culture maps
+- `buildMeals()` snack/main split math verified correct
+- `calcPortionStr()` role-based portion logic with MIN/MAX clamps verified correct
+- `generateNutritionPlan()` `snack_count` resolution (from v11 migration) is backwards-compatible
+- `getCultureFood()` checks all 8 culture maps correctly for all dietary preference keys
 - All culture food IDs without `fixedLabel` have entries in `FOOD_CALORIES_PER_100G`
 - `SNACK_ONLY_FOODS` has no overlap with main-meal template food IDs
-- **BUG FOUND**: `buildMeals()` called with `input.meal_count` directly — no minimum guard. If a user sets `meal_count = 1` or `2`, `buildMeals` tries to schedule fewer meals than the template assumes for a balanced plan, causing uneven macro distribution. Fixed with `Math.max(3, input.meal_count)`.
+- `meal_count` minimum guard (`Math.max(3, ...)`) from prior run confirmed present
 
 ### Food Database Audit (`electron/services/foodDatabase.ts`)
-**Result: PASS** — all template fallback food IDs present, no missing calorie entries.
+**Result: PASS** — all template fallback food IDs present, no missing calorie entries, `FOOD_CATEGORY` coverage complete.
 
 ### User Flows Traced (7)
 All 7 flows confirmed correct:
 1. Onboarding → profile creation → plan generation
-2. Check-in submission → calorie recalculation cascade
-3. Workout start → set logging → complete → history
-4. Meal completion toggle → deduplication on double-log
+2. Check-in submission → calorie recalculation cascade (uses latest check-in weight, not stale `user.weight_kg`)
+3. Workout start → set logging → batch-save on complete → history
+4. Meal completion toggle → deduplication on double-log via `INSERT OR REPLACE`
 5. Diet preference update → plan regeneration
 6. Startup refresh → plan auto-update when show/phase transitions
-7. Progress photos: upload → stored via `progress:addPhoto` IPC → displayed with `file://` URL in Electron
+7. Progress photo: upload → stored via `progress:addPhoto` IPC → displayed with `file://` URL
 
 ### Bugs Fixed
-**1 bug fixed.**
-
-| # | File | Description | Fix |
-|---|------|-------------|-----|
-| 1 | `electron/services/nutritionEngine.ts:686` | `buildMeals()` called with unbounded `meal_count` — values < 3 cause uneven macro distribution | Wrapped with `Math.max(3, input.meal_count)` |
+**0 bugs fixed this run.** (Prior run fixed 1: `meal_count` minimum guard in `generateNutritionPlan`.)
 
 ---
 
 ## Phase 2 — Feature (Prep Athlete)
 
-### Feature: Progress Photo Gallery
+**Phase triggered:** Yes — fewer than 3 bugs fixed in Phase 1.
 
-**Motivation:** The backend was fully implemented — `progress_photos` DB table, `progress:addPhoto` and `progress:photos` IPC handlers in `electron/ipc/progressHandlers.ts`, `addProgressPhoto` and `getProgressPhotos` on `window.api` — but no frontend UI existed to use it. A competitive prep athlete 12 weeks out needs visual week-over-week comparison (front/back/side poses) to catch muscle loss or water retention early. The backend was already there; this adds the missing frontend surface.
+### Feature: Daily Supplement Tracker
 
-**Implementation:** `src/pages/Progress/index.tsx`
-- New state: `photos: ProgressPhoto[]`, `selectedPose: ProgressPhoto['pose']`
-- `useEffect` on `user.id` fetches all photos via `window.api.getProgressPhotos(user.id)`
-- `handlePhotoFile` reads `(file as { path?: string }).path` (Electron exposes native FS path on `File` objects) and calls `window.api.addProgressPhoto({ user_id, file_path, pose })`
-- `PhotosSection` component: pose selector (front/back/side/custom), "+ Add Photo" file input, responsive 3-4 column grid, `file://` URL image display with pose label and date overlay
-- Section appears in both the empty-state return and the main return (replacing unreachable dead code)
-- No new IPC, no schema changes — frontend only
+**Motivation:** A prep athlete 12 weeks out takes multiple supplements every single day (creatine, fish oil, vitamin D, pre-workout, etc.). The Dashboard already has daily trackers for cardio, posing, sleep, and condition — but nothing for supplements. This is a genuine daily-use gap; forgetting creatine for three days in a row has real performance consequences during a cut.
 
-**Files changed:** `src/pages/Progress/index.tsx`
+**Implementation:** `src/pages/Dashboard/index.tsx`
+- State: `supplementList: string[]` (localStorage `supplement_list`, default: Creatine, Fish Oil, Vitamin D, Multi-Vitamin) and `supplementLog: {date, taken[]}[]` (localStorage `supplement_log`)
+- `toggleSupplement(name)` — marks taken / untaken for today
+- `addSupplement()` — inline input adds to the list and saves to localStorage
+- `removeSupplement(name)` — hover-reveals ✕ per supplement; removes from both list and log
+- Card header shows "X/Y taken" badge (green when all done)
+- Empty-state shows "Add your daily supplements..." prompt with the `+ Add` inline input still accessible
+- 7-day compliance history bar (green = 100%, yellow ≥ 50%, gray > 0%, dim = 0%)
+- Placed between Sleep Tracker and Daily Condition sections in Dashboard
+- No IPC calls, no backend changes, no new DB migrations — pure localStorage frontend
+
+**Files changed:** `src/pages/Dashboard/index.tsx`
 
 ---
 
 ## Phase 3 — UX Reviewer
 
-### UX Fix 1: Rest Timer Button Labels (`src/pages/Training/WorkoutSession.tsx`)
+### UX Fix 1: Dim check-in header button when interval-locked (`src/pages/Dashboard/index.tsx`)
 
-**Issue:** The quick-set rest timer buttons showed mixed formats: "60s", "90s" (seconds for values under 2 minutes) and "2m", "3m" (minutes for values at or above 2 minutes). "90s" is harder to parse at a glance than "1:30" during a set.
+**Issue:** The `+ Check-In` button in the Dashboard header is always shown as a fully active link even when the weekly check-in interval lock is active. Tapping it takes the user to the check-in page where they see a confusing "interval lock" error — a dead-end that wastes navigation. `nextCheckinAt` is already loaded in state.
 
-**Fix:** Replaced `{s < 120 ? \`${s}s\` : \`${s / 60}m\`}` with `{s % 60 === 0 ? \`${s / 60}m\` : \`${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}\`}`. Result: "1m", "1:30", "2m", "3m" — consistent human-readable format throughout. Applied in both the compact and expanded timer UIs (2 occurrences via `replace_all`).
+**Fix:** The button now conditionally renders based on `nextCheckinAt`:
+- If `nextCheckinAt > now`: renders a disabled secondary button labelled `Check-In in Nd` with a tooltip showing the exact open date.
+- Otherwise: renders the normal `+ Check-In` link as before.
 
-### UX Fix 2: Settings Regenerate Button Loading State (`src/pages/Settings/index.tsx`)
+### UX Fix 2: Standardize rest timer preset labels (`src/pages/Training/WorkoutSession.tsx`)
 
-**Issue:** The "Save & Regenerate Plans" button showed no feedback while plan generation ran (could take 2–4 seconds). The adjacent "Save Only" button already showed "Saving..." via `editSaving` state, but Regenerate stayed static — leaving users unsure if the tap registered.
+**Issue:** Rest timer quick-select buttons used two different formats: "1m", "1:30", "2m", "3m" — the 90-second option showed MM:SS while the rest used minutes-only. Visually inconsistent on a UI athletes stare at during every set.
 
-**Fix:** Changed the button label to `{editSaving ? 'Generating...' : 'Save & Regenerate Plans'}`. Reuses the existing `editSaving` boolean that's already set/cleared around the async operation — zero new state needed.
+**Fix:** All four presets ([60, 90, 120, 180] seconds) now render as `MM:SS` consistently: "1:00", "1:30", "2:00", "3:00". Applied in both the idle-state selector and the active rest-timer control (2 occurrences via `replace_all`).
 
 ---
 
@@ -79,11 +81,22 @@ All 7 flows confirmed correct:
 
 | Phase | Status | Changes |
 |-------|--------|---------|
-| Phase 1 — QA | ✅ 1 bug fixed | `meal_count` minimum guard in `generateNutritionPlan` |
-| Phase 2 — Feature | ✅ Shipped | Progress photo gallery (frontend for existing backend) |
-| Phase 3 — UX | ✅ 2 fixes | Rest timer labels; Regenerate button loading state |
+| Phase 1 — QA | ✅ 0 bugs (clean) | TypeScript PASS, 86 tests PASS, full audit clean |
+| Phase 2 — Feature | ✅ Shipped | Daily Supplement Tracker on Dashboard |
+| Phase 3 — UX | ✅ 2 fixes | Disabled check-in button when locked; standardized rest timer labels |
 
-**Commits:**
-- `73fc3d2` — `[QA] 2026-06-19: enforce meal_count minimum of 3 in generateNutritionPlan`
-- `68bfdc4` — `[FEATURE] 2026-06-19: progress photo gallery on Progress page`
-- `dff78b1` — `[UX] 2026-06-19: consistent rest timer labels; Settings regenerate button shows loading state`
+**Commits this run:**
+- `2ccc912` — `[FEATURE] 2026-06-20: Daily Supplement Tracker`
+- `f9154c1` — `[UX] 2026-06-20: Dim check-in button when locked; standardize rest timer labels`
+
+---
+
+## Historical
+
+### 2026-06-19 (run 2)
+
+| Phase | Result |
+|-------|--------|
+| Phase 1 — QA | 1 bug fixed: `meal_count` minimum guard in `generateNutritionPlan` |
+| Phase 2 — Feature | Progress photo gallery (frontend for existing backend) |
+| Phase 3 — UX | Rest timer labels (60s/90s → 1m/1:30); Regenerate button loading state |
