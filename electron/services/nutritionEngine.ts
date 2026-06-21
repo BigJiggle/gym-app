@@ -670,6 +670,12 @@ export function buildMealsPublic(
 }
 
 export function generateNutritionPlan(input: NutritionInput): NutritionPlan {
+  // Guard against absent / nonsensical bodyweight. A weight of 0 (or NaN) would
+  // yield 0g protein and 0g fat — physiologically impossible and dangerous to
+  // present to a user — and could propagate NaN into downstream macro math.
+  const safeWeightKg =
+    Number.isFinite(input.weight_kg) && input.weight_kg >= 30 ? input.weight_kg : 70
+  input = { ...input, weight_kg: safeWeightKg }
   const bmr = calcBMR(input.weight_kg, input.height_cm, input.age, input.sex)
   const tdee = Math.round(bmr * (ACTIVITY_MULTIPLIERS[input.activity_level] ?? 1.55))
   const adjustment = getPhaseAwareDeficit(input.weeks_out, input.goal)

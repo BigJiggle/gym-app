@@ -472,7 +472,11 @@ export function getExerciseLibraryForUI(): Array<{
 export function generateTrainingPlan(input: TrainingInput): TrainingPlan {
   const equipment = (input.equipment_access ?? 'full_gym') as EquipmentTier
   const exp = input.training_experience_years
-  const freq = Math.min(6, Math.max(2, input.training_frequency))
+  // Guard against NaN / non-finite / non-integer frequency: a garbage value
+  // (e.g. NaN from a missing onboarding field) would otherwise slice() to an
+  // empty session list and silently produce a training plan with zero workouts.
+  const rawFreq = Math.round(Number(input.training_frequency))
+  const freq = Number.isFinite(rawFreq) ? Math.min(6, Math.max(2, rawFreq)) : 4
   const phase = determinePhase(input.weeks_out, input.goal)
   const weeksTotal = input.weeks_out ? Math.min(input.weeks_out, 16) : 12
   const pref = input.split_preference ?? 'auto'

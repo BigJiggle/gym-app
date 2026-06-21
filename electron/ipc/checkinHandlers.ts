@@ -37,6 +37,17 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
 
     const s = readCheckinSettings(db)
 
+    // Reject a second check-in on a date that already has one (e.g. interval_days=1
+    // allows two same-day submits through the interval lock). One weigh-in per day
+    // keeps week_numbers unique and the weight-trend chart correct.
+    const submitDate = data.check_in_date ?? new Date().toLocaleDateString('en-CA')
+    const sameDay = db
+      .prepare('SELECT id FROM weekly_checkins WHERE user_id=? AND check_in_date=? LIMIT 1')
+      .get([data.user_id, submitDate]) as { id: number } | undefined
+    if (sameDay) {
+      throw new Error(`DUPLICATE_CHECKIN:${submitDate}`)
+    }
+
     if (lastCheckin) {
       const nextAllowed = getNextCheckinDate(
         lastCheckin.check_in_date,
@@ -96,7 +107,7 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
       .run(namedParams({
         ...data,
         week_number: weekNumber,
-        check_in_date: data.check_in_date ?? new Date().toLocaleDateString('en-CA'),
+        check_in_date: submitDate,
         adjustments: JSON.stringify(adjustments),
         schedule_type: s.scheduleType,
         interval_days: s.intervalDays,
@@ -157,6 +168,18 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
     }
 
     const s = readCheckinSettings(db)
+
+    // Reject a duplicate check-in on a date that already has one. Two rows sharing
+    // a check_in_date would receive overlapping week_numbers (the new row gets
+    // priorCount+1 while existing same-date rows are shifted), producing duplicate
+    // week_numbers that make the "previous" lookup nondeterministic and corrupt the
+    // weight-trend chart. One weigh-in per calendar day.
+    const dupe = db
+      .prepare('SELECT id FROM weekly_checkins WHERE user_id=? AND check_in_date=? LIMIT 1')
+      .get([data.user_id, data.check_in_date]) as { id: number } | undefined
+    if (dupe) {
+      throw new Error(`DUPLICATE_CHECKIN:${data.check_in_date}`)
+    }
 
     // Chronological week_number: count check-ins strictly before this date
     const priorCount = (db

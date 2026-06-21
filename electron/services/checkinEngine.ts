@@ -22,6 +22,9 @@ export interface Adjustments {
 
 function weightTrend(current: number, previous: PreviousCheckin | null, bodyweight: number): number {
   if (!previous) return 0
+  // Guard against a 0 / non-finite bodyweight which would make pctChange NaN/Infinity
+  // and silently break every downstream calorie-adjustment branch.
+  if (!Number.isFinite(bodyweight) || bodyweight <= 0) return 0
   const weeksDiff = 1
   const change = (current - previous.weight_kg) / weeksDiff
   return (change / bodyweight) * 100
