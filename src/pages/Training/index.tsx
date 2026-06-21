@@ -169,6 +169,40 @@ export default function Training() {
     return result
   }, [workoutHistory])
 
+  // Consecutive full weeks (Mon–Sun) where completed workouts >= sessionsPerWeek
+  const trainingStreak = useMemo(() => {
+    const totalSessions = trainingPlan?.sessions?.length ?? 0
+    if (totalSessions === 0 || workoutHistory.length === 0) return 0
+    const completedByWeek = new Map<string, Set<string>>()
+    for (const log of workoutHistory) {
+      if (log.status !== 'completed') continue
+      const d = new Date(log.date + 'T12:00:00')
+      const jsDay = d.getDay()
+      const daysFromMon = jsDay === 0 ? 6 : jsDay - 1
+      const mon = new Date(d)
+      mon.setDate(d.getDate() - daysFromMon)
+      const key = mon.toLocaleDateString('en-CA')
+      if (!completedByWeek.has(key)) completedByWeek.set(key, new Set())
+      completedByWeek.get(key)!.add(log.date)
+    }
+    const today = new Date()
+    const jsDay = today.getDay()
+    const daysFromMon = jsDay === 0 ? 6 : jsDay - 1
+    const checkMon = new Date(today)
+    checkMon.setDate(today.getDate() - daysFromMon)
+    let streak = 0
+    while (true) {
+      const key = checkMon.toLocaleDateString('en-CA')
+      if ((completedByWeek.get(key)?.size ?? 0) >= totalSessions) {
+        streak++
+        checkMon.setDate(checkMon.getDate() - 7)
+      } else {
+        break
+      }
+    }
+    return streak
+  }, [workoutHistory, trainingPlan?.sessions?.length])
+
   const isImperial = settings.units === 'imperial'
 
   // If there is an active workout and a session to track, show the overlay
@@ -378,6 +412,11 @@ export default function Training() {
                 </div>
                 {doneCount === totalSessions && (
                   <p className="text-xs text-green-400 mt-2 font-medium">All sessions done this week — great prep!</p>
+                )}
+                {trainingStreak > 0 && (
+                  <p className="text-xs text-amber-400 mt-1 font-medium">
+                    🔥 {trainingStreak}-week training streak{trainingStreak >= 4 ? ' — elite prep consistency!' : trainingStreak >= 2 ? ' — keep building!' : ''}
+                  </p>
                 )}
               </div>
             )
