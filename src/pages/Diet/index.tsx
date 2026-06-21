@@ -1237,7 +1237,7 @@ export default function Diet() {
                   disabled={aiRefining || !aiRefinePrompt.trim()}
                   className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium transition-colors disabled:opacity-40"
                 >
-                  {aiRefining ? '...' : 'Refine'}
+                  {aiRefining ? 'Refining...' : 'Refine'}
                 </button>
               </div>
               {aiRefineError && <p className="text-xs text-red-400 mt-1">{aiRefineError}</p>}
@@ -1291,7 +1291,7 @@ export default function Diet() {
                 if (alternatives.length === 0) {
                   return (
                     <p className="text-xs text-gray-500 text-center py-4">
-                      No alternatives available — remove some food exclusions in Food Preferences to see options.
+                      No swap options match your current food exclusions. Close this and scroll to the "Food Preferences" panel to remove some exclusions, then try again.
                     </p>
                   )
                 }
