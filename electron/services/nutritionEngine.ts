@@ -588,7 +588,7 @@ function getMealTemplates(
     // ── 6: Mid-Morning Snack ──
     {
       name: 'Mid-Morning Snack',
-      time: '10:30',
+      time: '11:00',
       // isMainMeal = false: snack-only foods (greek_yogurt, apple, etc.) are
       // intentionally present here and must not be filtered by preferences.
       foods: (p) =>
