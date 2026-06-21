@@ -226,6 +226,16 @@ export default function Diet() {
     }
   }
 
+  // First uneaten meal by scheduled time — used to mark "Next" / "Due" in the timeline and meal cards.
+  const activeMealIndex: number | null = (() => {
+    const meals = dietPlan.meals ?? []
+    const uneaten = meals
+      .map((m, i) => ({ i, mins: Number(m.time.split(':')[0]) * 60 + Number(m.time.split(':')[1]) }))
+      .filter(({ i }) => !isMealEaten(i))
+      .sort((a, b) => a.mins - b.mins)
+    return uneaten.length > 0 ? uneaten[0].i : null
+  })()
+
   const filteredForExclude = FOODS.filter((f) =>
     f.name.toLowerCase().includes(prefsExcludeSearch.toLowerCase())
   )

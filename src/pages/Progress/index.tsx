@@ -262,7 +262,18 @@ export default function Progress() {
                   <div className="bg-gray-800/60 rounded-xl p-3 col-span-2 md:col-span-1">
                     <p className="text-xs text-gray-500 mb-1">Projected Show Weight</p>
                     <p className="text-lg font-bold text-gray-100">{toDisplay(projectedWeightKg)} {wUnit}</p>
-                    <p className="text-xs text-gray-600 mt-0.5">at current rate</p>
+                    {targetKg !== null ? (() => {
+                      const diff = projectedWeightKg - targetKg
+                      const absDiff = Math.abs(toDisplay(diff))
+                      const onTarget = absDiff < 0.5
+                      return (
+                        <p className={`text-xs mt-0.5 font-medium ${onTarget ? 'text-green-400' : diff > 0 ? 'text-amber-400' : 'text-blue-400'}`}>
+                          {onTarget ? '✓ on track for goal' : `${absDiff.toFixed(1)} ${wUnit} ${diff > 0 ? 'above' : 'below'} goal`}
+                        </p>
+                      )
+                    })() : (
+                      <p className="text-xs text-gray-600 mt-0.5">at current rate</p>
+                    )}
                   </div>
                 )}
               </>
