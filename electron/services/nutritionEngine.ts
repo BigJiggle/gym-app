@@ -65,7 +65,17 @@ const PHASE_MAP: Record<string, 'deficit' | 'maintenance' | 'surplus'> = {
 // Bulk: lean surplus off-season; if a show exists, treat like cut (comp prep overrides bulk intent).
 // Peak week (0-1 wk): ease off so muscles fill out on stage.
 export function getPhaseAwareDeficit(weeksOut: number | undefined, goal: string): number {
-  if (goal === 'maintain') return 0
+  if (goal === 'maintain') {
+    // Off-season / no show → true maintenance calories.
+    if (weeksOut === undefined) return 0
+    // A show is on the calendar: pure maintenance won't get the athlete stage-lean.
+    // Apply a mild, phase-aware deficit that still eases off into peak week so the
+    // physique fills out on stage.
+    if (weeksOut > 12) return -200
+    if (weeksOut > 4)  return -300
+    if (weeksOut > 1)  return -350
+    return -150 // peak week ease-off
+  }
   if (goal === 'bulk') {
     // Off-season lean surplus; if somehow bulk+show coexist, treat as cut
     if (weeksOut === undefined) return 300
