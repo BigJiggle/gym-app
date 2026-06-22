@@ -550,8 +550,8 @@ export default function CheckIn() {
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 text-center space-y-3">
           <div className="text-4xl">🔒</div>
           <div>
-            <h2 className="text-base font-bold text-gray-100">Next Check-In</h2>
-            <p className="text-xs text-gray-500 mt-0.5">Check-ins are scheduled to track weekly progress — your next window opens on:</p>
+            <h2 className="text-base font-bold text-gray-100">Check-In Locked</h2>
+            <p className="text-xs text-gray-500 mt-0.5">Not yet available. Your next check-in opens on:</p>
             <p className="text-brand-400 font-semibold text-lg mt-1">
               {nextAllowed.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
             </p>

@@ -957,9 +957,9 @@ export default function Dashboard() {
             </div>
           ) : (
             <div className="py-4 text-center space-y-2">
-              <p className="text-gray-500 text-sm">No check-ins yet.</p>
+              <p className="text-gray-500 text-sm">No check-ins yet. Log your weight to start tracking progress.</p>
               <Link to="/checkin">
-                <Button size="sm" variant="secondary">Submit First Check-In</Button>
+                <Button size="sm" variant="secondary">Log First Weigh-In →</Button>
               </Link>
             </div>
           )}
