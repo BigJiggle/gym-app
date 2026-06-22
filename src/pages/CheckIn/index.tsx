@@ -740,6 +740,67 @@ export default function CheckIn() {
             </div>
           )}
         </div>
+
+        {/* Show Day Projection — visible immediately after weighing in so athlete
+            knows at a glance whether their cut/bulk pace will hit their target */}
+        {checkinHistory.length >= 2 && user.show_date && (() => {
+          const recent = checkinHistory.slice(0, 5)
+          const newest = recent[0]
+          const oldest = recent[recent.length - 1]
+          const daysDiff = (new Date(newest.check_in_date).getTime() - new Date(oldest.check_in_date).getTime()) / (1000 * 60 * 60 * 24)
+          const weeksDiff = daysDiff / 7
+          if (weeksDiff <= 0) return null
+          const weeklyRateKg = (newest.weight_kg - oldest.weight_kg) / weeksDiff
+          const weeksToShow = (new Date(user.show_date + 'T12:00:00').getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 7)
+          if (weeksToShow <= 0) return null
+          const projectedKg = newest.weight_kg + weeklyRateKg * weeksToShow
+          const targetKg = settings.target_weight_kg ? parseFloat(settings.target_weight_kg as string) : null
+          const fmt = (kg: number) => isImperial
+            ? `${Math.round(kg * 2.20462 * 10) / 10} lbs`
+            : `${Math.round(kg * 10) / 10} kg`
+          const rateDisplay = isImperial
+            ? `${weeklyRateKg > 0 ? '+' : ''}${Math.round(weeklyRateKg * 2.20462 * 10) / 10} lbs/wk`
+            : `${weeklyRateKg > 0 ? '+' : ''}${Math.round(weeklyRateKg * 10) / 10} kg/wk`
+          const gap = targetKg !== null ? projectedKg - targetKg : null
+          const onTrack = gap !== null
+            ? (user.goal === 'cut' ? gap <= 0.5 : gap >= -0.5)
+            : null
+          const rateGood = (user.goal === 'cut' && weeklyRateKg < 0) || (user.goal === 'bulk' && weeklyRateKg > 0)
+          return (
+            <div className={`bg-gray-900 border rounded-xl p-4 ${
+              onTrack === true ? 'border-green-800/50' :
+              onTrack === false ? 'border-amber-800/50' :
+              'border-gray-800'
+            }`}>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Show Day Projection</p>
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Weekly rate</span>
+                  <span className={`font-semibold ${rateGood ? 'text-green-400' : 'text-amber-400'}`}>{rateDisplay}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">~{Math.round(weeksToShow)}w projection</span>
+                  <span className="font-semibold text-gray-200">{fmt(projectedKg)}</span>
+                </div>
+                {targetKg !== null && gap !== null && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Target</span>
+                    <span className={`font-semibold ${onTrack ? 'text-green-400' : 'text-amber-400'}`}>
+                      {fmt(targetKg)}
+                      {onTrack
+                        ? ' ✓ on track'
+                        : ` — ${fmt(Math.abs(gap))} ${user.goal === 'cut' ? (gap > 0 ? 'above' : 'below') : (gap < 0 ? 'below' : 'above')}`}
+                    </span>
+                  </div>
+                )}
+              </div>
+              <p className="text-xs text-gray-600 mt-2">
+                Avg over {recent.length} check-in{recent.length !== 1 ? 's' : ''} · {Math.round(weeksToShow)} weeks to show
+              </p>
+            </div>
+          )
+        })()}
+
         <div className="flex gap-3">
           <Button onClick={async () => {
             setSubmitted(null)
