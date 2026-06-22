@@ -1,101 +1,62 @@
-# QA Report — 2026-06-21
+# App Health Report — 2026-06-22
 
-## Phase 1 — QA Engineer
-
-### TypeScript Check
-**PASS** — 0 errors (full rebuild via `tsc -p tsconfig.web.json --noEmit`).  
-*(Note: incremental `.tsbuildinfo` cache was masking one pre-existing error; see Phase 3.)*
-
-### Unit Tests
-**PASS** — 86/86 tests passing.
+## Phase 1: QA Engineer
+- TypeScript: PASS (0 errors — clean before and after fixes)
+- Unit tests: PASS (104 tests, 9 files — includes 24 new audit tests)
+- Bugs fixed: 3 (2 logic/domain + 1 data-integrity)
 
 ### Nutrition Engine Audit
-- All 9 meal templates (indices 0–8) verified: every food ID in every template has a matching entry in `FOOD_CALORIES_PER_100G` and `FOOD_CATEGORY`. ✓
-- All 8 culture food paths (`getCultureFood`) return valid `TemplateFoodItem` objects with calorie entries. ✓
-- `FOOD_SUBSTITUTES` common substitutes all have calorie entries. ✓
-- **Bug found**: Mid-Morning Snack template (`index 6`) had `time: '10:30'`, only 30 minutes after the Mid-Morning meal at `10:00`. In 5–6 meal plans with snacks, both appear on the timeline 30 min apart, confusing the schedule.
-  - **Fix**: changed `'10:30'` → `'11:00'` in `electron/services/nutritionEngine.ts`.
+- calcPortionStr logic: OK — MEAL_CAL_FRACTIONS (0.45/0.35/0.15), ROLE_FIXED_G (veg 120 / fruit 100 / powder 30), and min/max clamps all sensible; fixedLabel short-circuits correctly.
+- Template TemplateFoodItems: OK — every getFood() call across all 9 meal templates passes a valid {id, display, role, …} item; no plain strings or undefined returns.
+- getCultureFood coverage (all 8 cultures): OK — every culture key returns a TemplateFoodItem across indian/mexican/mediterranean/asian/west_african/japanese/korean/middle_eastern; verified no "undefined"/NaN strings produced for any culture × diet combo.
+- FOOD_CALORIES_PER_100G coverage: OK — audit-coverage test confirms every scalable template id, every non-veg FOOD_CATEGORY id, and every non-veg substitute subId has a calorie entry. Complete.
+- Macro math: OK — protein = weight_kg × 2.3, fat = weight_kg × 0.9, carbs = (cal − P×4 − F×9)/4; verified ≈2.3 g/kg and ≈0.9 g/kg.
+- Spot check output:
+  - 80kg male / omnivore / 6 meals / 0 snacks / cut / 8wk → 2361 kcal, 184P/244C/72F; e.g. Breakfast 394 kcal: Oats (35g dry), Whole Eggs x3, Berries (100g), Almonds (10g).
+  - 70kg female / vegan / 4 meals + 1 snack / maintain → 1967 kcal, 161P/189C/63F; e.g. Mid-Morning Snack 200 kcal: Pea Protein Shake (30g), Apple (100g); Lunch 442 kcal: Tempeh (100g), Sweet Potato (180g), Spinach (120g), Avocado (30g).
 
-### Logic / Domain Sanity
-| Check | Result |
-|---|---|
-| Protein target (2.3 g/kg) | ✓ Correct |
-| Fat floor (0.9 g/kg) | ✓ Correct |
-| Peak-week deficit (0–1 wks out → −200 kcal) | ✓ Correct |
-| `maintain` goal → 0 deficit | ✓ By design |
-| Duplicate check-in prevention (`UNIQUE(user_id, date, meal_index)`) | ✓ Correct |
-| Goal conflict (cut + surplus) | ✓ Not possible — goal is a single enum |
-| Training frequency clamp (2–6) | ✓ `Math.min(6, Math.max(2, rawFreq))` |
-| Phase thresholds (hypertrophy/strength/peak/deload) | ✓ Correct |
-| Input boundary: weight/age zero guards | ✓ Handled upstream by onboarding validation |
+### Logic & Domain Sanity
+- Meal calorie sum vs daily target: OK — sum within ±80 kcal of calories_target across meal_count 3-6 × snack_count 0-2.
+- Meal time ordering: OK — templates sorted ascending by time; verified 07:00 < 10:00 < … < 21:00.
+- Protein g/kg range: OK — 2.3 g/kg, within 1.8–3.5 competitive range.
+- Fat g/kg minimum: OK — 0.9 g/kg, well above 0.5 g/kg floor.
+- Peak week calorie ease-off: OK — getPhaseAwareDeficit eases at 0-1 wk (cut -200 vs mid-prep -700).
+- Training session count vs frequency: OK — exactly N sessions for frequency N (2-6); 7 clamps to 6; 0/NaN default to sensible.
+- Deload at peak week: OK — determinePhase returns 'deload' for weeks_out ≤ 3, getSets reduces sets and RIR rises to 3; verified avg sets lower than hypertrophy.
+- Show date / weeks_out edge cases: OK — computeWeeksOut clamps to ≥0 (today/past → 0, never negative); shows:setPrimary throws on past show; cancellation transitions to off-season and clears show_date.
+- Duplicate check-in same day: OK — both checkin:submit and checkin:submitMissed reject a second same-date entry with DUPLICATE_CHECKIN; week_numbers stay unique.
+- Bulk+show goal conflict: OK — getPhaseAwareDeficit returns a cut deficit when bulk coexists with a show (weeks_out defined); off-season bulk keeps +300 surplus.
+- Input boundary guards: OK — weight_kg < 30 / non-finite falls back to 70kg (no NaN/zero-protein); meal_count clamped to ≥3; training_frequency clamped to 2-6; check-in bodyweight guard prevents NaN trend.
+- maintain at weeks_out=4: FIXED — see logic fix below.
 
-### User Flow Traces (7/7 pass)
-1. **Onboarding → plan generation**: `userHandlers.ts` → `generateNutritionPlan` → `generateTrainingPlan` ✓
-2. **Daily meal logging and unlogging**: `logMealCompletion` / `unlogMealCompletion` → `UNIQUE` constraint ✓
-3. **Weekly check-in**: `checkin:submit` → macro recalc with new weight → `calories_delta` propagated to meals ✓
-4. **Same-day duplicate check-in**: throws `DUPLICATE_CHECKIN:date` ✓
-5. **Show countdown and diet phase transition**: `syncPrimaryToNearest` → `regenerateDietForGoal` ✓
-6. **Training plan regeneration from Settings**: `handleSaveProfile(true)` → `Promise.all([generateTrainingPlan, generateDietPlan])` ✓
-7. **Progress page with 0 and 1 check-ins**: empty-state handled gracefully; `projectedWeightKg` null-guarded ✓
+### Logic Fix Applied
+- maintain + upcoming show now applies a mild deficit — previously getPhaseAwareDeficit returned 0 for goal='maintain' regardless of weeks_out, so an athlete 4 weeks out on "maintain" got pure maintenance calories and would never reach stage condition. Now off-season maintain = 0, but maintain+show ramps -200 → -350 and eases to -150 at peak.
 
-### Bugs Fixed — Phase 1 (1 bug)
-| # | File | Description | Fix |
-|---|---|---|---|
-| 1 | `electron/services/nutritionEngine.ts` | Mid-Morning Snack time `'10:30'` collides with Mid-Morning at `'10:00'` | Changed to `'11:00'` |
+### User Flow Audit
+- Onboarding → plan gen: OK — weeks_out computed from show_date (Math.max(0, …) with T12:00:00 anchor) and passed to both engines.
+- Diet page portions: OK — all meal/macro reads null-guarded (?? 0), divide-by-zero guarded, full no-plan early return.
+- Meal completion: OK — INSERT OR REPLACE + UNIQUE(user_id,date,meal_index); store de-dupes; no double count.
+- Check-in → recalc: OK — recalc uses the just-submitted bodyweight (not stale onboarding weight) for protein/fat; meals scaled by calorie ratio.
+- Settings regen: FIXED — orphaned meal_completions cleared on regen (see Bugs Fixed).
+- Workout flow: OK — start/logSet/complete bind safely; completed detection skips non-completed logs.
+- Progress chart: OK — 0 check-ins → empty state; 1 check-in → trend gated (no NaN); projection uses real show_date, no hardcoded prep length.
 
-**Commit**: `686a47d — [QA] 2026-06-21: Fix Mid-Morning Snack time collision (10:30→11:00)`
+### Bugs Fixed
+- electron/services/nutritionEngine.ts:67-79 — maintain goal ignored an upcoming show and applied zero deficit; now phase-aware deficit for maintain+show, true maintenance only off-season.
+- electron/services/trainingEngine.ts (EXERCISE_LIBRARY) — minimal-equipment splits (bro/arnold) produced EMPTY sessions because shoulders/biceps/hamstrings had zero `minimal`-tier exercises. Added Pike Push-Up, Chin-Up (Bicep Focus), Towel/Band Curl, Nordic Curl (now minimal), and Single-Leg Hip Hinge so no muscle group is ever empty at minimal tier.
+- electron/ipc/mealCompletionHandlers.ts (+ planHandlers.ts:183,222,316,483; showHandlers.ts) — diet regeneration with a reduced meal_count left orphaned meal_completions at now-invalid meal_index, inflating "meals eaten"/adherence counts. Added clearOrphanedMealCompletions(db, userId, newMealCount) wired into all 5 regeneration sites (Claude diet, rule-based diet, regenerateAll, startupRefresh, off-season regenerateDietForGoal); purges today+future orphans only, preserves historical record.
 
----
+### Known Issues (not fixed)
+- Vegetarian Lunch falls through to the omnivore branch (only vegan is special-cased), so a vegetarian gets a meat protein_main at Lunch when a culture is selected. Pre-existing; lower severity than the three fixed bugs — flagged for a future fix.
 
-## Phase 2 — Prep Athlete Feature
+## Phase 2: Prep Athlete
+- Status: SKIPPED (reason: 3 bugs fixed in Phase 1 ≥ 3 threshold)
+- Feature added: none
+- Files changed: none
 
-**Trigger**: Phase 1 fixed 1 bug (< 3 threshold), so Phase 2 runs.
+## Phase 3: UX Reviewer
+- Changes: 2
+- src/pages/Dashboard/index.tsx:960-962 — replaced vague "Submit First Check-In" with "Log First Weigh-In →" plus a one-line subtitle so an exhausted athlete instantly knows what the action is.
+- src/pages/CheckIn/index.tsx:553-554 — locked-state heading changed from "Next Check-In" to "Check-In Locked" and the wordy explanation shortened to "Not yet available. Your next check-in opens on:" for faster comprehension that the page is not actionable yet.
 
-**Feature selected**: Consecutive-week training streak counter.
-
-**Why**: Athletes who complete all scheduled sessions for multiple consecutive weeks deserve visible positive feedback. The existing "Sessions This Week" tracker only shows the current week; there was no persistence-of-habit indicator.
-
-**Implementation** (`src/pages/Training/index.tsx`):
-- Added `trainingStreak` `useMemo` that groups completed workout logs by ISO week (Mon–Sun anchor) and counts backwards from the current week through consecutive weeks where `completedDays >= sessionsPerWeek`.
-- Displayed inside the existing "Sessions This Week" card, below the session dots.
-- Copy variants: bare ("🔥 1-week training streak"), motivating ("keep building!" at 2–3 weeks), and elite ("elite prep consistency!" at 4+ weeks).
-- No new IPC calls — uses `workoutHistory` already loaded at page mount.
-
-**Commit**: `7882caf — [Feature] Add consecutive-week training streak counter to Training plan tab`
-
----
-
-## Phase 3 — UX Reviewer
-
-### Fix 1 — Critical: `activeMealIndex` undeclared in Diet/index.tsx
-
-**Severity**: Crash (ReferenceError at runtime).
-
-**Root cause**: `activeMealIndex` was referenced in the Meal Schedule Timeline IIFE (line 500+) and in meal card `.map()` callbacks (line 645+) but was never declared anywhere in the component. TypeScript's incremental compilation cache had stored a prior "clean" result for this file, so `tsc --noEmit` silently skipped it. A full rebuild (`tsc -p tsconfig.web.json --noEmit`) revealed 8 errors on this variable.
-
-**Fix**: Added an IIFE-computed `const activeMealIndex: number | null` immediately before `filteredForExclude`, after `isMealEaten` is defined. Logic: find first uneaten meal sorted by scheduled time (HH:MM). Returns `null` when all meals are eaten.
-
-### Fix 2 — Progress page: Projected Show Weight vs Stage Goal
-
-**Issue**: When a user sets a Stage Weight Goal, the "Projected Show Weight" card showed a generic "at current rate" subtitle instead of telling the athlete whether their current trajectory will hit the goal.
-
-**Fix**: When `targetKg !== null && projectedWeightKg !== null`, replaced the subtitle with a colour-coded delta:
-- Within 0.5 kg: "✓ on track for goal" (green)
-- Above goal: "X.X kg above goal" (amber — needs more cutting)
-- Below goal: "X.X kg below goal" (blue — losing faster than goal)
-
-**Commit**: `4301d0e — [UX] Fix undeclared activeMealIndex crash on Diet page; add projected-vs-goal gap on Progress page`
-
----
-
-## Summary
-
-| Phase | Finding | Status |
-|---|---|---|
-| P1 | Mid-Morning Snack time collision (10:30 → 11:00) | Fixed ✓ |
-| P2 | Training streak counter (new feature) | Shipped ✓ |
-| P3 | `activeMealIndex` ReferenceError crash on Diet page | Fixed ✓ |
-| P3 | Progress page: projected vs stage goal gap | Fixed ✓ |
-
-**Total bugs fixed**: 2 (Phase 1: 1 logic bug; Phase 3: 1 crash bug)  
-**Total improvements shipped**: 3 commits pushed to `master`.
+## Push: SUCCESS
