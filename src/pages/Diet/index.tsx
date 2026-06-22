@@ -288,41 +288,47 @@ export default function Diet() {
             </button>
           ))}
         </div>
-        <button
-          onClick={async () => {
-            setRecalcLoading(true)
-            try {
-              await recalculateMacros(user.id)
-              setRecalcDone(true)
-              setTimeout(() => setRecalcDone(false), 2500)
-            } finally {
-              setRecalcLoading(false)
-            }
-          }}
-          disabled={recalcLoading || regenLoading}
-          title="Recalculate macro targets from current body weight — keeps your meal structure"
-          className="text-xs text-gray-500 hover:text-green-400 border border-gray-700 hover:border-green-700 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-40"
-        >
-          {recalcDone ? '✓ Updated' : recalcLoading ? '⟳ Updating...' : '⟳ Recalculate Macros'}
-        </button>
-        <button
-          onClick={async () => {
-            if (!window.confirm('Regenerate your meal plan? This replaces all current meals and any swaps you have made.')) return
-            setRegenLoading(true)
-            try {
-              await generateDietPlan(user.id)
-            } finally {
-              setRegenLoading(false)
-            }
-          }}
-          disabled={recalcLoading || regenLoading}
-          title="Regenerate meal plan with current settings"
-          className="text-xs text-amber-500 font-medium bg-amber-900/20 hover:bg-amber-900/40 border border-amber-800/60 hover:border-amber-700 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-40"
-        >
-          {regenLoading ? 'Regenerating...' : '⚠ Regenerate Meals'}
-        </button>
+        {tab === 'plan' && (
+          <>
+            <button
+              onClick={async () => {
+                setRecalcLoading(true)
+                try {
+                  await recalculateMacros(user.id)
+                  setRecalcDone(true)
+                  setTimeout(() => setRecalcDone(false), 2500)
+                } finally {
+                  setRecalcLoading(false)
+                }
+              }}
+              disabled={recalcLoading || regenLoading}
+              title="Recalculate macro targets from current body weight — keeps your meal structure"
+              className="text-xs text-gray-500 hover:text-green-400 border border-gray-700 hover:border-green-700 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-40"
+            >
+              {recalcDone ? '✓ Updated' : recalcLoading ? '⟳ Updating...' : '⟳ Recalculate Macros'}
+            </button>
+            <button
+              onClick={async () => {
+                if (!window.confirm('Regenerate your meal plan? This replaces all current meals and any swaps you have made.')) return
+                setRegenLoading(true)
+                try {
+                  await generateDietPlan(user.id)
+                } finally {
+                  setRegenLoading(false)
+                }
+              }}
+              disabled={recalcLoading || regenLoading}
+              title="Regenerate meal plan with current settings"
+              className="text-xs text-amber-500 font-medium bg-amber-900/20 hover:bg-amber-900/40 border border-amber-800/60 hover:border-amber-700 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-40"
+            >
+              {regenLoading ? 'Regenerating...' : '⚠ Regenerate Meals'}
+            </button>
+          </>
+        )}
       </div>
-      <p className="text-xs text-gray-400 -mt-3">⟳ adjusts macro targets &nbsp;·&nbsp; <span className="text-amber-500 font-medium">⚠ replaces all meals</span></p>
+      {tab === 'plan' && (
+        <p className="text-xs text-gray-400 -mt-3">⟳ adjusts macro targets &nbsp;·&nbsp; <span className="text-amber-500 font-medium">⚠ replaces all meals</span></p>
+      )}
 
       {/* ─── MEAL PLAN TAB ─── */}
       {tab === 'plan' && (

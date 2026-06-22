@@ -18,6 +18,12 @@ const PHASE_COLOR: Record<string, string> = {
   peak: 'text-red-400',
   deload: 'text-green-400',
 }
+const PHASE_SUBTITLE: Record<string, string> = {
+  hypertrophy: 'volume focus',
+  strength: 'intensity focus',
+  peak: 'show prep',
+  deload: 'recovery week',
+}
 
 export default function Training() {
   const { user } = useUserStore()
@@ -345,6 +351,9 @@ export default function Training() {
                 <p className={`text-sm font-semibold mt-1 capitalize ${PHASE_COLOR[trainingPlan.phase] ?? 'text-gray-200'}`}>
                   {trainingPlan.phase}
                 </p>
+                {PHASE_SUBTITLE[trainingPlan.phase] && (
+                  <p className="text-xs text-gray-600 mt-0.5">{PHASE_SUBTITLE[trainingPlan.phase]}</p>
+                )}
               </div>
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wider">Duration</p>
