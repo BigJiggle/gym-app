@@ -76,6 +76,7 @@ const EXERCISE_LIBRARY: ExerciseLibraryEntry[] = [
   { name: 'Face Pull', muscle: 'shoulders', muscleGroup: 'shoulders', category: 'push', equipment: ['full_gym'], isCompound: false, tutorialQuery: 'face pull rear delts proper form tutorial' },
   // PUSH — Shoulders additions
   { name: 'Arnold Press', muscle: 'shoulders', muscleGroup: 'shoulders', category: 'push', equipment: ['full_gym', 'home'], isCompound: true },
+  { name: 'Pike Push-Up', muscle: 'shoulders', muscleGroup: 'shoulders', category: 'push', equipment: ['full_gym', 'home', 'minimal'], isCompound: true, tutorialQuery: 'pike push-up shoulders proper form tutorial' },
   { name: 'Cable Front Raise', muscle: 'shoulders', muscleGroup: 'shoulders', category: 'push', equipment: ['full_gym'], isCompound: false },
   { name: 'Machine Shoulder Press', muscle: 'shoulders', muscleGroup: 'shoulders', category: 'push', equipment: ['full_gym'], isCompound: true },
   { name: 'Upright Row', muscle: 'shoulders', muscleGroup: 'shoulders', category: 'push', equipment: ['full_gym'], isCompound: false },
@@ -111,6 +112,8 @@ const EXERCISE_LIBRARY: ExerciseLibraryEntry[] = [
   { name: 'Hammer Curl', muscle: 'biceps', muscleGroup: 'biceps', category: 'pull', equipment: ['full_gym', 'home'], isCompound: false },
   { name: 'Cable Curl', muscle: 'biceps', muscleGroup: 'biceps', category: 'pull', equipment: ['full_gym'], isCompound: false },
   { name: 'Incline Dumbbell Curl', muscle: 'biceps', muscleGroup: 'biceps', category: 'pull', equipment: ['full_gym', 'home'], isCompound: false },
+  { name: 'Chin-Up (Bicep Focus)', muscle: 'biceps', muscleGroup: 'biceps', category: 'pull', equipment: ['full_gym', 'home', 'minimal'], isCompound: true, tutorialQuery: 'chin-up bicep focus proper form tutorial' },
+  { name: 'Towel/Band Curl', muscle: 'biceps', muscleGroup: 'biceps', category: 'pull', equipment: ['full_gym', 'home', 'minimal'], isCompound: false },
   // PULL — Biceps additions
   { name: 'Preacher Curl', muscle: 'biceps', muscleGroup: 'biceps', category: 'pull', equipment: ['full_gym'], isCompound: false },
   { name: 'Concentration Curl', muscle: 'biceps', muscleGroup: 'biceps', category: 'pull', equipment: ['full_gym', 'home'], isCompound: false },
@@ -135,7 +138,8 @@ const EXERCISE_LIBRARY: ExerciseLibraryEntry[] = [
   { name: 'Walking Lunge', muscle: 'quads', muscleGroup: 'quads', category: 'legs', equipment: ['full_gym', 'home', 'minimal'], isCompound: true },
   { name: 'Sissy Squat', muscle: 'quads', muscleGroup: 'quads', category: 'legs', equipment: ['full_gym', 'home', 'minimal'], isCompound: false },
   { name: 'Leg Curl (Seated)', muscle: 'hamstrings', muscleGroup: 'hamstrings', category: 'legs', equipment: ['full_gym'], isCompound: false },
-  { name: 'Nordic Curl', muscle: 'hamstrings', muscleGroup: 'hamstrings', category: 'legs', equipment: ['full_gym', 'home'], isCompound: false },
+  { name: 'Nordic Curl', muscle: 'hamstrings', muscleGroup: 'hamstrings', category: 'legs', equipment: ['full_gym', 'home', 'minimal'], isCompound: false, tutorialQuery: 'nordic hamstring curl proper form tutorial' },
+  { name: 'Single-Leg Hip Hinge', muscle: 'hamstrings', muscleGroup: 'hamstrings', category: 'legs', equipment: ['full_gym', 'home', 'minimal'], isCompound: true },
   { name: 'Cable Pull-Through', muscle: 'glutes', muscleGroup: 'glutes', category: 'legs', equipment: ['full_gym'], isCompound: false },
   { name: 'Glute Bridge', muscle: 'glutes', muscleGroup: 'glutes', category: 'legs', equipment: ['full_gym', 'home', 'minimal'], isCompound: false },
   { name: 'Donkey Calf Raise', muscle: 'calves', muscleGroup: 'calves', category: 'legs', equipment: ['full_gym'], isCompound: false },

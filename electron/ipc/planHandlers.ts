@@ -4,6 +4,7 @@ import { generateTrainingPlan, getExerciseLibraryForUI, determinePhase } from '.
 import { generateNutritionPlan, buildMealsPublic, calcBMR, getPhaseAwareDeficit, ACTIVITY_MULTIPLIERS } from '../services/nutritionEngine'
 import { generateDietWithClaude, generateWorkoutWithClaude, refineDietPlan, refineWorkoutWithClaude, processAIRequest, refineWorkoutForSafety } from '../services/claudeService'
 import { regenerateDietForGoal } from './showHandlers'
+import { clearOrphanedMealCompletions } from './mealCompletionHandlers'
 
 export function registerPlanHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('plan:generateTraining', async (_event, userId: number) => {
@@ -180,6 +181,7 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
         const cr = claudeResult as any
         const planName = `AI Nutrition Plan (${cr.phase ?? 'deficit'})`
         db.prepare('DELETE FROM diet_plans WHERE user_id = ?').run(userId)
+        clearOrphanedMealCompletions(db, userId, (cr.meals ?? []).length)
         const result = db.prepare(
           `INSERT INTO diet_plans (user_id, name, calories_target, protein_g, carbs_g, fat_g, meal_count, meals, phase, engine_version)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -218,6 +220,7 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
     })
 
     db.prepare('DELETE FROM diet_plans WHERE user_id = ?').run(userId)
+    clearOrphanedMealCompletions(db, userId, plan.meal_count)
 
     const planName = `${plan.phase.charAt(0).toUpperCase() + plan.phase.slice(1)} Nutrition Plan`
     const result = db
@@ -310,6 +313,7 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
       culture_pref: (user.culture_pref as string) ?? 'any',
     })
     db.prepare('DELETE FROM diet_plans WHERE user_id = ?').run(userId)
+    clearOrphanedMealCompletions(db, userId, dietPlan.meal_count)
     db.prepare(`INSERT INTO diet_plans (user_id, name, calories_target, protein_g, carbs_g, fat_g, meal_count, meals, phase, generated_at_weeks_out, engine_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run([userId, `${dietPlan.phase.charAt(0).toUpperCase() + dietPlan.phase.slice(1)} Nutrition Plan`, dietPlan.calories_target, dietPlan.protein_g, dietPlan.carbs_g, dietPlan.fat_g, dietPlan.meal_count, JSON.stringify(dietPlan.meals), dietPlan.phase, weeksOut ?? null, 3])
 
     return { trainingDone: true, dietDone: true }
@@ -476,6 +480,7 @@ Ensure every exercise respects the constraints above while maintaining phase-app
         culture_pref: (freshUser.culture_pref as string) ?? 'any',
       })
       db.prepare('DELETE FROM diet_plans WHERE user_id = ?').run(userId)
+      clearOrphanedMealCompletions(db, userId, newDiet.meal_count)
       db.prepare(`INSERT INTO diet_plans (user_id, name, calories_target, protein_g, carbs_g, fat_g, meal_count, meals, phase, generated_at_weeks_out, engine_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run([userId, `${newDiet.phase.charAt(0).toUpperCase() + newDiet.phase.slice(1)} Nutrition Plan`, newDiet.calories_target, newDiet.protein_g, newDiet.carbs_g, newDiet.fat_g, newDiet.meal_count, JSON.stringify(newDiet.meals), newDiet.phase, weeksOut ?? null, 3])
       dietUpdated = true

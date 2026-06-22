@@ -3,6 +3,7 @@ import { getDb } from '../database/db'
 import { generateTrainingPlan } from '../services/trainingEngine'
 import { generateNutritionPlan } from '../services/nutritionEngine'
 import { generateWorkoutWithClaude, refineWorkoutForSafety } from '../services/claudeService'
+import { clearOrphanedMealCompletions } from './mealCompletionHandlers'
 
 // Always keeps users.show_date pointing to the nearest upcoming show.
 // Called after every add / delete / update so the state is always consistent.
@@ -66,6 +67,7 @@ export function regenerateDietForGoal(
     : effectiveGoal === 'maintain' ? 'Maintenance Nutrition Plan'
     : 'Off-Season Nutrition Plan'
   db.prepare('DELETE FROM diet_plans WHERE user_id=?').run([userId])
+  clearOrphanedMealCompletions(db, userId, newDiet.meal_count)
   db.prepare(
     `INSERT INTO diet_plans (user_id, name, calories_target, protein_g, carbs_g, fat_g, meal_count, meals, phase, generated_at_weeks_out, engine_version)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
