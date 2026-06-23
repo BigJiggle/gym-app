@@ -636,7 +636,7 @@ function getMealTemplates(
     // ── 7: Afternoon Snack ──
     {
       name: 'Afternoon Snack',
-      time: '15:30',
+      time: '15:00',
       // isMainMeal = false: same reason as Mid-Morning Snack.
       foods: (p) =>
         p === 'vegan'
