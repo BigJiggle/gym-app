@@ -264,7 +264,9 @@ function buildMeals(
   const SNACK_CAL = 200
   const mainCount = mealTemplates.length - snackCount
   const totalSnackCal = snackCount * SNACK_CAL
-  const mainCalories = Math.max(800, totalCal - totalSnackCal)
+  // Do not inflate mainCalories with an 800-floor — when snack_count=3 on a 1200 kcal
+  // plan the guard caused meal sums to exceed the daily target by ~200 kcal.
+  const mainCalories = Math.max(0, totalCal - totalSnackCal)
   const perMainCal = mainCount > 0 ? Math.round(mainCalories / mainCount) : 0
 
   // Protein and fat are fixed by body weight; carbs fill the rest
@@ -492,6 +494,25 @@ function getMealTemplates(
             ),
           ]
         }
+        if (p === 'vegetarian') {
+          // getCultureFood with key 'plant_protein' + pref 'vegetarian' correctly selects
+          // the culture-specific plant protein. For culture='any' it returns the fallback
+          // (cottage_cheese) rather than falling through to chicken_breast.
+          return [
+            getCultureFood(culturePref, 'plant_protein', p,
+              getFood('cottage_cheese', exclusions, { id: 'cottage_cheese', display: 'Cottage Cheese', role: 'protein' }, preferences), exclusions
+            ),
+            getCultureFood(culturePref, 'carb_main', p,
+              getFood('brown_rice', exclusions, { id: 'brown_rice', display: 'Brown Rice', role: 'carb', unitSuffix: 'cooked' }, preferences), exclusions
+            ),
+            getCultureFood(culturePref, 'veg', p,
+              getFood('broccoli', exclusions, { id: 'broccoli', display: 'Broccoli', role: 'veg' }, preferences), exclusions
+            ),
+            getCultureFood(culturePref, 'fat', p,
+              getFood('almonds', exclusions, { id: 'almonds', display: 'Almonds', role: 'fat' }, preferences), exclusions
+            ),
+          ]
+        }
         return [
           getCultureFood(culturePref, 'protein_main', p,
             getFood('chicken_breast', exclusions, { id: 'chicken_breast', display: 'Chicken Breast', role: 'protein' }, preferences), exclusions
@@ -575,7 +596,7 @@ function getMealTemplates(
               getFood('mixed_veg', exclusions, { id: 'mixed_veg', display: 'Vegetables', role: 'veg' }, preferences), exclusions
             ),
             getCultureFood(culturePref, 'fat', p,
-              getFood('olive_oil', exclusions, { id: 'olive_oil', display: 'Olive Oil', role: 'fat', fixedLabel: 'Olive Oil (15g)' }, preferences)
+              getFood('olive_oil', exclusions, { id: 'olive_oil', display: 'Olive Oil', role: 'fat', fixedLabel: 'Olive Oil (15g)' }, preferences), exclusions
             ),
           ]
         }
@@ -590,7 +611,7 @@ function getMealTemplates(
             getFood('asparagus', exclusions, { id: 'asparagus', display: 'Asparagus', role: 'veg' }, preferences), exclusions
           ),
           getCultureFood(culturePref, 'fat', p,
-            getFood('olive_oil', exclusions, { id: 'olive_oil', display: 'Olive Oil', role: 'fat', fixedLabel: 'Olive Oil (15g)' }, preferences)
+            getFood('olive_oil', exclusions, { id: 'olive_oil', display: 'Olive Oil', role: 'fat', fixedLabel: 'Olive Oil (15g)' }, preferences), exclusions
           ),
         ]
       }

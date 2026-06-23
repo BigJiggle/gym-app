@@ -10,7 +10,7 @@ const base = {
 describe('audit logic', () => {
   it('per-meal calories sum to ~ daily target (±80)', () => {
     for (const mc of [3,4,5,6]) {
-      for (const sc of [0,1,2]) {
+      for (const sc of [0,1,2,3]) {
         const plan = generateNutritionPlan({ ...base, meal_count: mc, snack_count: sc, weeks_out: 8 })
         const sum = plan.meals.reduce((a,m)=>a+m.calories,0)
         expect(Math.abs(sum - plan.calories_target), `mc=${mc} sc=${sc} sum=${sum} target=${plan.calories_target}`).toBeLessThanOrEqual(80)
@@ -23,6 +23,16 @@ describe('audit logic', () => {
     const times = plan.meals.map(m=>m.time)
     const sorted = [...times].sort()
     expect(times).toEqual(sorted)
+  })
+
+  it('vegetarian lunch contains no meat', () => {
+    for (const culture of ['any','indian','mexican','mediterranean','asian','west_african','japanese','korean','middle_eastern']) {
+      const plan = generateNutritionPlan({ ...base, dietary_preference: 'vegetarian', culture_pref: culture, meal_count: 4, snack_count: 0, weeks_out: 8 })
+      const lunch = plan.meals.find(m => m.name === 'Lunch')!
+      expect(lunch, `no Lunch meal for culture=${culture}`).toBeDefined()
+      const foods = lunch.foods.join(' ').toLowerCase()
+      expect(foods, `culture=${culture}`).not.toMatch(/chicken|beef|fish|salmon|turkey|pork|tuna/)
+    }
   })
 
   it('no undefined/NaN in foods or macros', () => {

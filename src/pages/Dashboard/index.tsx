@@ -399,6 +399,8 @@ export default function Dashboard() {
           <p className="text-sm text-brand-300">{lastRefreshMessage}</p>
           <button
             onClick={clearRefreshMessage}
+            aria-label="Dismiss notification"
+            title="Dismiss"
             className="text-gray-500 hover:text-gray-300 text-xs flex-shrink-0 mt-0.5"
           >
             ✕
@@ -1203,11 +1205,11 @@ export default function Dashboard() {
                     onClick={() => { setCardioType(todayEntry.type); setCardioMinutes(String(todayEntry.minutes)); setCardioInputOpen(true) }}
                     className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
                   >Edit</button>
-                  <button onClick={removeCardioToday} className="text-xs text-red-500 hover:text-red-400 transition-colors">✕</button>
+                  <button onClick={removeCardioToday} aria-label="Delete today's cardio session" title="Delete" className="text-xs text-red-500 hover:text-red-400 transition-colors">✕</button>
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-gray-600 mb-3">No cardio logged today.</p>
+              <p className="text-sm text-gray-500 mb-3">No cardio logged today.</p>
             )}
             {cardioInputOpen ? (
               <div className="space-y-2">
@@ -1310,11 +1312,11 @@ export default function Dashboard() {
                     onClick={() => { setPosingFocus(todayEntry.focus); setPosingMinutes(String(todayEntry.minutes)); setPosingInputOpen(true) }}
                     className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
                   >Edit</button>
-                  <button onClick={removePosingToday} className="text-xs text-red-500 hover:text-red-400 transition-colors">✕</button>
+                  <button onClick={removePosingToday} aria-label="Delete today's posing session" title="Delete" className="text-xs text-red-500 hover:text-red-400 transition-colors">✕</button>
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-gray-600 mb-3">No posing logged today.</p>
+              <p className="text-sm text-gray-500 mb-3">No posing logged today.</p>
             )}
             {posingInputOpen ? (
               <div className="space-y-2">
@@ -1421,11 +1423,11 @@ export default function Dashboard() {
                     onClick={() => { setSleepHoursInput(String(todayEntry.hours)); setSleepInputOpen(true) }}
                     className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
                   >Edit</button>
-                  <button onClick={removeSleepToday} className="text-xs text-red-500 hover:text-red-400 transition-colors">✕</button>
+                  <button onClick={removeSleepToday} aria-label="Delete last night's sleep log" title="Delete" className="text-xs text-red-500 hover:text-red-400 transition-colors">✕</button>
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-gray-600 mb-3">No sleep logged for last night.</p>
+              <p className="text-sm text-gray-500 mb-3">No sleep logged for last night.</p>
             )}
             {sleepInputOpen ? (
               <div className="flex items-center gap-2 mb-3">
