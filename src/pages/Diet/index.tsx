@@ -9,7 +9,7 @@ import WeeklyMealView from './WeeklyMealView'
 import GroceryList from './GroceryList'
 import { FOODS } from '../../data/foods'
 import { localDateStr } from '../../utils/dates'
-import type { Meal } from '../../types'
+import type { Meal, MealCompletion } from '../../types'
 
 type DietTab = 'plan' | 'weekly' | 'grocery'
 
@@ -33,6 +33,7 @@ export default function Diet() {
   const [regenLoading, setRegenLoading] = useState(false)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
+  const [streakCompletions, setStreakCompletions] = useState<MealCompletion[]>([])
 
   // Food preferences panel state
   const [prefsOpen, setPrefsOpen] = useState(false)
@@ -70,6 +71,17 @@ export default function Diet() {
     if (!user?.id || tab !== 'plan') return
     loadMealCompletions(user.id, mondayStr, todayStr)
   }, [user?.id, tab])
+
+  // Load 30 days of completions for streak calculation (kept in local state to
+  // avoid polluting the shared store's date range which the Weekly View depends on).
+  useEffect(() => {
+    if (!user?.id) return
+    const thirtyDaysAgo = new Date()
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+    window.api.getMealCompletions(user.id, localDateStr(thirtyDaysAgo), todayStr).then((data) => {
+      setStreakCompletions(data ?? [])
+    })
+  }, [user?.id])
 
   // Sync prefs panel state from user when panel opens
   useEffect(() => {
@@ -234,6 +246,27 @@ export default function Diet() {
       .filter(({ i }) => !isMealEaten(i))
       .sort((a, b) => a.mins - b.mins)
     return uneaten.length > 0 ? uneaten[0].i : null
+  })()
+
+  // Consecutive days where every scheduled meal was logged.
+  // Counts backwards from today; today counts only if all meals are done.
+  const mealAdherenceStreak = (() => {
+    if (!dietPlan?.meals?.length) return 0
+    const required = dietPlan.meals.length
+    let streak = 0
+    const base = new Date()
+    for (let i = 0; i <= 30; i++) {
+      const d = new Date(base)
+      d.setDate(base.getDate() - i)
+      const ds = localDateStr(d)
+      const logged = streakCompletions.filter((c) => c.date === ds).length
+      if (logged >= required) {
+        streak++
+      } else {
+        break
+      }
+    }
+    return streak
   })()
 
   const filteredForExclude = FOODS.filter((f) =>
@@ -421,6 +454,35 @@ export default function Diet() {
                     <span className="text-gray-600 mx-1">·</span>
                     <span className="text-yellow-400">{Math.max(0, dietPlan.fat_g - consumedFat)}g F</span>
                   </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Meal adherence streak */}
+          {totalMeals > 0 && (
+            <div className={`bg-gray-900 border rounded-xl p-4 flex items-center gap-4 ${mealAdherenceStreak > 0 ? 'border-brand-800/50' : 'border-gray-800'}`}>
+              <div className={`text-4xl font-black min-w-[3.5rem] text-center tabular-nums ${mealAdherenceStreak > 0 ? 'text-brand-400' : 'text-gray-600'}`}>
+                {mealAdherenceStreak}
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-gray-200">
+                  {mealAdherenceStreak === 1
+                    ? '1-day on-plan streak'
+                    : mealAdherenceStreak > 1
+                      ? `${mealAdherenceStreak}-day on-plan streak`
+                      : 'Start your streak today'}
+                </p>
+                <p className="text-xs text-gray-500">
+                  {mealAdherenceStreak > 0
+                    ? `${mealAdherenceStreak} consecutive day${mealAdherenceStreak !== 1 ? 's' : ''} with every meal logged`
+                    : 'Log all meals to start a new streak'}
+                </p>
+              </div>
+              {mealAdherenceStreak >= 7 && (
+                <div className="text-right">
+                  <p className="text-sm font-bold text-amber-400">{Math.floor(mealAdherenceStreak / 7)}wk+</p>
+                  <p className="text-xs text-gray-600">streak</p>
                 </div>
               )}
             </div>
