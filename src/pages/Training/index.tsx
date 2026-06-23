@@ -422,6 +422,9 @@ export default function Training() {
                 {doneCount === totalSessions && (
                   <p className="text-xs text-green-400 mt-2 font-medium">All sessions done this week — great prep!</p>
                 )}
+                {!trainingPlan.sessions?.some(s => s.day_of_week === todayDow) && (
+                  <p className="text-xs text-gray-500 mt-2">Today is a scheduled rest day — active recovery and sleep are part of the plan.</p>
+                )}
                 {trainingStreak > 0 && (
                   <p className="text-xs text-amber-400 mt-1 font-medium">
                     🔥 {trainingStreak}-week training streak{trainingStreak >= 4 ? ' — elite prep consistency!' : trainingStreak >= 2 ? ' — keep building!' : ''}

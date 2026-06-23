@@ -904,15 +904,18 @@ export default function CheckIn() {
       <form onSubmit={handleSubmit} className="space-y-5">
         {/* Bodyweight */}
         <Card title={`Bodyweight (${weightUnit})`} subtitle="Required">
-          <input
-            type="number"
-            step="0.1"
-            value={weightDisplay}
-            onChange={(e) => setWeightDisplay(e.target.value)}
-            placeholder={isImperial ? '185.0' : '84.0'}
-            required
-            className="w-36 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200"
-          />
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              step="0.1"
+              value={weightDisplay}
+              onChange={(e) => setWeightDisplay(e.target.value)}
+              placeholder={isImperial ? '185.0' : '84.0'}
+              required
+              className="w-36 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200"
+            />
+            <span className="text-sm text-gray-500 select-none">{weightUnit}</span>
+          </div>
           {latestCheckin && (() => {
             const currentKg = toKg(weightDisplay)
             const deltaKg = currentKg !== null ? currentKg - latestCheckin.weight_kg : null
