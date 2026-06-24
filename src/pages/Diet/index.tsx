@@ -646,6 +646,13 @@ export default function Diet() {
               .reduce((sum, c) => sum + (dietPlan.meals?.[c.meal_index]?.protein_g ?? 0), 0)
             const weeklyCalTarget = dietPlan.calories_target * activeDays
             const weeklyProTarget = dietPlan.protein_g * activeDays
+            const dayMacros = weekDays.map(({ dateStr }) => {
+              if (dateStr > todayStr) return { cals: null as number | null, pro: null as number | null }
+              const dayCompletions = mealCompletions.filter((c) => c.date === dateStr)
+              const cals = dayCompletions.reduce((s, c) => s + (dietPlan.meals?.[c.meal_index]?.calories ?? 0), 0)
+              const pro = dayCompletions.reduce((s, c) => s + (dietPlan.meals?.[c.meal_index]?.protein_g ?? 0), 0)
+              return { cals, pro }
+            })
 
             return (
               <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
@@ -678,6 +685,33 @@ export default function Diet() {
                     </div>
                   ))}
                 </div>
+                {/* Per-day macro compliance — kcal and protein under each day dot */}
+                {activeDays > 0 && (
+                  <div className="flex gap-1 mb-2">
+                    {weekDays.map(({ label }, i) => {
+                      const { cals, pro } = dayMacros[i]
+                      const hasData = cals !== null && cals > 0
+                      const calHit = hasData && cals! >= dietPlan.calories_target * 0.9
+                      const proHit = hasData && pro! >= dietPlan.protein_g * 0.9
+                      return (
+                        <div key={label} className="flex-1 flex flex-col items-center gap-0.5">
+                          {hasData ? (
+                            <>
+                              <span className={`text-[9px] font-medium leading-none tabular-nums ${calHit ? 'text-green-400' : 'text-brand-400'}`}>
+                                {Math.round(cals! / 10) * 10}
+                              </span>
+                              <span className={`text-[9px] leading-none tabular-nums ${proHit ? 'text-green-400' : 'text-gray-500'}`}>
+                                {Math.round(pro!)}P
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-[9px] text-gray-800">—</span>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
                 {/* Weekly totals */}
                 {activeDays > 0 && (
                   <div className="grid grid-cols-2 gap-2 border-t border-gray-800 pt-2">
