@@ -128,3 +128,91 @@ Phase 2 ran because Run 2 fixed only 1 bug (< 3 threshold).
 
 ### Known Non-Critical Issue (Not Fixed)
 When `meal_count` changes mid-day and the plan is regenerated, existing today's meal completions at indices 0…min(old,new)−1 may map to wrong meals in the new plan. Self-correcting the next calendar day. Fix requires a meal fingerprint (name+index) rather than index-only storage — deferred as a schema migration.
+
+---
+
+## Run 3 — 2026-06-24
+
+### Phase 1 — QA Engineer
+
+**TypeScript:** `npx tsc --noEmit` — **0 errors**
+
+**Unit Tests:** 105/105 tests passing (all 9 suites)
+
+#### Full Audit Findings
+
+All nutrition engine guards verified correct:
+- `safeWeightKg` clamps non-finite / <30 kg inputs to 70 kg ✓
+- `Math.max(3, meal_count)` prevents <3-meal plans ✓
+- `Math.min(6, Math.max(2, freq))` clamps training frequency ✓
+- snack_count resolution: `input.snack_count ?? (input.include_snacks ? 1 : 0)` ✓
+- `getPhaseAwareDeficit` returns –200 at peak week, –700 at 4–8 wks out ✓
+
+All food database coverage verified:
+- Every food ID in meal templates has a `FOOD_CALORIES_PER_100G` entry ✓
+- All 8 culture paths (`getCultureFood`) resolve without missing IDs ✓
+- `FOOD_SUBSTITUTES` tuples consistent with `[food_id, display_string]` format ✓
+
+Training engine verified:
+- `determinePhase`: >16 wk → hypertrophy, >8 → strength, >3 → peak, ≤3 → deload ✓
+- `getSets` deload: `Math.max(1, sets − 1)` ✓
+- `DAY_SCHEDULES` key coverage: 2–6 days/week all mapped ✓
+
+All 7 user flows traced:
+1. Onboarding → plan generation ✓
+2. Weekly check-in → macro recalculation → next check-in date ✓
+3. Daily meal logging (INSERT OR REPLACE semantics) ✓
+4. Workout session → set logging → completion ✓
+5. Meal swap with category/exclusion constraints ✓
+6. Progress photo add/retrieve ✓
+7. Show management → primarySync → weeksOut recalc ✓
+
+**Bugs found and fixed: 0.** Codebase remains clean after prior runs.
+
+---
+
+### Phase 2 — Feature: Refeed Day Planner
+
+**Eligibility:** 0 bugs fixed in Phase 1 (< 3 threshold) → Phase 2 runs.
+
+**File:** `src/pages/Diet/index.tsx` (+133 lines, 0 new IPC calls)
+
+**Rationale:** 12-week contest prep athletes follow weekly refeed protocols (one higher-carb day at maintenance calories) to restore muscle glycogen, briefly boost leptin, and support psychological adherence. The app had no concept of a refeed day — the diet page showed the same deficit targets every day of the week. Athletes needed to manually remember which day to eat more, and had no in-app confirmation that their elevated intake was intentional.
+
+**Implementation:**
+- Refeed day stored in `localStorage` as `refeed_day` (0 = Sun, 1 = Mon … 6 = Sat)
+- `setRefeedDay(day | null)` helper manages localStorage and component state together
+- `isRefeedDay = refeedDayOfWeek !== null && jsDay === refeedDayOfWeek`
+- On refeed day: amber highlighted card with +100g carbs / +400 kcal adjusted targets, explanatory copy, and a collapsible day-picker to change or remove the setting
+- On other days: compact gray row showing "Refeed Day: [Day]" or "not set" with an edit button that expands the day-picker inline
+
+**Targets explained in UI:**
+- Calories today: `diet_plan.calories_target + 400 kcal`
+- Carbs today: `diet_plan.carbs_g + 100g`
+- Protein: unchanged (critical for muscle preservation)
+
+---
+
+### Phase 3 — UX Review
+
+#### Fix 1 — Body composition section discovery (Progress page)
+**File:** `src/pages/Progress/index.tsx`  
+**Issue:** The Body Composition card (body fat %, lean mass, fat mass) silently returned `null` when no waist measurement had ever been entered in a check-in. Users with multiple check-ins would never discover that the BF% tracking feature exists unless they happened to enter a waist measurement by chance.  
+**Fix:** Replaced `return null` with a dashed hint card: "Log your waist measurement at your next check-in to unlock estimated body fat %, lean mass, and fat mass tracking over time" with a direct link to the Check-In page.
+
+#### Fix 2 — Protein-aware "Still to eat" reminder (Diet page)
+**File:** `src/pages/Diet/index.tsx`  
+**Issue:** The "Still to eat" remaining-macro card was conditionally hidden when `calPct >= 100`, even if protein hadn't been met and meals remained. In prep, protein compliance matters more than hitting a round calorie number — hiding the protein gap when calories happen to reach 100% (from larger portions at earlier meals) leaves athletes uninformed.  
+**Fix:** Changed guard from `calPct < 100` to `(consumedCalories < dietPlan.calories_target || consumedProtein < dietPlan.protein_g)` — the reminder stays visible as long as either calories or protein are still outstanding with meals remaining.
+
+---
+
+## Cumulative Summary
+
+| Metric | Run 1 | Run 2 | Run 3 | Total |
+|--------|-------|-------|-------|-------|
+| TypeScript errors | 0 | 0 | 0 | 0 |
+| Unit tests | 105/105 | 105/105 | 105/105 | 105/105 |
+| Bugs fixed | 4 | 1 | 0 | **5** |
+| Features added | — | 1 | 1 | **2** |
+| UX fixes | 2 | 2 | 2 | **6** |
