@@ -463,7 +463,7 @@ export default function Diet() {
               {mealsEaten === totalMeals && (
                 <p className="text-xs text-green-400 font-medium">All meals hit today — great work!</p>
               )}
-              {mealsEaten < totalMeals && calPct < 100 && (
+              {mealsEaten < totalMeals && (consumedCalories < dietPlan.calories_target || consumedProtein < dietPlan.protein_g) && (
                 <div className="bg-brand-900/20 border border-brand-800/30 rounded-lg px-3 py-2 flex items-center justify-between">
                   <span className="text-xs text-gray-400 font-medium">Still to eat:</span>
                   <span className="text-xs font-semibold">

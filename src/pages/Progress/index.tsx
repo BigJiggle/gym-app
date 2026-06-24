@@ -426,7 +426,13 @@ export default function Progress() {
       {/* Body composition estimate — shown when ≥1 check-in has waist measurement */}
       {(() => {
         const withWaist = [...checkinHistory].reverse().filter(c => c.waist_cm != null)
-        if (withWaist.length === 0) return null
+        if (withWaist.length === 0) return (
+          <div className="bg-gray-900 border border-dashed border-gray-700 rounded-xl p-5 text-center space-y-2">
+            <p className="text-sm text-gray-400 font-medium">Body Composition Tracking</p>
+            <p className="text-xs text-gray-600">Log your waist measurement at your next check-in to unlock estimated body fat %, lean mass, and fat mass tracking over time.</p>
+            <Link to="/checkin" className="inline-block text-xs text-brand-400 hover:text-brand-300 transition-colors mt-1">Go to Check-In →</Link>
+          </div>
+        )
         const bfEntries = withWaist.map(c => {
           const bf = computeEstimatedBF(c.weight_kg, c.waist_cm!, user!.sex)
           const lbmKg = Math.round(c.weight_kg * (1 - bf / 100) * 10) / 10
