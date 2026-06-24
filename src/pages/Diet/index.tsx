@@ -46,6 +46,13 @@ export default function Diet() {
   const [prefsPreferSearch, setPrefsPreferSearch] = useState('')
   const [prefsSaving, setPrefsSaving] = useState(false)
   const [prefsRestrictions, setPrefsRestrictions] = useState<string[]>([])
+  const [refeedDayOfWeek, setRefeedDayOfWeekState] = useState<number | null>(() => {
+    const stored = localStorage.getItem('refeed_day')
+    if (stored === null) return null
+    const n = parseInt(stored, 10)
+    return !isNaN(n) && n >= 0 && n <= 6 ? n : null
+  })
+  const [refeedPanelOpen, setRefeedPanelOpen] = useState(false)
 
   const todayStr = localDateStr()
   const jsDay = new Date().getDay()
@@ -143,6 +150,15 @@ export default function Diet() {
     }
   }
 
+  function setRefeedDay(day: number | null) {
+    if (day === null) {
+      localStorage.removeItem('refeed_day')
+    } else {
+      localStorage.setItem('refeed_day', String(day))
+    }
+    setRefeedDayOfWeekState(day)
+  }
+
   function togglePrefsExclusion(id: string) {
     if (prefsExclusions.includes(id)) {
       setPrefsExclusions(prefsExclusions.filter((x) => x !== id))
@@ -224,6 +240,11 @@ export default function Diet() {
   const protPct = Math.min(100, dietPlan.protein_g > 0 ? Math.round((consumedProtein / dietPlan.protein_g) * 100) : 0)
   const carbPct = Math.min(100, dietPlan.carbs_g > 0 ? Math.round((consumedCarbs / dietPlan.carbs_g) * 100) : 0)
   const fatIntakePct = Math.min(100, dietPlan.fat_g > 0 ? Math.round((consumedFat / dietPlan.fat_g) * 100) : 0)
+
+  const REFEED_DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const isRefeedDay = refeedDayOfWeek !== null && jsDay === refeedDayOfWeek
+  const refeedCarbBoostG = 100
+  const refeedCalBoost = refeedCarbBoostG * 4
 
   function isMealEaten(mealIndex: number) {
     return todayCompletions.some((c) => c.meal_index === mealIndex)
@@ -456,6 +477,118 @@ export default function Diet() {
                   </span>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Refeed Day Planner */}
+          {(() => {
+            const dayPickerRow = (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {REFEED_DAY_NAMES.map((name, d) => (
+                  <button
+                    key={d}
+                    onClick={() => setRefeedDay(d === refeedDayOfWeek ? null : d)}
+                    className={`text-xs px-3 py-1.5 rounded-lg border transition-colors font-medium ${
+                      d === refeedDayOfWeek
+                        ? 'bg-amber-700/40 border-amber-600 text-amber-300'
+                        : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-amber-700 hover:text-amber-400'
+                    }`}
+                  >{name}</button>
+                ))}
+              </div>
+            )
+
+            if (isRefeedDay) {
+              return (
+                <div className="bg-amber-900/20 border border-amber-700/50 rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-amber-400 font-bold text-sm">Refeed Day</span>
+                      <span className="text-xs bg-amber-800/40 text-amber-300 border border-amber-700/50 rounded-full px-2 py-0.5">
+                        {REFEED_DAY_NAMES[jsDay]}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setRefeedPanelOpen(v => !v)}
+                      className="text-xs text-amber-600 hover:text-amber-400 transition-colors"
+                    >
+                      {refeedPanelOpen ? '▲ done' : '▼ change day'}
+                    </button>
+                  </div>
+                  <p className="text-xs text-amber-300/80 mb-3 leading-relaxed">
+                    Add ~{refeedCarbBoostG}g carbs above your normal plan (rice, oats, fruit, potato). Protein and fat stay the same. Refeeds restore glycogen and briefly boost leptin — stay in control and hit the adjusted targets below.
+                  </p>
+                  <div className="flex items-start gap-6 text-xs">
+                    <div>
+                      <p className="text-gray-500 mb-0.5">Calories today</p>
+                      <p className="text-amber-400 font-bold text-base">{dietPlan.calories_target + refeedCalBoost} kcal</p>
+                      <p className="text-gray-600">+{refeedCalBoost} vs plan</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500 mb-0.5">Carbs today</p>
+                      <p className="text-amber-400 font-bold text-base">{dietPlan.carbs_g + refeedCarbBoostG}g</p>
+                      <p className="text-gray-600">+{refeedCarbBoostG}g vs plan</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500 mb-0.5">Protein</p>
+                      <p className="text-green-400 font-bold text-base">{dietPlan.protein_g}g</p>
+                      <p className="text-gray-600">unchanged</p>
+                    </div>
+                  </div>
+                  {refeedPanelOpen && (
+                    <div className="mt-3 pt-3 border-t border-amber-800/40">
+                      <p className="text-xs text-gray-500 mb-1">Weekly refeed day:</p>
+                      {dayPickerRow}
+                    </div>
+                  )}
+                </div>
+              )
+            }
+
+            return (
+              <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-medium text-gray-400">Refeed Day</span>
+                  {refeedDayOfWeek !== null ? (
+                    <span className="ml-2 text-xs text-amber-500 font-semibold">{REFEED_DAY_NAMES[refeedDayOfWeek]}</span>
+                  ) : (
+                    <span className="ml-2 text-xs text-gray-600">not set</span>
+                  )}
+                </div>
+                <button
+                  onClick={() => setRefeedPanelOpen(v => !v)}
+                  className="text-xs text-gray-500 hover:text-amber-400 transition-colors"
+                >
+                  {refeedPanelOpen ? '▲' : refeedDayOfWeek !== null ? '▼ edit' : '▼ set'}
+                </button>
+                {refeedPanelOpen && (
+                  <div className="absolute left-0 right-0 mt-2" />
+                )}
+              </div>
+            )
+          })()}
+          {refeedPanelOpen && !isRefeedDay && (
+            <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 -mt-4">
+              <p className="text-xs text-gray-500 mb-1">Pick your weekly refeed day — targets will automatically adjust on that day:</p>
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {REFEED_DAY_NAMES.map((name, d) => (
+                  <button
+                    key={d}
+                    onClick={() => { setRefeedDay(d === refeedDayOfWeek ? null : d); setRefeedPanelOpen(false) }}
+                    className={`text-xs px-3 py-1.5 rounded-lg border transition-colors font-medium ${
+                      d === refeedDayOfWeek
+                        ? 'bg-amber-700/40 border-amber-600 text-amber-300'
+                        : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-amber-700 hover:text-amber-400'
+                    }`}
+                  >{name}</button>
+                ))}
+                {refeedDayOfWeek !== null && (
+                  <button
+                    onClick={() => { setRefeedDay(null); setRefeedPanelOpen(false) }}
+                    className="text-xs px-2 py-1.5 rounded-lg border border-gray-700 text-gray-600 hover:border-red-800 hover:text-red-400 transition-colors"
+                  >Remove</button>
+                )}
+              </div>
             </div>
           )}
 
