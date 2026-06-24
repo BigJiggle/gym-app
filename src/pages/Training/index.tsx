@@ -53,6 +53,7 @@ export default function Training() {
   const [editingLog, setEditingLog] = useState<import('../../types').WorkoutLog | null>(null)
   const [editingLogExercises, setEditingLogExercises] = useState<import('../../types').Exercise[] | null>(null)
   const [exerciseLibrary, setExerciseLibrary] = useState<ExerciseLibraryItem[]>([])
+  const [startingWorkout, setStartingWorkout] = useState(false)
 
   useEffect(() => {
     if (!user?.id) return
@@ -265,7 +266,8 @@ export default function Training() {
   }
 
   async function handleStartWorkout(session: TrainingSession) {
-    if (!user || !trainingPlan) return
+    if (!user || !trainingPlan || startingWorkout) return
+    setStartingWorkout(true)
     const sessionDbId = trainingPlan.sessions?.find(
       (s) => s.day_of_week === session.day_of_week
     ) as unknown as { id?: number }
@@ -274,6 +276,8 @@ export default function Training() {
       setSessionToStart(session)
     } catch (e) {
       setAiError(`Failed to start workout: ${String(e)}`)
+    } finally {
+      setStartingWorkout(false)
     }
   }
 
@@ -621,7 +625,8 @@ export default function Training() {
                       {!isExpanded && (
                         <button
                           onClick={(e) => { e.stopPropagation(); handleStartWorkout(session) }}
-                          className={`font-bold transition-colors rounded-lg ${
+                          disabled={startingWorkout}
+                          className={`font-bold transition-colors rounded-lg disabled:opacity-50 ${
                             isDoneToday
                               ? 'text-xs px-3 py-1 border border-gray-700 text-gray-500 hover:border-gray-600 hover:text-gray-400'
                               : isToday
@@ -629,7 +634,7 @@ export default function Training() {
                                 : 'text-xs px-3 py-1 border border-gray-700 text-gray-400 hover:border-brand-700 hover:text-brand-400'
                           }`}
                         >
-                          {isDoneToday ? '↺ Redo' : '▶ Start Workout'}
+                          {startingWorkout ? '...' : isDoneToday ? '↺ Redo' : '▶ Start Workout'}
                         </button>
                       )}
                       <span className="text-xs text-gray-500">{session.exercises.length} ex</span>
@@ -657,9 +662,10 @@ export default function Training() {
                           e.stopPropagation()
                           handleStartWorkout(session)
                         }}
-                        className="w-full py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-sm font-bold transition-colors"
+                        disabled={startingWorkout}
+                        className="w-full py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-sm font-bold transition-colors disabled:opacity-50"
                       >
-                        {isDoneToday ? '↺ Redo Workout' : '▶ Start Workout'}
+                        {startingWorkout ? 'Starting...' : isDoneToday ? '↺ Redo Workout' : '▶ Start Workout'}
                       </button>
                       {session.exercises.map((ex, i) => {
                         const pr = exercisePRs.get(ex.name)

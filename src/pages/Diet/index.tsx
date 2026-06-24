@@ -31,6 +31,7 @@ export default function Diet() {
   const [recalcDone, setRecalcDone] = useState(false)
   const [recalcLoading, setRecalcLoading] = useState(false)
   const [regenLoading, setRegenLoading] = useState(false)
+  const [regenDone, setRegenDone] = useState(false)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const [streakCompletions, setStreakCompletions] = useState<MealCompletion[]>([])
@@ -367,6 +368,8 @@ export default function Diet() {
                 setRegenLoading(true)
                 try {
                   await generateDietPlan(user.id)
+                  setRegenDone(true)
+                  setTimeout(() => setRegenDone(false), 2500)
                 } finally {
                   setRegenLoading(false)
                 }
@@ -375,7 +378,7 @@ export default function Diet() {
               title="Regenerate meal plan with current settings"
               className="text-xs text-amber-500 font-medium bg-amber-900/20 hover:bg-amber-900/40 border border-amber-800/60 hover:border-amber-700 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-40"
             >
-              {regenLoading ? 'Regenerating...' : '⚠ Regenerate Meals'}
+              {regenDone ? '✓ Done' : regenLoading ? 'Regenerating...' : '⚠ Regenerate Meals'}
             </button>
           </>
         )}
