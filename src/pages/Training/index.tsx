@@ -418,7 +418,7 @@ export default function Training() {
                         }`}
                       >
                         <span>{done ? '✓ ' + DAY_NAMES[dow] : DAY_NAMES[dow]}</span>
-                        <span className="text-xs leading-none opacity-60 mt-0.5 truncate max-w-full px-0.5">{session.session_name.split(' ')[0]}</span>
+                        <span className="text-xs leading-none opacity-60 mt-0.5 truncate max-w-full px-0.5">{(() => { const p = session.session_name.split(' '); return p.length >= 2 ? `${p[0]} ${p[p.length - 1]}` : p[0] })()}</span>
                       </div>
                     )
                   })}

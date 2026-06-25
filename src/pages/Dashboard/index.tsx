@@ -1010,7 +1010,7 @@ export default function Dashboard() {
                       <div className="min-w-0">
                         <span className="text-gray-300">{ex.name}</span>
                         {lastStr && (
-                          <p className="text-xs text-gray-600 mt-0.5">last: {lastStr}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">last: {lastStr}</p>
                         )}
                       </div>
                       <span className="text-gray-500 flex-shrink-0">{ex.sets} × {ex.reps} @ RIR {ex.rir}</span>
