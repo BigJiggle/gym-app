@@ -57,7 +57,7 @@ describe('trainingEngine', () => {
     expect(plan.phase).toBe('hypertrophy')
   })
 
-  it('uses peak phase when less than 4 weeks out', () => {
+  it('uses deload phase when 2 weeks out (weeksOut <= 3)', () => {
     const plan = generateTrainingPlan({ ...BASE_INPUT, weeks_out: 2 })
     expect(plan.phase).toBe('deload')
   })
