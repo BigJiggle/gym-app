@@ -219,7 +219,7 @@ function getExercisesByMuscleGroup(
 }
 
 export function determinePhase(weeksOut: number | undefined, goal: string): 'hypertrophy' | 'strength' | 'peak' | 'deload' {
-  if (!weeksOut) return goal === 'cut' ? 'strength' : 'hypertrophy'
+  if (weeksOut === undefined) return goal === 'cut' ? 'strength' : 'hypertrophy'
   if (weeksOut > 16) return 'hypertrophy'
   if (weeksOut > 8) return 'strength'
   if (weeksOut > 3) return 'peak'
