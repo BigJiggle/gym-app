@@ -90,8 +90,9 @@ The "This Week" dot grid already showed a ✓/✗ dot per day indicating whether
 | 3 | 2026-06-23 | 5 | Meal adherence streak | 2 | 105 |
 | 4 | 2026-06-24 | 0 | Per-day macro compliance | 2 | 105 |
 | **5** | **2026-06-25** | **1** | **Weekly Prep Scorecard** | **2** | **105** |
+| **6** | **2026-06-25** | **1** | **Workout PR Detection** | **2** | **105** |
 
-Zero-bug run 4 reflected engine stabilisation; run 5 surfaced one latent edge-case (`weeksOut === 0`) that had been masked by its never reaching zero in previous test data.
+Zero-bug run 4 reflected engine stabilisation; run 5 surfaced one latent edge-case (`weeksOut === 0`) that had been masked by its never reaching zero in previous test data. Run 6 found a misleading test name (low severity) and delivered PR detection for Dashboard motivation.
 
 ---
 
@@ -190,3 +191,105 @@ Each pillar displays a score with traffic-light coloring: green ≥ 80%, amber �
 
 - **File:** `src/pages/Dashboard/index.tsx`
 - **Commit:** `dbd5794`
+
+---
+
+# PrepCoach QA Report — Automated Run 6 (2026-06-25)
+
+## Summary
+
+| Phase | Result |
+|-------|--------|
+| Phase 1 – QA Engineer | 1 bug fixed; 105/105 tests passing; TypeScript clean |
+| Phase 2 – Feature (Prep Athlete) | Workout PR Detection added to Dashboard Today card |
+| Phase 3 – UX Simplicity | 2 surgical UX fixes committed |
+
+---
+
+## Phase 1 — QA Engineer
+
+### TypeScript
+`npx tsc --noEmit` → clean, no errors.
+
+### Unit Tests
+`npm test` → **105/105 passed** across 9 test files.
+
+### Logic / Domain Audit
+
+| # | Check | Result |
+|---|-------|--------|
+| 1 | TDEE / macro math in nutritionEngine | ✅ Pass |
+| 2 | Protein floor (2.3 g/kg) enforced | ✅ Pass |
+| 3 | Fat floor (0.9 g/kg) enforced | ✅ Pass |
+| 4 | Carbs never negative | ✅ Pass |
+| 5 | MEAL_CAL_FRACTIONS: protein 0.45 + carb 0.35 + fat 0.15 = 0.95 (correct) | ✅ Pass |
+| 6 | calcPortionStr fixed-role weights (veg 120g, fruit 100g, powder 30g) | ✅ Pass |
+| 7 | getPhaseAwareDeficit: maintain off-season → 0, cut peak → -200, bulk off-season → +300 | ✅ Pass |
+| 8 | determinePhase: weeksOut 0→deload, 1→deload, 4→peak, 9→strength, 17→hypertrophy | ✅ Pass |
+| 9 | PPL frequency clamping (7→6, 0→2, NaN→4) | ✅ Pass |
+| 10 | Session day_of_week unique within every split × frequency combo | ✅ Pass |
+| 11 | Deload session has fewer sets than hypertrophy session | ✅ Pass |
+| 12 | All equip × split × frequency combos produce ≥ 1 exercise per session | ✅ Pass |
+| 13 | Duplicate same-day check-in throws DUPLICATE_CHECKIN | ✅ Pass |
+| 14 | Meal calorie sum ≈ daily target (±80 kcal) across all mc × sc combos | ✅ Pass |
+| 15 | Test name accuracy: `trainingEngine.test.ts` line 60 named "peak phase" but asserted deload | ❌ **FAIL** (see bug) |
+
+**Bugs found this run: 1**
+
+---
+
+### Bug Fixed
+
+**Bug: Misleading test name in `trainingEngine.test.ts` — "peak phase" asserted but `deload` expected**
+
+- **File:** `tests/unit/trainingEngine.test.ts` line 60
+- **Root cause:** After Run 5 fixed `determinePhase` to use `=== undefined` so `weeksOut === 0` correctly returns `'deload'`, the test name ("uses peak phase when less than 4 weeks out") became actively misleading — both the old and new code were expected to return 'deload' for `weeks_out: 2`, but the test title said "peak phase".
+- **Impact:** Low severity (test logic was correct, name was wrong). However, a future developer reading the test would assume `peak` was the expected phase for `weeks_out: 2`, potentially introducing a regression.
+- **Fix:** Renamed test to `'uses deload phase when 2 weeks out (weeksOut <= 3)'` matching the actual assertion and engine logic.
+- **Commit:** `10f82fb`
+
+---
+
+## Phase 2 — Prep Athlete Feature
+
+**Trigger: 1 bug fixed (< 3) → Phase 2 runs.**
+
+**Feature: Workout PR Detection — new all-time records shown in Dashboard after session completion**
+
+Prep athletes care deeply about strength retention during a cut. When they complete today's workout, the Dashboard "Today" card now detects if any set beat their all-time best weight for that exercise and displays the PRs immediately below the "✓ Workout Complete" banner.
+
+**How it works:**
+
+1. `todayWorkoutLog` — finds today's completed workout from `workoutHistory`.
+2. `historyPRMap` — iterates all *other* completed workouts and builds a map of best weight per exercise.
+3. `todayBests` — finds the best set per exercise in today's workout.
+4. `todayPRs` — any exercise where today's best exceeds (or is the first-ever entry in) `historyPRMap`.
+
+Display: yellow `🏆 New PRs Today!` block with one line per PR showing exercise name, weight (respects imperial/metric setting) × reps. Rendered only when `todayPRs.length > 0` after the green "Workout Complete" banner.
+
+Zero extra IPC calls — `workoutHistory` (with `sets`) is already loaded on Dashboard mount.
+
+- **File:** `src/pages/Dashboard/index.tsx`
+- **Commit:** `27843e2`
+
+---
+
+## Phase 3 — UX Simplicity
+
+### Fix 1: Last-performance text illegible in Today's Workout card
+
+**Problem:** Each exercise in the "Today" workout card showed a small "last: 85kg × 8" line in `text-gray-600` — approximately `#4B5563`, near-invisible on the `bg-gray-900` card background. A prep athlete checking what they lifted last session to match or beat it could barely read this.
+
+**Fix:** Changed `text-gray-600` → `text-gray-500` (`#6B7280`), raising contrast to match the surrounding secondary text convention. One-character change, meaningful improvement especially now that PR detection draws attention to the last-lift data.
+
+- **File:** `src/pages/Dashboard/index.tsx`
+
+### Fix 2: Weekly session tracker shows identical labels for A/B variants
+
+**Problem:** The "Sessions This Week" tracker in the Training page abbreviated each session name with `.split(' ')[0]` — the first word only. This made "Push A" and "Push B" both display as "Push", "Upper A" and "Upper B" both as "Upper", leaving the athlete unable to distinguish which sessions of a 4-6 day PPL or Upper/Lower plan were completed.
+
+**Fix:** Changed abbreviation logic to take the first word + the last word: `${p[0]} ${p[p.length-1]}`. Results: "Push A" → "Push A", "Pull B" → "Pull B", "Full Body A" → "Full A". The distinguishing suffix is always preserved within the existing 7-char truncation constraint.
+
+- **File:** `src/pages/Training/index.tsx`
+
+**Commit:** `72f0c38`
