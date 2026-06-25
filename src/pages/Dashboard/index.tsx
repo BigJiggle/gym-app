@@ -495,8 +495,12 @@ export default function Dashboard() {
                 </div>
               </div>
             ))}
-            {mealsEaten > 0 && remaining > 0 && (
-              <p className="text-xs text-gray-600 pt-0.5">{remaining} kcal remaining · {Math.max(0, dietPlan.protein_g - consumedPro)}g protein left</p>
+            {mealsEaten > 0 && (
+              remaining > 0
+                ? <p className="text-xs text-gray-600 pt-0.5">{remaining} kcal remaining · {Math.max(0, dietPlan.protein_g - consumedPro)}g protein left</p>
+                : remaining < 0
+                  ? <p className="text-xs text-amber-500 pt-0.5">{Math.abs(remaining)} kcal over target</p>
+                  : null
             )}
           </div>
         )
@@ -883,7 +887,7 @@ export default function Dashboard() {
                   <p className="text-gray-300 leading-snug">{guidance.nutrition[0]}</p>
                 </div>
                 <div className="bg-gray-800/60 rounded-lg px-3 py-2">
-                  <p className="text-blue-500 mb-1 font-semibold uppercase tracking-wide" style={{ fontSize: 10 }}>Cardio</p>
+                  <p className="text-gray-500 mb-1 font-semibold uppercase tracking-wide" style={{ fontSize: 10 }}>Cardio</p>
                   <p className="text-gray-300 leading-snug">{guidance.cardio}</p>
                 </div>
               </div>
