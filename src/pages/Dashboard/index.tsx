@@ -350,6 +350,33 @@ export default function Dashboard() {
     return map
   })()
 
+  const todayWorkoutLog = workoutHistory.find(l => l.status === 'completed' && l.date === todayStr)
+  const todayPRs = (() => {
+    if (!todayWorkoutLog) return []
+    const historyPRMap = new Map<string, number>()
+    for (const log of workoutHistory.filter(l => l.status === 'completed' && l.date !== todayStr)) {
+      for (const set of log.sets ?? []) {
+        if (set.skipped || set.weight_kg == null || set.reps_actual == null) continue
+        const prev = historyPRMap.get(set.exercise_name)
+        if (prev == null || set.weight_kg > prev) historyPRMap.set(set.exercise_name, set.weight_kg)
+      }
+    }
+    const todayBests = new Map<string, { weight_kg: number; reps: number }>()
+    for (const set of todayWorkoutLog.sets ?? []) {
+      if (set.skipped || set.weight_kg == null || set.reps_actual == null) continue
+      const prev = todayBests.get(set.exercise_name)
+      if (!prev || set.weight_kg > prev.weight_kg) todayBests.set(set.exercise_name, { weight_kg: set.weight_kg, reps: set.reps_actual })
+    }
+    const prs: Array<{ exercise: string; weight_kg: number; reps: number }> = []
+    for (const [exercise, best] of todayBests) {
+      const historicalBest = historyPRMap.get(exercise)
+      if (historicalBest == null || best.weight_kg > historicalBest) {
+        prs.push({ exercise, weight_kg: best.weight_kg, reps: best.reps })
+      }
+    }
+    return prs
+  })()
+
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       {/* Header */}
@@ -944,9 +971,25 @@ export default function Dashboard() {
             <div className="space-y-2">
               <p className="text-sm font-medium text-brand-400">{todaySession.session_name}</p>
               {workoutHistory.some(l => l.status === 'completed' && l.date === todayStr) ? (
-                <div className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-green-900/20 border border-green-800/40 text-green-400 text-sm font-medium">
-                  <span>✓</span> Workout Complete
-                </div>
+                <>
+                  <div className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-green-900/20 border border-green-800/40 text-green-400 text-sm font-medium">
+                    <span>✓</span> Workout Complete
+                  </div>
+                  {todayPRs.length > 0 && (
+                    <div className="bg-yellow-900/20 border border-yellow-800/40 rounded-lg p-2">
+                      <p className="text-xs font-semibold text-yellow-400 mb-1.5">🏆 New PRs Today!</p>
+                      <div className="space-y-0.5">
+                        {todayPRs.map((pr, i) => (
+                          <p key={i} className="text-xs text-yellow-300">
+                            {pr.exercise}: {settings.units === 'imperial'
+                              ? `${Math.round(pr.weight_kg * 2.20462 * 2) / 2}lbs`
+                              : `${pr.weight_kg}kg`} × {pr.reps}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
               ) : (
                 <Link to="/training">
                   <Button className="w-full">
