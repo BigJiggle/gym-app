@@ -293,3 +293,104 @@ Zero extra IPC calls — `workoutHistory` (with `sets`) is already loaded on Das
 - **File:** `src/pages/Training/index.tsx`
 
 **Commit:** `72f0c38`
+
+---
+
+# PrepCoach QA Report — Automated Run 7 (2026-06-26)
+
+## Summary
+
+| Phase | Result |
+|-------|--------|
+| Phase 1 – QA Engineer | 0 bugs found; 105/105 tests passing; TypeScript clean |
+| Phase 2 – Feature (Prep Athlete) | Weekly Cardio Target Tracker on Dashboard |
+| Phase 3 – UX Simplicity | 2 surgical UX fixes committed |
+
+---
+
+## Phase 1 — QA Engineer
+
+### TypeScript
+`npx tsc --noEmit` → clean, no errors.
+
+### Unit Tests
+`npm test` → **105/105 passed** across 9 test files.
+
+### Logic / Domain Audit
+
+| # | Check | Result |
+|---|-------|--------|
+| 1 | TDEE / macro math in nutritionEngine | ✅ Pass |
+| 2 | Protein floor (2.3 g/kg) enforced | ✅ Pass |
+| 3 | Fat floor (0.9 g/kg) enforced | ✅ Pass |
+| 4 | Carbs never negative | ✅ Pass |
+| 5 | getPhaseAwareDeficit: peak week (weeksOut ≤ 3) returns -150 | ✅ Pass |
+| 6 | determinePhase: weeksOut 0→deload, 1→deload, 4→peak, 9→strength | ✅ Pass |
+| 7 | Meal time collision check: no two meals within 30 min | ✅ Pass |
+| 8 | Meal calorie sum ≈ daily target (≤ 5% drift) | ✅ Pass |
+| 9 | logSet store sync: new set inserted, existing set replaced by id | ✅ Pass |
+| 10 | submitCheckin cascade: diet plan reloaded after check-in | ✅ Pass |
+| 11 | mealCompletions dedup: re-logging same slot replaces old record | ✅ Pass |
+| 12 | startupRefresh: only reloads plans when server reports updated=true | ✅ Pass |
+| 13 | buildPrepTimeline: returns non-empty for all weeksOut 1–24 | ✅ Pass |
+| 14 | FOODS database: all entries have id, name, category | ✅ Pass |
+| 15 | User flow trace: onboarding → plan gen → daily logging → check-in | ✅ Pass |
+| 16 | User flow trace: start workout → log sets → complete → history | ✅ Pass |
+| 17 | User flow trace: PR detection (Dashboard todayPRs vs historyPRMap) | ✅ Pass |
+| 18 | User flow trace: grocery list built from meal plan × 7 days | ✅ Pass |
+| 19 | User flow trace: progress page weight trend + measurements delta | ✅ Pass |
+| 20 | User flow trace: diet page swap meal, refeed planner, weekly view | ✅ Pass |
+
+**Bugs found this run: 0**
+
+---
+
+## Phase 2 — Prep Athlete Feature
+
+**Trigger: 0 bugs fixed (< 3) → Phase 2 runs.**
+
+**Feature: Weekly Cardio Target Tracker on Dashboard Cardio card**
+
+Prep athletes follow a prescribed cardio protocol (e.g. "5 sessions × 45 min/week"). The Cardio card previously showed a plain count ("3 sessions this week") with no goal. Now athletes can set a target and track progress in-card.
+
+**What was added** (`src/pages/Dashboard/index.tsx`):
+- `CardioTarget` interface + `cardioTarget` state (localStorage-persisted)
+- `editingCardioTarget` state + `saveCardioTarget()` / `clearCardioTarget()` helpers
+- **Progress bar** filling proportional to completed sessions (averaged with minutes progress if a per-session target is set); turns green at 100%
+- **Fraction display**: "3/5 sessions · 135/225 min" — fractions go green when hit
+- **"Set target" / "Edit target"** link in the card header that opens an inline form (sessions/week + optional minutes/session inputs with Save/Cancel/Clear controls)
+- Zero new API calls; all data comes from existing `cardioLog` localStorage state
+
+TypeScript: clean after change.
+
+- **Commit:** `7f70b12`
+
+---
+
+## Phase 3 — UX Simplicity
+
+### Fix 1 — Training: skip auto-expand of completed session
+**File:** `src/pages/Training/index.tsx`
+
+When returning to the Training tab after completing today's workout, the auto-expand effect previously expanded the already-done session, consuming screen space the user didn't need. Changed the effect to check `workoutHistory` for a completed log matching today before auto-expanding. If done, stays collapsed — user can still expand manually.
+
+### Fix 2 — Diet: inline confirm replaces `window.confirm()` on Regenerate Meals
+**File:** `src/pages/Diet/index.tsx`
+
+"⚠ Regenerate Meals" used `window.confirm()` — a native OS dialog that steals focus from the Electron window and is visually jarring. Replaced with a compact inline two-step confirm: first click transitions the button area to "Replace all meals? [Yes, regenerate] [Cancel]". Destructive action remains guarded; no system dialog.
+
+- **Commit:** `446f3ef`
+
+---
+
+## Cumulative Quality Trend
+
+| Run | Date | Bugs Fixed | Feature | UX Fixes | Tests |
+|-----|------|-----------|---------|----------|-------|
+| 1 | 2026-05-27 | 1 | Muscle MEV bars | 2 | — |
+| 2 | 2026-06-22 | 3 | Day Projection on check-in | 2 | — |
+| 3 | 2026-06-23 | 5 | Meal adherence streak | 2 | 105 |
+| 4 | 2026-06-24 | 0 | Per-day macro compliance | 2 | 105 |
+| 5 | 2026-06-25 | 1 | Weekly Prep Scorecard | 2 | 105 |
+| 6 | 2026-06-25 | 1 | Workout PR Detection | 2 | 105 |
+| **7** | **2026-06-26** | **0** | **Weekly Cardio Target Tracker** | **2** | **105** |
