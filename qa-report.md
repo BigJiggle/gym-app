@@ -91,8 +91,9 @@ The "This Week" dot grid already showed a ✓/✗ dot per day indicating whether
 | 4 | 2026-06-24 | 0 | Per-day macro compliance | 2 | 105 |
 | **5** | **2026-06-25** | **1** | **Weekly Prep Scorecard** | **2** | **105** |
 | **6** | **2026-06-25** | **1** | **Workout PR Detection** | **2** | **105** |
+| **7** | **2026-06-26** | **0** | **Peak Week Daily Protocol card** | **2** | **105** |
 
-Zero-bug run 4 reflected engine stabilisation; run 5 surfaced one latent edge-case (`weeksOut === 0`) that had been masked by its never reaching zero in previous test data. Run 6 found a misleading test name (low severity) and delivered PR detection for Dashboard motivation.
+Zero-bug run 4 reflected engine stabilisation; run 5 surfaced one latent edge-case (`weeksOut === 0`) that had been masked by its never reaching zero in previous test data. Run 6 found a misleading test name (low severity) and delivered PR detection for Dashboard motivation. Run 7 confirmed the engine is stable after six runs; the feature work shifted to peak-week UX, surfacing the day-specific protocol in the place athletes check most (Dashboard).
 
 ---
 
@@ -293,3 +294,94 @@ Zero extra IPC calls — `workoutHistory` (with `sets`) is already loaded on Das
 - **File:** `src/pages/Training/index.tsx`
 
 **Commit:** `72f0c38`
+
+---
+
+# PrepCoach QA Report — Automated Run 7 (2026-06-26)
+
+## Summary
+
+| Phase | Result |
+|-------|--------|
+| Phase 1 – QA Engineer | 0 bugs found; 105/105 tests passing; TypeScript clean |
+| Phase 2 – Feature (Prep Athlete) | Peak Week Daily Protocol card added to Dashboard |
+| Phase 3 – UX Simplicity | 2 surgical UX fixes committed |
+
+---
+
+## Phase 1 — QA Engineer
+
+### TypeScript
+`npx tsc --noEmit` → clean, no errors.
+
+### Unit Tests
+`npm test` → **105/105 passed** across 9 test files.
+
+### Logic / Domain Audit (full re-audit of nutrition engine, food database, IPC handlers, and UI)
+
+| # | Check | Result |
+|---|-------|--------|
+| 1 | TDEE / macro math in nutritionEngine (protein 2.3g/kg, fat 0.9g/kg) | ✅ Pass |
+| 2 | Protein floor enforced, fat floor enforced, carbs non-negative | ✅ Pass |
+| 3 | MEAL_CAL_FRACTIONS: 0.45+0.35+0.15 = 0.95 (5% unallocated = dietary fat rounding buffer) | ✅ Pass |
+| 4 | getPhaseAwareDeficit: cut 0-1 wks=-200, 1-4 wks=-700, bulk+show uses cut deficit | ✅ Pass |
+| 5 | calcPortionStr fixed-role weights (veg 120g, fruit 100g, powder 30g) correct | ✅ Pass |
+| 6 | getCultureFood: all 8 cultures (indian, mexican, mediterranean, asian, west_african, japanese, korean, middle_eastern) return valid food arrays | ✅ Pass |
+| 7 | getMealTemplates: 9 templates, mainSets sorted correctly by time | ✅ Pass |
+| 8 | FOOD_CALORIES_PER_100G: all template + culture food IDs have calorie entries | ✅ Pass |
+| 9 | SNACK_ONLY_FOODS: correct foods excluded from main meals | ✅ Pass |
+| 10 | determinePhase: weeksOut 0→deload, 1→deload, 4→peak, 9→strength, 17→hypertrophy | ✅ Pass |
+| 11 | Training frequency clamps to [2,6]; session day_of_week unique within plan | ✅ Pass |
+| 12 | shows:setPrimary rejects past shows; computeWeeksOut handles today/yesterday | ✅ Pass |
+| 13 | checkin:submit uses latest weigh-in for macro recalculation | ✅ Pass |
+| 14 | Duplicate same-day check-in throws DUPLICATE_CHECKIN (no silent overwrite) | ✅ Pass |
+| 15 | exercises_per_session stored in DB and shown in Settings UI but NOT wired to TrainingInput — silently ignored by rule-based engine (known gap, documented) | ⚠ Known |
+
+**Bugs found this run: 0**
+
+Known non-bug: `exercises_per_session` user preference is persisted and shown in Settings but the rule-based training engine does not read it from `TrainingInput`. Implementing this would require a moderate refactor of `trainingEngine.ts`. Documented for future work.
+
+---
+
+## Phase 2 — Prep Athlete Feature
+
+**Trigger: 0 bugs fixed (< 3) → Phase 2 runs.**
+
+**Feature: Peak Week Daily Protocol card on Dashboard**
+
+During the 7 days before a show, a prep athlete's most critical resource is knowing exactly what to do TODAY — not a weekly summary, but the specific day-level protocol. The Education page already contained `PEAK_WEEK_PROTOCOL` with a complete 7-day breakdown (training type, nutrition targets, water intake, sodium guidance, and action notes per day), but this data was never surfaced in the Dashboard where athletes land first.
+
+**How it works:**
+- Computed from the existing `showCountdown` value (already present in Dashboard): when `totalDays` is 0–7, the card renders.
+- Looks up `PEAK_WEEK_PROTOCOL.days.find(d => d.daysOut === Math.max(1, totalDays))` to get the matching day entry.
+- Renders three quick-glance chips (Water target / Sodium guidance / Training type) plus the full nutrition instruction and up to 3 action notes for the day.
+- When `totalDays === 0` (show is today), maps to the `daysOut: 1` "Show Day" entry.
+- Positioned after the stats row so it's the first actionable content athletes see on peak week mornings.
+- No new IPC calls — uses `user.show_date` via `showCountdown` already computed in the component.
+
+**Files changed:** `src/pages/Dashboard/index.tsx` (import + 53-line card block)
+
+**Commit:** `0d540cd [FEATURE] 2026-06-26: Peak Week Daily Protocol card`
+
+---
+
+## Phase 3 — UX Simplicity
+
+### Fix 1: Check-in locked state now shows the actual calendar date
+
+**Problem:** When the weekly check-in was locked, the Dashboard header showed a disabled `"Check-In in 3d"` button. The actual calendar date was in a `title` tooltip — inaccessible on touch devices, invisible at a glance on desktop. An athlete needed to either hover or mentally add 3 days to today's date to know *when* they could next check in.
+
+**Fix:** Changed button text to `"Opens Mon Jun 28"` (actual formatted date) with `"in X days"` as small secondary text below. The date is immediately readable without any interaction.
+
+- **File:** `src/pages/Dashboard/index.tsx`
+
+### Fix 2: Water Reset button now requires confirmation
+
+**Problem:** The "Reset" button in the Water Intake tracker was positioned at the far right of the same flex row as the quick-add buttons (+200ml, +350ml, etc.). A mis-tap could clear the entire day's water tracking with no way to undo — a significant data loss for athletes who log water obsessively during prep (especially peak week).
+
+**Fix:** Added `window.confirm('Reset today\'s water to zero?')` guard before calling `addWater(-waterMl)`. One extra click when intentional; prevents accidental resets.
+
+- **File:** `src/pages/Dashboard/index.tsx`
+
+**Commit:** `a1b06f2 [UX] 2026-06-26: Two surgical Dashboard clarity fixes`
+
