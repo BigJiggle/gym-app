@@ -32,6 +32,7 @@ export default function Diet() {
   const [recalcLoading, setRecalcLoading] = useState(false)
   const [regenLoading, setRegenLoading] = useState(false)
   const [regenDone, setRegenDone] = useState(false)
+  const [regenConfirm, setRegenConfirm] = useState(false)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const [streakCompletions, setStreakCompletions] = useState<MealCompletion[]>([])
@@ -362,24 +363,38 @@ export default function Diet() {
             >
               {recalcDone ? '✓ Updated' : recalcLoading ? '⟳ Updating...' : '⟳ Recalculate Macros'}
             </button>
-            <button
-              onClick={async () => {
-                if (!window.confirm('Regenerate your meal plan? This replaces all current meals and any swaps you have made.')) return
-                setRegenLoading(true)
-                try {
-                  await generateDietPlan(user.id)
-                  setRegenDone(true)
-                  setTimeout(() => setRegenDone(false), 2500)
-                } finally {
-                  setRegenLoading(false)
-                }
-              }}
-              disabled={recalcLoading || regenLoading}
-              title="Regenerate meal plan with current settings"
-              className="text-xs text-amber-500 font-medium bg-amber-900/20 hover:bg-amber-900/40 border border-amber-800/60 hover:border-amber-700 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-40"
-            >
-              {regenDone ? '✓ Done' : regenLoading ? 'Regenerating...' : '⚠ Regenerate Meals'}
-            </button>
+            {regenConfirm ? (
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-amber-400">Replace all meals?</span>
+                <button
+                  onClick={async () => {
+                    setRegenConfirm(false)
+                    setRegenLoading(true)
+                    try {
+                      await generateDietPlan(user.id)
+                      setRegenDone(true)
+                      setTimeout(() => setRegenDone(false), 2500)
+                    } finally {
+                      setRegenLoading(false)
+                    }
+                  }}
+                  className="text-xs bg-amber-700 hover:bg-amber-600 text-white rounded-lg px-2.5 py-1.5 transition-colors font-medium"
+                >Yes, regenerate</button>
+                <button
+                  onClick={() => setRegenConfirm(false)}
+                  className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                >Cancel</button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setRegenConfirm(true)}
+                disabled={recalcLoading || regenLoading}
+                title="Regenerate meal plan with current settings — replaces all meals"
+                className="text-xs text-amber-500 font-medium bg-amber-900/20 hover:bg-amber-900/40 border border-amber-800/60 hover:border-amber-700 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-40"
+              >
+                {regenDone ? '✓ Done' : regenLoading ? 'Regenerating...' : '⚠ Regenerate Meals'}
+              </button>
+            )}
           </>
         )}
       </div>

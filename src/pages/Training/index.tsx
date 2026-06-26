@@ -73,12 +73,17 @@ export default function Training() {
     if (matched) setSessionToStart(matched as TrainingSession)
   }, [activeWorkout?.id, trainingPlan?.id])
 
-  // Auto-expand today's session so a returning user immediately sees their workout plan.
+  // Auto-expand today's session — but skip it if already completed today.
   useEffect(() => {
     if (!trainingPlan?.sessions) return
     const dow = new Date().getDay() === 0 ? 7 : new Date().getDay()
+    const dateStr = new Date().toLocaleDateString('en-CA')
     const todaySession = trainingPlan.sessions.find((s) => s.day_of_week === dow)
-    if (todaySession) setExpandedSession(dow)
+    if (!todaySession) return
+    const isDone = workoutHistory.some(
+      (log) => log.date === dateStr && log.status === 'completed' && log.session_id === (todaySession as any).id
+    )
+    if (!isDone) setExpandedSession(dow)
   }, [trainingPlan?.id])
 
   if (!user) return null
