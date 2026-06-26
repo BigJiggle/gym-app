@@ -404,11 +404,13 @@ export default function Dashboard() {
           const locked = nextCheckinAt !== null && nextCheckinAt > now
           if (locked) {
             const daysLeft = Math.ceil((nextCheckinAt!.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+            const openDateStr = nextCheckinAt!.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
             return (
-              <div title={`Next check-in opens ${nextCheckinAt!.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}`}>
+              <div className="text-right">
                 <Button size="sm" variant="secondary" disabled>
-                  Check-In in {daysLeft}d
+                  Opens {openDateStr}
                 </Button>
+                <p className="text-xs text-gray-600 mt-1">in {daysLeft} day{daysLeft !== 1 ? 's' : ''}</p>
               </div>
             )
           }
@@ -1363,7 +1365,7 @@ export default function Dashboard() {
               ))}
               {waterMl > 0 && (
                 <button
-                  onClick={() => addWater(-waterMl)}
+                  onClick={() => { if (window.confirm('Reset today\'s water to zero?')) addWater(-waterMl) }}
                   className="text-xs text-gray-600 hover:text-gray-400 ml-auto transition-colors"
                 >
                   Reset
