@@ -57,6 +57,30 @@ export default function Dashboard() {
   const [cardioType, setCardioType] = useState('LISS')
   const [cardioMinutes, setCardioMinutes] = useState('')
 
+  interface CardioTarget { sessionsPerWeek: number; minutesPerSession: number }
+  const [cardioTarget, setCardioTarget] = useState<CardioTarget | null>(() => {
+    try { return JSON.parse(localStorage.getItem('cardio_target') ?? 'null') } catch { return null }
+  })
+  const [editingCardioTarget, setEditingCardioTarget] = useState(false)
+  const [cardioTargetSessions, setCardioTargetSessions] = useState('')
+  const [cardioTargetMinutes, setCardioTargetMinutes] = useState('')
+
+  function saveCardioTarget() {
+    const s = parseInt(cardioTargetSessions, 10)
+    const m = parseInt(cardioTargetMinutes, 10)
+    if (isNaN(s) || s < 1 || s > 14) return
+    const target: CardioTarget = { sessionsPerWeek: s, minutesPerSession: isNaN(m) || m <= 0 ? 0 : m }
+    setCardioTarget(target)
+    localStorage.setItem('cardio_target', JSON.stringify(target))
+    setEditingCardioTarget(false)
+  }
+
+  function clearCardioTarget() {
+    setCardioTarget(null)
+    localStorage.removeItem('cardio_target')
+    setEditingCardioTarget(false)
+  }
+
   interface PosingEntry { date: string; focus: string; minutes: number }
   const [posingLog, setPosingLog] = useState<PosingEntry[]>(() => {
     try { return JSON.parse(localStorage.getItem('posing_log') ?? '[]') } catch { return [] }
@@ -1332,15 +1356,82 @@ export default function Dashboard() {
         const todayEntry = cardioLog.find(e => e.date === todayStr)
         const weekMins = weekEntries.reduce((s, e) => s + e.minutes, 0)
         const CARDIO_TYPES = ['LISS', 'HIIT', 'Stairs', 'Bike', 'Other']
+        const cardioProgressPct = cardioTarget
+          ? Math.min(100, Math.round((weekEntries.length / cardioTarget.sessionsPerWeek) * 100))
+          : 0
+        const cardioMinsPct = cardioTarget && cardioTarget.minutesPerSession > 0
+          ? Math.min(100, Math.round((weekMins / (cardioTarget.sessionsPerWeek * cardioTarget.minutesPerSession)) * 100))
+          : 0
         return (
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-1">
               <h2 className="font-semibold text-gray-100">Cardio</h2>
-              <div className="flex items-center gap-2 text-xs text-gray-500">
+              <button
+                onClick={() => {
+                  setCardioTargetSessions(cardioTarget ? String(cardioTarget.sessionsPerWeek) : '')
+                  setCardioTargetMinutes(cardioTarget && cardioTarget.minutesPerSession > 0 ? String(cardioTarget.minutesPerSession) : '')
+                  setEditingCardioTarget(true)
+                }}
+                className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+              >{cardioTarget ? 'Edit target' : 'Set target'}</button>
+            </div>
+            {cardioTarget ? (
+              <div className="mb-3">
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <span className={weekEntries.length >= cardioTarget.sessionsPerWeek ? 'text-green-400 font-medium' : 'text-gray-400'}>
+                    {weekEntries.length}/{cardioTarget.sessionsPerWeek} sessions
+                  </span>
+                  {cardioTarget.minutesPerSession > 0 && (
+                    <span className={weekMins >= cardioTarget.sessionsPerWeek * cardioTarget.minutesPerSession ? 'text-green-400' : 'text-gray-500'}>
+                      {weekMins}/{cardioTarget.sessionsPerWeek * cardioTarget.minutesPerSession} min
+                    </span>
+                  )}
+                </div>
+                <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${cardioProgressPct >= 100 ? 'bg-green-500' : 'bg-brand-500'}`}
+                    style={{ width: `${cardioTarget.minutesPerSession > 0 ? Math.round((cardioProgressPct + cardioMinsPct) / 2) : cardioProgressPct}%` }}
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-xs text-gray-500 mb-3">
                 <span>{weekEntries.length} session{weekEntries.length !== 1 ? 's' : ''} this week</span>
                 {weekMins > 0 && <span>· {weekMins} min</span>}
               </div>
-            </div>
+            )}
+            {editingCardioTarget && (
+              <div className="mb-3 p-3 bg-gray-800 rounded-xl space-y-2">
+                <p className="text-xs text-gray-400 font-medium">Weekly cardio target</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number" min={1} max={14}
+                      value={cardioTargetSessions}
+                      onChange={e => setCardioTargetSessions(e.target.value)}
+                      placeholder="Sessions"
+                      className="w-20 bg-gray-700 border border-gray-600 rounded-lg px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-brand-500"
+                    />
+                    <span className="text-xs text-gray-500">sessions/wk</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number" min={0} max={180}
+                      value={cardioTargetMinutes}
+                      onChange={e => setCardioTargetMinutes(e.target.value)}
+                      placeholder="0"
+                      className="w-16 bg-gray-700 border border-gray-600 rounded-lg px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-brand-500"
+                    />
+                    <span className="text-xs text-gray-500">min/session</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={saveCardioTarget} className="text-xs bg-brand-600 hover:bg-brand-500 text-white px-3 py-1 rounded-lg transition-colors font-medium">Save</button>
+                  <button onClick={() => setEditingCardioTarget(false)} className="text-xs text-gray-500 hover:text-gray-300 transition-colors">Cancel</button>
+                  {cardioTarget && <button onClick={clearCardioTarget} className="text-xs text-red-500 hover:text-red-400 ml-auto transition-colors">Clear target</button>}
+                </div>
+              </div>
+            )}
             {todayEntry ? (
               <div className="flex items-center justify-between bg-green-950/20 border border-green-800/40 rounded-xl px-3 py-2.5 mb-3">
                 <div>
