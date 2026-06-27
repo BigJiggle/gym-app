@@ -320,7 +320,7 @@ export default function Settings() {
           className="w-full flex items-center justify-between py-1 text-left"
         >
           <span className="text-sm text-gray-400">
-            {editOpen ? 'Hide editor' : 'Tap to edit all profile fields'}
+            {editOpen ? 'Hide editor' : 'Click to edit all profile fields'}
           </span>
           <span className="text-xs text-gray-600">{editOpen ? '▲' : '▼'}</span>
         </button>

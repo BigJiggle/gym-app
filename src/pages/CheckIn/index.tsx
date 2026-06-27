@@ -551,7 +551,7 @@ export default function CheckIn() {
           <div className="text-4xl">🔒</div>
           <div>
             <h2 className="text-base font-bold text-gray-100">Check-In Locked</h2>
-            <p className="text-xs text-gray-500 mt-0.5">Not yet available. Your next check-in opens on:</p>
+            <p className="text-xs text-gray-500 mt-0.5">Your next check-in opens on:</p>
             <p className="text-brand-400 font-semibold text-lg mt-1">
               {nextAllowed.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
             </p>
