@@ -55,22 +55,23 @@ export default function Diet() {
   })
   const [refeedPanelOpen, setRefeedPanelOpen] = useState(false)
 
-  // Water intake tracker — resets daily via date-keyed localStorage
+  // Water intake tracker — syncs with Dashboard via shared localStorage keys (water_ml_${todayStr})
+  // Displays in glasses (250ml each) for a quick tap-to-add UI; Dashboard shows the same data in ml.
+  const ML_PER_GLASS = 250
   const [waterGlasses, setWaterGlasses] = useState<number>(() => {
-    const stored = localStorage.getItem(`water_${localDateStr()}`)
-    const n = stored ? parseInt(stored, 10) : 0
-    return !isNaN(n) ? n : 0
+    const ml = parseInt(localStorage.getItem(`water_ml_${localDateStr()}`) ?? '0', 10)
+    return Math.round((isNaN(ml) ? 0 : ml) / ML_PER_GLASS)
   })
   const [waterTarget, setWaterTarget] = useState<number>(() => {
-    const stored = localStorage.getItem('water_target')
-    const n = stored ? parseInt(stored, 10) : 8
-    return [8, 10, 12].includes(n) ? n : 8
+    const ml = parseInt(localStorage.getItem('water_target_ml') ?? '3000', 10)
+    const glasses = Math.round((isNaN(ml) ? 3000 : ml) / ML_PER_GLASS)
+    return Math.max(4, Math.min(20, glasses))
   })
 
   function updateWater(delta: number) {
     setWaterGlasses(prev => {
       const next = Math.max(0, Math.min(20, prev + delta))
-      localStorage.setItem(`water_${todayStr}`, String(next))
+      localStorage.setItem(`water_ml_${todayStr}`, String(next * ML_PER_GLASS))
       return next
     })
   }
@@ -78,7 +79,7 @@ export default function Diet() {
   function cycleWaterTarget() {
     setWaterTarget(prev => {
       const next = prev === 8 ? 10 : prev === 10 ? 12 : 8
-      localStorage.setItem('water_target', String(next))
+      localStorage.setItem('water_target_ml', String(next * ML_PER_GLASS))
       return next
     })
   }
