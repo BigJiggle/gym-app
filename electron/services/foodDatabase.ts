@@ -379,7 +379,7 @@ export const FOOD_CATEGORY: Record<string, 'protein' | 'carb' | 'fat' | 'veg'> =
   olive_oil:'fat', coconut_oil:'fat', avocado_oil:'fat',
   // FATS: dairy fats & cheese
   butter:'fat', ghee:'fat', sour_cream:'fat', heavy_cream:'fat', coconut_cream:'fat',
-  mozzarella:'fat', cheddar:'fat', ricotta:'fat', parmesan:'fat',
+  mozzarella:'fat', cheddar:'fat', ricotta:'protein', parmesan:'fat',
   feta:'fat', cream_cheese:'fat', swiss_cheese:'fat', goat_cheese:'fat',
   whole_milk:'fat',
   // FATS: misc
