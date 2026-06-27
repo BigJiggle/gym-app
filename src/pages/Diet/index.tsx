@@ -413,7 +413,7 @@ export default function Diet() {
         )}
       </div>
       {tab === 'plan' && (
-        <p className="text-xs text-gray-400 -mt-3">⟳ adjusts macro targets &nbsp;·&nbsp; <span className="text-amber-500 font-medium">⚠ replaces all meals</span></p>
+        <p className="text-xs text-gray-400 -mt-3">⟳ updates targets from latest weigh-in &nbsp;·&nbsp; <span className="text-amber-500 font-medium">⚠ rebuilds plan, erases swaps</span></p>
       )}
 
       {/* ─── MEAL PLAN TAB ─── */}
