@@ -725,6 +725,14 @@ interface PhotosSectionProps {
 
 function PhotosSection({ photos, selectedPose, setSelectedPose, onFileChange }: PhotosSectionProps) {
   const POSES: ProgressPhoto['pose'][] = ['front', 'back', 'side', 'custom']
+  // Photos ordered newest-first from IPC; filter to selected pose for comparison + grid
+  const posePhotos = photos.filter(p => p.pose === selectedPose)
+  // oldest first for "then", newest last for "now"
+  const chronological = [...posePhotos].sort((a, b) => a.taken_at.localeCompare(b.taken_at))
+  const thenPhoto = chronological[0]
+  const nowPhoto = chronological[chronological.length - 1]
+  const showComparison = chronological.length >= 2 && thenPhoto.id !== nowPhoto.id
+
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
       <div className="flex items-center justify-between mb-3">
@@ -746,23 +754,60 @@ function PhotosSection({ photos, selectedPose, setSelectedPose, onFileChange }: 
       {photos.length === 0 ? (
         <p className="text-sm text-gray-600 text-center py-6">No photos yet — add your first to start tracking visual progress.</p>
       ) : (
-        <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
-          {photos.map(photo => (
-            <div key={photo.id} className="relative rounded-lg overflow-hidden bg-gray-800 aspect-[3/4]">
-              <img
-                src={`file://${photo.file_path}`}
-                alt={`${photo.pose} pose`}
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1.5">
-                <p className="text-xs font-medium text-white capitalize">{photo.pose}</p>
-                <p className="text-xs text-gray-400">
-                  {new Date(photo.taken_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
-                </p>
+        <>
+          {showComparison && (
+            <div className="mb-4">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Then vs Now — {selectedPose.charAt(0).toUpperCase() + selectedPose.slice(1)}</p>
+              <div className="grid grid-cols-2 gap-2">
+                {([thenPhoto, nowPhoto] as const).map((photo, i) => (
+                  <div key={photo.id} className="relative rounded-lg overflow-hidden bg-gray-800 aspect-[3/4]">
+                    <img
+                      src={`file://${photo.file_path}`}
+                      alt={`${photo.pose} ${i === 0 ? 'then' : 'now'}`}
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute top-0 left-0 right-0 flex justify-between px-2 pt-1.5">
+                      <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${i === 0 ? 'bg-gray-900/80 text-gray-400' : 'bg-brand-900/80 text-brand-400'}`}>
+                        {i === 0 ? 'THEN' : 'NOW'}
+                      </span>
+                    </div>
+                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1.5">
+                      <p className="text-xs text-gray-300">
+                        {new Date(photo.taken_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
+                      </p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-          ))}
-        </div>
+          )}
+          {posePhotos.length > 0 && (
+            <>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                All {selectedPose.charAt(0).toUpperCase() + selectedPose.slice(1)} Photos ({posePhotos.length})
+              </p>
+              <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
+                {posePhotos.map(photo => (
+                  <div key={photo.id} className="relative rounded-lg overflow-hidden bg-gray-800 aspect-[3/4]">
+                    <img
+                      src={`file://${photo.file_path}`}
+                      alt={`${photo.pose} pose`}
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1.5">
+                      <p className="text-xs text-gray-400">
+                        {new Date(photo.taken_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          {posePhotos.length === 0 && (
+            <p className="text-sm text-gray-600 text-center py-4">No {selectedPose} photos yet — add one above.</p>
+          )}
+        </>
       )}
     </div>
   )
