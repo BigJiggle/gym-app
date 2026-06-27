@@ -385,3 +385,129 @@ During the 7 days before a show, a prep athlete's most critical resource is know
 
 **Commit:** `a1b06f2 [UX] 2026-06-26: Two surgical Dashboard clarity fixes`
 
+---
+
+# PrepCoach QA Report — Automated Run 8 (2026-06-27)
+
+## Summary
+
+| Phase | Result |
+|-------|--------|
+| Phase 1 – QA Engineer | 1 bug fixed; 105/105 tests passing; TypeScript clean |
+| Phase 2 – Feature (Prep Athlete) | Daily water intake tracker added to Diet page |
+| Phase 3 – UX Simplicity | 2 surgical UX fixes committed |
+
+---
+
+## Phase 1 — QA Engineer
+
+### TypeScript
+`npx tsc --noEmit` → clean, no errors.
+
+### Unit Tests
+`npm test` → **105/105 passed** across 9 test files.
+
+### Logic / Domain Audit
+
+| # | Check | Result |
+|---|-------|--------|
+| 1 | TDEE / macro math in nutritionEngine (protein 2.3 g/kg, fat 0.9 g/kg) | ✅ Pass |
+| 2 | Protein/fat floors enforced, carbs non-negative | ✅ Pass |
+| 3 | MEAL_CAL_FRACTIONS: 0.45+0.35+0.15=0.95 (5% rounding buffer) | ✅ Pass |
+| 4 | getPhaseAwareDeficit: cut peak (≤1 wk)=-200, main cut=-700, bulk+show uses cut | ✅ Pass |
+| 5 | getCultureFood: all 8 cultures return valid TemplateFoodItems incl. plant_protein for vegan/veg | ✅ Pass |
+| 6 | calcPortionStr: veg=120g, fruit=100g, powder=30g; macro math ≈ correct | ✅ Pass |
+| 7 | FOOD_CALORIES_PER_100G: full coverage of template + culture food IDs | ✅ Pass |
+| 8 | FOOD_SUBSTITUTES: all substitute IDs exist in FOOD_CALORIES_PER_100G | ✅ Pass |
+| 9 | FOOD_CATEGORY: all template food IDs classified (**ricotta was 'fat' → FAIL**) | ❌ **FAIL (fixed)** |
+| 10 | determinePhase: 0→deload, 1→deload, 4→peak, 9→strength, 17→hypertrophy | ✅ Pass |
+| 11 | Training frequency clamp [2,6]; session day_of_week unique per plan | ✅ Pass |
+| 12 | Duplicate check-in throws DUPLICATE_CHECKIN | ✅ Pass |
+| 13 | shows:setPrimary rejects past shows | ✅ Pass |
+| 14 | Meal calorie sum ≈ daily target (±80 kcal) | ✅ Pass |
+| 15 | buildMeals mainCount/snackCount split correct for all snack_count values | ✅ Pass |
+
+**Bugs found this run: 1**
+
+---
+
+### Bug Fixed
+
+**Bug: `ricotta` misclassified as `'fat'` in FOOD_CATEGORY — prevents preference substitution in vegetarian dinner template**
+
+- **File:** `electron/services/foodDatabase.ts` line 382
+- **Root cause:** The FOOD_CATEGORY map had `ricotta: 'fat'` but ricotta is used in the vegetarian dinner meal template with `role: 'protein'`. Inside `getFood`, when looking for a user preference to substitute for ricotta, the function matched on `FOOD_CATEGORY[foodId]` to find foods in the same category. With `ricotta: 'fat'`, it searched the 'fat' category. A user who preferred `cottage_cheese` (a 'protein' category food) would never receive it as a substitute for ricotta because the category check failed — even though `FOOD_SUBSTITUTES.ricotta` correctly lists `cottage_cheese` and `greek_yogurt` as protein substitutes.
+- **Impact:** Vegetarian users who preferred cottage_cheese or greek_yogurt always received plain ricotta regardless of their preference setting.
+- **Fix:** Changed `ricotta: 'fat'` → `ricotta: 'protein'`.
+- **Commit:** `18ee094 [QA] 2026-06-27: fix ricotta food category from fat to protein for correct preference substitution in vegetarian dinner template`
+
+---
+
+## Phase 2 — Prep Athlete Feature
+
+**Trigger: 1 bug fixed (< 3) → Phase 2 runs.**
+
+**Feature: Daily water intake tracker on Diet page (glass-based, syncs with Dashboard)**
+
+The Dashboard already has a precise ml-based water tracker (add 250ml/500ml/etc.), but the Diet page — where athletes spend most time checking meals — had no water visibility. A prep athlete 12 weeks out needs to hit 3–4 L/day for kidney function on a high-protein cut, and having to navigate to the Dashboard just to log a glass of water breaks the Diet page flow.
+
+**How it works:**
+- State initialised from `localStorage.getItem('water_ml_${todayStr}')` — the same key used by the Dashboard tracker — converted to glasses (250 ml each). Updates write back to the same key, so both pages always show the same underlying value.
+- Water target reads from `water_target_ml` (Dashboard key); cycling between 8/10/12 glasses updates the ml value so the Dashboard target also updates.
+- Visual: a row of tappable glass-dot buttons (filled vs empty) up to the target count, a thin progress bar, and `+` / `−` controls. Cyan colour family to distinguish from the macro bars.
+- Auto-resets daily (key includes `todayStr`).
+- Hidden when no diet plan exists.
+- No new API calls — pure localStorage.
+
+**Files changed:** `src/pages/Diet/index.tsx` (27 state lines + 60-line widget block)
+
+**Commits:**
+- `39b4daf` — initial water tracker widget
+- `e6bf009` — sync localStorage keys to match Dashboard (`water_ml_${date}` / `water_target_ml`)
+
+---
+
+## Phase 3 — UX Simplicity
+
+### Fix 1: Settings profile editor used "Tap" instead of "Click"
+
+**Problem:** The "Edit Profile" collapsible button in Settings rendered `"Tap to edit all profile fields"` — `"Tap"` is a mobile touch idiom. PrepCoach is an Electron desktop app; users click, not tap. An athlete updating their weight between prep cycles sees the wrong affordance verb every single time they open Settings.
+
+**Fix:** Changed `'Tap to edit all profile fields'` → `'Click to edit all profile fields'`.
+
+- **File:** `src/pages/Settings/index.tsx` line 323
+
+### Fix 2: Check-in lock screen had redundant "Not yet available" line
+
+**Problem:** The locked check-in screen rendered:
+```
+🔒
+Check-In Locked
+Not yet available. Your next check-in opens on:
+[date]
+```
+"Not yet available" is self-evident from the lock icon and heading. It added a sentence of noise before the only piece of information the athlete actually needs (the date).
+
+**Fix:** Removed the "Not yet available." prefix. Screen now reads directly `"Your next check-in opens on:"`.
+
+- **File:** `src/pages/CheckIn/index.tsx` line 554
+
+**Commit:** `551e80e [UX] 2026-06-27: fix 'Tap' to 'Click' in Settings profile editor; remove redundant 'Not yet available' from check-in lock screen`
+
+---
+
+## Cumulative Quality Trend
+
+| Run | Date | Bugs Fixed | Feature | UX Fixes | Tests |
+|-----|------|-----------|---------|----------|-------|
+| 1 | 2026-05-27 | 1 | Muscle MEV bars | 2 | — |
+| 2 | 2026-06-22 | 3 | Day Projection on check-in | 2 | — |
+| 3 | 2026-06-23 | 5 | Meal adherence streak | 2 | 105 |
+| 4 | 2026-06-24 | 0 | Per-day macro compliance | 2 | 105 |
+| 5 | 2026-06-25 | 1 | Weekly Prep Scorecard | 2 | 105 |
+| 6 | 2026-06-25 | 1 | Workout PR Detection | 2 | 105 |
+| 7 | 2026-06-26 | 0 | Peak Week Daily Protocol card | 2 | 105 |
+| **8** | **2026-06-27** | **1** | **Glass-based water tracker on Diet page** | **2** | **105** |
+
+The ricotta FOOD_CATEGORY bug survived 7 prior runs because it only surfaces for users who (a) have a vegetarian diet, (b) have ricotta in their dinner template, and (c) have set cottage_cheese or greek_yogurt as a preference. The audit pattern of tracing `getFood` category matching against all template food IDs caught it in Run 8. The engine and test suite remain stable at 105/105.
+
