@@ -55,6 +55,34 @@ export default function Diet() {
   })
   const [refeedPanelOpen, setRefeedPanelOpen] = useState(false)
 
+  // Water intake tracker — resets daily via date-keyed localStorage
+  const [waterGlasses, setWaterGlasses] = useState<number>(() => {
+    const stored = localStorage.getItem(`water_${localDateStr()}`)
+    const n = stored ? parseInt(stored, 10) : 0
+    return !isNaN(n) ? n : 0
+  })
+  const [waterTarget, setWaterTarget] = useState<number>(() => {
+    const stored = localStorage.getItem('water_target')
+    const n = stored ? parseInt(stored, 10) : 8
+    return [8, 10, 12].includes(n) ? n : 8
+  })
+
+  function updateWater(delta: number) {
+    setWaterGlasses(prev => {
+      const next = Math.max(0, Math.min(20, prev + delta))
+      localStorage.setItem(`water_${todayStr}`, String(next))
+      return next
+    })
+  }
+
+  function cycleWaterTarget() {
+    setWaterTarget(prev => {
+      const next = prev === 8 ? 10 : prev === 10 ? 12 : 8
+      localStorage.setItem('water_target', String(next))
+      return next
+    })
+  }
+
   const todayStr = localDateStr()
   const jsDay = new Date().getDay()
   const monday = new Date()
@@ -482,6 +510,73 @@ export default function Diet() {
               )}
             </div>
           )}
+
+          {/* Water Intake Tracker */}
+          {totalMeals > 0 && (() => {
+            const waterPct = Math.min(100, Math.round((waterGlasses / waterTarget) * 100))
+            const waterMl = waterGlasses * 250
+            const done = waterGlasses >= waterTarget
+            return (
+              <div className={`bg-gray-900 border rounded-xl p-4 ${done ? 'border-cyan-800/50' : 'border-gray-800'}`}>
+                <div className="flex items-center justify-between mb-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-sm font-semibold ${done ? 'text-cyan-300' : 'text-gray-200'}`}>Water Intake</span>
+                    {done && <span className="text-xs bg-cyan-900/30 text-cyan-400 border border-cyan-800/50 rounded-full px-2 py-0.5">target hit</span>}
+                  </div>
+                  <button
+                    onClick={cycleWaterTarget}
+                    title="Cycle water target (8 / 10 / 12 glasses)"
+                    className="text-xs text-gray-600 hover:text-cyan-400 transition-colors tabular-nums"
+                  >
+                    target: {waterTarget} glasses
+                  </button>
+                </div>
+                {/* Glass dots */}
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                  {Array.from({ length: waterTarget }, (_, i) => (
+                    <button
+                      key={i}
+                      onClick={() => updateWater(i < waterGlasses ? -(waterGlasses - i) : i + 1 - waterGlasses)}
+                      title={`Set to ${i + 1} glass${i !== 0 ? 'es' : ''}`}
+                      className={`w-7 h-7 rounded-md border text-sm transition-colors ${
+                        i < waterGlasses
+                          ? 'bg-cyan-700/40 border-cyan-600 text-cyan-300'
+                          : 'bg-gray-800 border-gray-700 text-gray-700 hover:border-cyan-700 hover:text-cyan-500'
+                      }`}
+                    >
+                      {i < waterGlasses ? '▪' : '·'}
+                    </button>
+                  ))}
+                </div>
+                {/* Progress bar */}
+                <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden mb-2">
+                  <div
+                    className={`h-full rounded-full transition-all duration-300 ${done ? 'bg-cyan-400' : 'bg-cyan-600'}`}
+                    style={{ width: `${waterPct}%` }}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-500">
+                    <span className={done ? 'text-cyan-400 font-semibold' : 'text-cyan-300 font-semibold'}>{waterGlasses}</span>
+                    <span className="text-gray-600"> / {waterTarget} glasses</span>
+                    <span className="text-gray-700"> · {waterMl}ml</span>
+                  </span>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => updateWater(-1)}
+                      disabled={waterGlasses === 0}
+                      className="w-7 h-7 rounded-lg border border-gray-700 text-gray-400 hover:border-red-800 hover:text-red-400 transition-colors disabled:opacity-30 text-sm"
+                    >−</button>
+                    <button
+                      onClick={() => updateWater(1)}
+                      disabled={waterGlasses >= 20}
+                      className="w-7 h-7 rounded-lg border border-gray-700 text-gray-400 hover:border-cyan-700 hover:text-cyan-400 transition-colors disabled:opacity-30 text-sm font-bold"
+                    >+</button>
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
 
           {/* Refeed Day Planner */}
           {(() => {
