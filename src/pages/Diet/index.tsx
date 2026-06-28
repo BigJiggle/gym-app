@@ -68,6 +68,16 @@ export default function Diet() {
     return Math.max(4, Math.min(20, glasses))
   })
 
+  const CARDIO_STEP = 5
+  const [cardioMin, setCardioMin] = useState<number>(() => {
+    const stored = parseInt(localStorage.getItem(`cardio_min_${localDateStr()}`) ?? '0', 10)
+    return isNaN(stored) ? 0 : Math.max(0, stored)
+  })
+  const [cardioTarget, setCardioTarget] = useState<number>(() => {
+    const stored = parseInt(localStorage.getItem('cardio_target_min') ?? '30', 10)
+    return [30, 45, 60].includes(stored) ? stored : 30
+  })
+
   function updateWater(delta: number) {
     setWaterGlasses(prev => {
       const next = Math.max(0, Math.min(20, prev + delta))
@@ -80,6 +90,22 @@ export default function Diet() {
     setWaterTarget(prev => {
       const next = prev === 8 ? 10 : prev === 10 ? 12 : 8
       localStorage.setItem('water_target_ml', String(next * ML_PER_GLASS))
+      return next
+    })
+  }
+
+  function updateCardio(delta: number) {
+    setCardioMin(prev => {
+      const next = Math.max(0, Math.min(120, prev + delta))
+      localStorage.setItem(`cardio_min_${todayStr}`, String(next))
+      return next
+    })
+  }
+
+  function cycleCardioTarget() {
+    setCardioTarget(prev => {
+      const next = prev === 30 ? 45 : prev === 45 ? 60 : 30
+      localStorage.setItem('cardio_target_min', String(next))
       return next
     })
   }
@@ -572,6 +598,60 @@ export default function Diet() {
                       onClick={() => updateWater(1)}
                       disabled={waterGlasses >= 20}
                       className="w-7 h-7 rounded-lg border border-gray-700 text-gray-400 hover:border-cyan-700 hover:text-cyan-400 transition-colors disabled:opacity-30 text-sm font-bold"
+                    >+</button>
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* Cardio Tracker */}
+          {totalMeals > 0 && (() => {
+            const cardioPct = Math.min(100, cardioTarget > 0 ? Math.round((cardioMin / cardioTarget) * 100) : 0)
+            const cardioDone = cardioMin >= cardioTarget
+            const weeklyCardio = weekDays
+              .filter(({ dateStr }) => dateStr <= todayStr)
+              .reduce((sum, { dateStr }) => {
+                const stored = parseInt(localStorage.getItem(`cardio_min_${dateStr}`) ?? '0', 10)
+                return sum + (isNaN(stored) ? 0 : stored)
+              }, 0)
+            return (
+              <div className={`bg-gray-900 border rounded-xl p-4 ${cardioDone ? 'border-purple-800/50' : 'border-gray-800'}`}>
+                <div className="flex items-center justify-between mb-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-sm font-semibold ${cardioDone ? 'text-purple-300' : 'text-gray-200'}`}>Cardio</span>
+                    {cardioDone && <span className="text-xs bg-purple-900/30 text-purple-400 border border-purple-800/50 rounded-full px-2 py-0.5">target hit</span>}
+                  </div>
+                  <button
+                    onClick={cycleCardioTarget}
+                    title="Cycle cardio target (30 / 45 / 60 min)"
+                    className="text-xs text-gray-600 hover:text-purple-400 transition-colors tabular-nums"
+                  >
+                    target: {cardioTarget} min
+                  </button>
+                </div>
+                <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden mb-3">
+                  <div
+                    className={`h-full rounded-full transition-all duration-300 ${cardioDone ? 'bg-purple-400' : 'bg-purple-600'}`}
+                    style={{ width: `${cardioPct}%` }}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-500">
+                    <span className={cardioDone ? 'text-purple-400 font-semibold' : 'text-purple-300 font-semibold'}>{cardioMin}</span>
+                    <span className="text-gray-600"> / {cardioTarget} min</span>
+                    {weeklyCardio > 0 && <span className="text-gray-700"> · {weeklyCardio} min this week</span>}
+                  </span>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => updateCardio(-CARDIO_STEP)}
+                      disabled={cardioMin === 0}
+                      className="w-7 h-7 rounded-lg border border-gray-700 text-gray-400 hover:border-red-800 hover:text-red-400 transition-colors disabled:opacity-30 text-sm"
+                    >−</button>
+                    <button
+                      onClick={() => updateCardio(CARDIO_STEP)}
+                      disabled={cardioMin >= 120}
+                      className="w-7 h-7 rounded-lg border border-gray-700 text-gray-400 hover:border-purple-700 hover:text-purple-400 transition-colors disabled:opacity-30 text-sm font-bold"
                     >+</button>
                   </div>
                 </div>
