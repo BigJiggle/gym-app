@@ -921,7 +921,7 @@ export default function Dashboard() {
                 </p>
                 <p className="text-xs text-gray-500 leading-tight">Training</p>
                 <p className="text-xs text-gray-700 mt-0.5">
-                  {scheduledThisWeek.length > 0 ? `${completedThisWeek.length}/${scheduledThisWeek.length}` : 'rest wk'}
+                  {sessions.length > 0 ? `${completedThisWeek.length}/${sessions.length} sessions` : 'no plan'}
                 </p>
               </div>
               <div className={`rounded-lg border p-2 ${mealC ? mealC.bg : noData}`}>
@@ -1087,13 +1087,11 @@ export default function Dashboard() {
                     <div key={i} className="flex items-start justify-between text-sm gap-2">
                       <div className="min-w-0">
                         <span className="text-gray-300">{ex.name}</span>
-                        {lastStr ? (
+                        {lastStr && (
                           <p className="text-xs text-gray-500 mt-0.5">
                             last: {lastStr}
                             {target && <span className="text-brand-400 ml-1.5">→ target: {target}</span>}
                           </p>
-                        ) : (
-                          target === null && <p className="text-xs text-gray-700 mt-0.5">no previous data</p>
                         )}
                       </div>
                       <span className="text-gray-500 flex-shrink-0">{ex.sets} × {ex.reps} @ RIR {ex.rir}</span>
