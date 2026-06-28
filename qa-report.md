@@ -135,3 +135,73 @@ TypeScript: clean (`npx tsc --noEmit` — no errors).
 ---
 
 *Previous runs: Run 9 (2026-06-27) — 0 bugs, photo comparison feature, 2 UX fixes.*
+
+---
+
+# PrepCoach QA Report — Automated Run 11 (2026-06-28)
+
+## Summary
+
+| Phase | Result |
+|-------|--------|
+| Phase 1 – QA Engineer | 0 bugs fixed; 105/105 tests passing; TypeScript clean |
+| Phase 2 – Feature (Prep Athlete) | Daily Cardio Tracker added to Diet page |
+| Phase 3 – UX Simplicity | 2 surgical fixes committed |
+
+---
+
+## Phase 1 — QA Engineer
+
+### TypeScript
+`npx tsc --noEmit` → clean, no errors.
+
+### Unit Tests
+`npm test` → **105/105 passed** (all 9 test files).
+
+### Full Audit Coverage
+All nutrition engine invariants, training engine invariants, handler guards, and 7 user flow traces verified. No bugs found this run.
+
+**Key items confirmed correct:**
+- Nutrition engine: `buildMeals` `perMainCal` formula, `calcPortionStr` ROLE_FIXED_G, `getPhaseAwareDeficit` peak-week ease ✓
+- Training engine: freq clamped 2–6, deload phase at ≤3 weeks_out, distinct days per frequency ✓
+- `shows:setPrimary`: past-show guard ✓
+- `checkin:submit`: same-day duplicate rejection ✓
+- `plan:recalculateMacros`: uses latest check-in weight ✓
+- `meals:logCompletion`: INSERT OR REPLACE prevents duplication ✓
+
+**Bugs Fixed:** 0
+
+---
+
+## Phase 2 — Prep Athlete Feature
+
+**Feature**: Daily Cardio Tracker on Diet page (`src/pages/Diet/index.tsx`)
+
+Added a quick-tap ±5 min cardio logger between the Water Tracker and Refeed Day Planner on the Diet > Plan tab. Shows today's minutes vs a cycling 30/45/60-min target with a progress bar and "target hit" badge. Weekly cardio total shown inline. Reads and writes the Dashboard's existing `cardio_log` localStorage key so both pages display consistent data (preserves `type` from any existing Dashboard entry, defaults to `'LISS'` for new quick-log entries).
+
+**Why this feature**: LISS cardio is a critical daily activity during contest prep (typically 30–60 min/day in the 12 weeks out period) and had no tracking surface in the app.
+
+**Commit**: `bbf1174` — `[FEATURE] 2026-06-28: daily cardio tracker on Diet page`
+
+---
+
+## Phase 3 — UX Review
+
+### Fix 1: Cardio tracker data consistency (`src/pages/Diet/index.tsx`)
+
+The Phase 2 cardio tracker initially used its own `cardio_min_${date}` localStorage key, creating split-brain with the Dashboard's `cardio_log`. Updated state initializer, `updateCardio()`, and the JSX weekly-total calculation to all read/write `cardio_log`.
+
+### Fix 2: Onboarding height/weight range hints (`src/pages/Onboarding/steps/Step1Personal.tsx`)
+
+Out-of-range warnings previously said *"Please double-check this measurement."* with no actionable context. Changed to *"Expected 100–220 cm — please double-check."* and *"Expected 30–200 kg — please double-check."* so users who accidentally enter meters instead of cm (or lbs instead of kg) immediately see the valid range.
+
+**Commit**: `ae908f2` — `[UX] 2026-06-28: cardio tracker data consistency + clearer onboarding validation`
+
+---
+
+## Files Changed This Run
+
+| File | Change |
+|------|--------|
+| `src/pages/Diet/index.tsx` | Feature: daily cardio tracker; UX: unify cardio localStorage key |
+| `src/pages/Onboarding/steps/Step1Personal.tsx` | UX: clearer height/weight range validation messages |
