@@ -6,6 +6,7 @@ export interface TrainingInput {
   weeks_out?: number
   goal: string
   split_preference?: string  // 'auto'|'ppl'|'upper_lower'|'arnold'|'bro'|'full_body'
+  exercises_per_session?: number  // user preference for number of exercises per session
   sets_per_exercise?: number  // user preference — overrides default when set
   max_sets_per_exercise?: number  // hard cap across all exercises
   recovery_notes?: string  // injury/recovery context passed to generation
@@ -277,11 +278,12 @@ function buildPPLSessions(
   equipment: EquipmentTier,
   phase: string,
   exp: number,
+  exPerSession?: number,
   userDefault?: number,
   userMax?: number
 ): TrainingSession[] {
   const days = DAY_SCHEDULES[freq] ?? [1,2,3,4,5,6].slice(0, freq)
-  const exCount = (cat: 'push' | 'pull' | 'legs') => cat === 'legs' ? 6 : 5
+  const exCount = (cat: 'push' | 'pull' | 'legs') => exPerSession ?? (cat === 'legs' ? 6 : 5)
 
   const cycle: Array<{ name: string; cat: 'push' | 'pull' | 'legs'; variant: 'A' | 'B' }> = [
     { name: 'Push (Chest / Shoulders / Triceps)', cat: 'push', variant: 'A' },
@@ -308,29 +310,31 @@ function buildUpperLowerSessions(
   equipment: EquipmentTier,
   phase: string,
   exp: number,
+  exPerSession?: number,
   userDefault?: number,
   userMax?: number
 ): TrainingSession[] {
   const days = DAY_SCHEDULES[freq] ?? [1,2,3,4,5,6].slice(0, freq)
+  const half = exPerSession !== undefined ? Math.max(2, Math.floor(exPerSession / 2)) : 4
 
   const templates: Array<{ name: string; exercises: ExerciseLibraryEntry[] }> = [
     {
       name: 'Upper Body A',
       exercises: [
-        ...getExercises('push', equipment, 4),
-        ...getExercises('pull', equipment, 4)
+        ...getExercises('push', equipment, half),
+        ...getExercises('pull', equipment, half)
       ]
     },
     {
       name: 'Lower Body A',
-      exercises: getExercises('legs', equipment, 6)
+      exercises: getExercises('legs', equipment, exPerSession ?? 6)
     },
     {
       name: 'Upper Body B',
       exercises: [
-        ...getExercisesByMuscleGroup('chest', equipment, 2),
-        ...getExercisesByMuscleGroup('back', equipment, 2),
-        ...getExercisesByMuscleGroup('shoulders', equipment, 2),
+        ...getExercisesByMuscleGroup('chest', equipment, Math.max(1, Math.floor(half / 2))),
+        ...getExercisesByMuscleGroup('back', equipment, Math.max(1, Math.floor(half / 2))),
+        ...getExercisesByMuscleGroup('shoulders', equipment, Math.max(1, Math.floor(half / 2))),
         ...getExercisesByMuscleGroup('triceps', equipment, 1),
         ...getExercisesByMuscleGroup('biceps', equipment, 1),
       ]
@@ -341,7 +345,7 @@ function buildUpperLowerSessions(
         ...getExercisesByMuscleGroup('quads', equipment, 2),
         ...getExercisesByMuscleGroup('hamstrings', equipment, 2),
         ...getExercisesByMuscleGroup('glutes', equipment, 1),
-        ...getExercises('core', equipment, 2),
+        ...getExercises('core', equipment, exPerSession !== undefined ? Math.max(1, exPerSession - 5) : 2),
       ]
     },
     {
@@ -371,14 +375,17 @@ function buildUpperLowerSessions(
   }))
 }
 
-function buildArnoldSplit(freq: number, equipment: EquipmentTier, phase: string, exp: number, userDefault?: number, userMax?: number): TrainingSession[] {
+function buildArnoldSplit(freq: number, equipment: EquipmentTier, phase: string, exp: number, exPerSession?: number, userDefault?: number, userMax?: number): TrainingSession[] {
   const days = DAY_SCHEDULES[freq] ?? [1,2,3,4,5,6].slice(0, freq)
-  const chestA = getExercisesByMuscleGroup('chest', equipment, 5)
-  const backA = getExercisesByMuscleGroup('back', equipment, 5)
-  const shoulderA = getExercisesByMuscleGroup('shoulders', equipment, 4)
-  const biA = getExercisesByMuscleGroup('biceps', equipment, 4)
-  const triA = getExercisesByMuscleGroup('triceps', equipment, 4)
-  const legExercises = [...getExercises('legs', equipment, 7), ...getExercises('core', equipment, 2)]
+  // Arnold splits two muscle groups per session; scale each half by exPerSession/2
+  const half = exPerSession !== undefined ? Math.max(2, Math.round(exPerSession / 2)) : 5
+  const armThird = exPerSession !== undefined ? Math.max(1, Math.round(exPerSession / 3)) : 4
+  const chestA = getExercisesByMuscleGroup('chest', equipment, half)
+  const backA = getExercisesByMuscleGroup('back', equipment, half)
+  const shoulderA = getExercisesByMuscleGroup('shoulders', equipment, armThird)
+  const biA = getExercisesByMuscleGroup('biceps', equipment, armThird)
+  const triA = getExercisesByMuscleGroup('triceps', equipment, armThird)
+  const legExercises = [...getExercises('legs', equipment, exPerSession ?? 7), ...getExercises('core', equipment, 2)]
 
   const cycle = [
     { name: 'Chest & Back', ex: [...chestA, ...backA] },
@@ -396,31 +403,35 @@ function buildArnoldSplit(freq: number, equipment: EquipmentTier, phase: string,
   }))
 }
 
-function buildBroSplit(freq: number, equipment: EquipmentTier, phase: string, exp: number, userDefault?: number, userMax?: number): TrainingSession[] {
+function buildBroSplit(freq: number, equipment: EquipmentTier, phase: string, exp: number, exPerSession?: number, userDefault?: number, userMax?: number): TrainingSession[] {
   const days = DAY_SCHEDULES[freq] ?? [1,2,3,4,5,6].slice(0, freq)
+  const ex = exPerSession ?? 7
+  const armHalf = Math.max(1, Math.floor(ex / 2))
 
   const allSessions = [
-    { name: 'Chest Day', ex: getExercisesByMuscleGroup('chest', equipment, 7) },
-    { name: 'Back Day', ex: getExercisesByMuscleGroup('back', equipment, 7) },
-    { name: 'Shoulders Day', ex: getExercisesByMuscleGroup('shoulders', equipment, 6) },
-    { name: 'Arms Day', ex: [...getExercisesByMuscleGroup('biceps', equipment, 4), ...getExercisesByMuscleGroup('triceps', equipment, 4)] },
-    { name: 'Legs Day', ex: getExercises('legs', equipment, 7) },
-    { name: 'Weak Point & Core', ex: [...getExercises('core', equipment, 4), ...getExercisesByMuscleGroup('shoulders', equipment, 2)] },
+    { name: 'Chest Day', ex: getExercisesByMuscleGroup('chest', equipment, ex) },
+    { name: 'Back Day', ex: getExercisesByMuscleGroup('back', equipment, ex) },
+    { name: 'Shoulders Day', ex: getExercisesByMuscleGroup('shoulders', equipment, Math.max(1, ex - 1)) },
+    { name: 'Arms Day', ex: [...getExercisesByMuscleGroup('biceps', equipment, armHalf), ...getExercisesByMuscleGroup('triceps', equipment, armHalf)] },
+    { name: 'Legs Day', ex: getExercises('legs', equipment, ex) },
+    { name: 'Weak Point & Core', ex: [...getExercises('core', equipment, Math.max(1, ex - 2)), ...getExercisesByMuscleGroup('shoulders', equipment, 2)] },
   ]
 
   let sessionPool = allSessions
   if (freq === 3) {
+    const third = Math.max(1, Math.round(ex / 3))
     sessionPool = [
-      { name: 'Chest & Arms', ex: [...getExercisesByMuscleGroup('chest', equipment, 4), ...getExercisesByMuscleGroup('biceps', equipment, 2), ...getExercisesByMuscleGroup('triceps', equipment, 2)] },
-      { name: 'Back & Shoulders', ex: [...getExercisesByMuscleGroup('back', equipment, 4), ...getExercisesByMuscleGroup('shoulders', equipment, 3)] },
-      { name: 'Legs', ex: getExercises('legs', equipment, 6) },
+      { name: 'Chest & Arms', ex: [...getExercisesByMuscleGroup('chest', equipment, third + 1), ...getExercisesByMuscleGroup('biceps', equipment, third), ...getExercisesByMuscleGroup('triceps', equipment, third)] },
+      { name: 'Back & Shoulders', ex: [...getExercisesByMuscleGroup('back', equipment, third + 1), ...getExercisesByMuscleGroup('shoulders', equipment, third + 1)] },
+      { name: 'Legs', ex: getExercises('legs', equipment, ex) },
     ]
   } else if (freq === 4) {
+    const third = Math.max(1, Math.round(ex / 3))
     sessionPool = [
-      { name: 'Chest Day', ex: getExercisesByMuscleGroup('chest', equipment, 7) },
-      { name: 'Back Day', ex: getExercisesByMuscleGroup('back', equipment, 7) },
-      { name: 'Shoulders & Arms', ex: [...getExercisesByMuscleGroup('shoulders', equipment, 3), ...getExercisesByMuscleGroup('biceps', equipment, 2), ...getExercisesByMuscleGroup('triceps', equipment, 2)] },
-      { name: 'Legs Day', ex: getExercises('legs', equipment, 7) },
+      { name: 'Chest Day', ex: getExercisesByMuscleGroup('chest', equipment, ex) },
+      { name: 'Back Day', ex: getExercisesByMuscleGroup('back', equipment, ex) },
+      { name: 'Shoulders & Arms', ex: [...getExercisesByMuscleGroup('shoulders', equipment, third), ...getExercisesByMuscleGroup('biceps', equipment, third), ...getExercisesByMuscleGroup('triceps', equipment, third)] },
+      { name: 'Legs Day', ex: getExercises('legs', equipment, ex) },
     ]
   }
 
@@ -431,8 +442,10 @@ function buildBroSplit(freq: number, equipment: EquipmentTier, phase: string, ex
   }))
 }
 
-function buildFullBodySplit(freq: number, equipment: EquipmentTier, phase: string, exp: number, userDefault?: number, userMax?: number): TrainingSession[] {
+function buildFullBodySplit(freq: number, equipment: EquipmentTier, phase: string, exp: number, exPerSession?: number, userDefault?: number, userMax?: number): TrainingSession[] {
   const days = DAY_SCHEDULES[freq] ?? [1,2,3,4,5,6].slice(0, freq)
+  // Default full-body session is 8 exercises (1+1+3+1+1+1); scale legs count if exPerSession set
+  const legsCount = exPerSession !== undefined ? Math.max(1, exPerSession - 5) : 3
   const getSession = (day: number, variant: 'A' | 'B' | 'C'): TrainingSession => {
     const pushOffset = variant === 'A' ? 0 : variant === 'B' ? 1 : 2
     const pullOffset = variant === 'A' ? 0 : variant === 'B' ? 1 : 2
@@ -442,7 +455,7 @@ function buildFullBodySplit(freq: number, equipment: EquipmentTier, phase: strin
       exercises: buildExercises([
         getExercisesByMuscleGroup('chest', equipment, 3)[pushOffset % 3],
         getExercisesByMuscleGroup('back', equipment, 3)[pullOffset % 3],
-        ...getExercises('legs', equipment, 3),
+        ...getExercises('legs', equipment, legsCount),
         getExercisesByMuscleGroup('shoulders', equipment, 2)[0],
         getExercisesByMuscleGroup('biceps', equipment, 2)[0],
         getExercisesByMuscleGroup('triceps', equipment, 2)[0],
@@ -484,6 +497,7 @@ export function generateTrainingPlan(input: TrainingInput): TrainingPlan {
   const phase = determinePhase(input.weeks_out, input.goal)
   const weeksTotal = input.weeks_out ? Math.min(input.weeks_out, 16) : 12
   const pref = input.split_preference ?? 'auto'
+  const exPerSession = input.exercises_per_session
   const userDefault = input.sets_per_exercise
   const userMax = input.max_sets_per_exercise
 
@@ -491,20 +505,20 @@ export function generateTrainingPlan(input: TrainingInput): TrainingPlan {
   let splitName: string
 
   if (pref === 'upper_lower') {
-    sessions = buildUpperLowerSessions(freq, equipment, phase, exp, userDefault, userMax)
+    sessions = buildUpperLowerSessions(freq, equipment, phase, exp, exPerSession, userDefault, userMax)
     splitName = `${freq}-Day Upper / Lower`
   } else if (pref === 'arnold') {
-    sessions = buildArnoldSplit(freq, equipment, phase, exp, userDefault, userMax)
+    sessions = buildArnoldSplit(freq, equipment, phase, exp, exPerSession, userDefault, userMax)
     splitName = 'Arnold Split'
   } else if (pref === 'bro') {
-    sessions = buildBroSplit(freq, equipment, phase, exp, userDefault, userMax)
+    sessions = buildBroSplit(freq, equipment, phase, exp, exPerSession, userDefault, userMax)
     splitName = 'Bro Split'
   } else if (pref === 'full_body') {
-    sessions = buildFullBodySplit(freq, equipment, phase, exp, userDefault, userMax)
+    sessions = buildFullBodySplit(freq, equipment, phase, exp, exPerSession, userDefault, userMax)
     splitName = 'Full Body'
   } else {
     // 'ppl' or 'auto'
-    sessions = buildPPLSessions(freq, equipment, phase, exp, userDefault, userMax)
+    sessions = buildPPLSessions(freq, equipment, phase, exp, exPerSession, userDefault, userMax)
     splitName = `${freq}-Day Push / Pull / Legs`
   }
 
