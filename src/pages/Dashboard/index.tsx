@@ -350,6 +350,30 @@ export default function Dashboard() {
     return map
   })()
 
+  // Build a quick name→isCompound lookup from the exercise library
+  const isCompoundMap = new Map<string, boolean>(exerciseLibrary.map(e => [e.name, e.isCompound]))
+
+  // Compute a suggested target weight for a given exercise based on last session performance.
+  // Compounds: +2.5 kg (or +5 lbs); isolations: +1.25 kg (or +2.5 lbs).
+  // Capped at +5% of last weight to avoid unrealistic jumps.
+  // Returns null on deload weeks or when no previous data exists.
+  function progressionTarget(exerciseName: string, phase: string): string | null {
+    if (phase === 'deload') return null
+    const lp = lastPerformanceMap.get(exerciseName)
+    if (!lp || lp.weight_kg <= 0) return null
+    const isImperial = settings.units === 'imperial'
+    const isCompound = isCompoundMap.get(exerciseName) ?? true
+    const incrementKg = isCompound ? 2.5 : 1.25
+    const incrementLbs = isCompound ? 5 : 2.5
+    const rawKg = lp.weight_kg + incrementKg
+    const cappedKg = Math.min(rawKg, lp.weight_kg * 1.05)
+    if (isImperial) {
+      const lbs = Math.round(cappedKg * 2.20462 / 2.5) * 2.5
+      return `${lbs}lbs`
+    }
+    return `${Math.round(cappedKg * 4) / 4}kg`
+  }
+
   const todayWorkoutLog = workoutHistory.find(l => l.status === 'completed' && l.date === todayStr)
   const todayPRs = (() => {
     if (!todayWorkoutLog) return []
@@ -1058,12 +1082,18 @@ export default function Dashboard() {
                       ? `${Math.round(lp.weight_kg * 2.20462 * 2) / 2}lbs × ${lp.reps}`
                       : `${lp.weight_kg}kg × ${lp.reps}`
                     : null
+                  const target = progressionTarget(ex.name, trainingPlan?.phase ?? '')
                   return (
                     <div key={i} className="flex items-start justify-between text-sm gap-2">
                       <div className="min-w-0">
                         <span className="text-gray-300">{ex.name}</span>
-                        {lastStr && (
-                          <p className="text-xs text-gray-500 mt-0.5">last: {lastStr}</p>
+                        {lastStr ? (
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            last: {lastStr}
+                            {target && <span className="text-brand-400 ml-1.5">→ target: {target}</span>}
+                          </p>
+                        ) : (
+                          target === null && <p className="text-xs text-gray-700 mt-0.5">no previous data</p>
                         )}
                       </div>
                       <span className="text-gray-500 flex-shrink-0">{ex.sets} × {ex.reps} @ RIR {ex.rir}</span>
