@@ -70,8 +70,10 @@ export default function Diet() {
 
   const CARDIO_STEP = 5
   const [cardioMin, setCardioMin] = useState<number>(() => {
-    const stored = parseInt(localStorage.getItem(`cardio_min_${localDateStr()}`) ?? '0', 10)
-    return isNaN(stored) ? 0 : Math.max(0, stored)
+    try {
+      const log: Array<{ date: string; minutes: number }> = JSON.parse(localStorage.getItem('cardio_log') ?? '[]')
+      return log.find(e => e.date === localDateStr())?.minutes ?? 0
+    } catch { return 0 }
   })
   const [cardioTarget, setCardioTarget] = useState<number>(() => {
     const stored = parseInt(localStorage.getItem('cardio_target_min') ?? '30', 10)
@@ -97,7 +99,15 @@ export default function Diet() {
   function updateCardio(delta: number) {
     setCardioMin(prev => {
       const next = Math.max(0, Math.min(120, prev + delta))
-      localStorage.setItem(`cardio_min_${todayStr}`, String(next))
+      try {
+        const log: Array<{ date: string; type: string; minutes: number }> = JSON.parse(localStorage.getItem('cardio_log') ?? '[]')
+        const existing = log.find(e => e.date === todayStr)
+        const filtered = log.filter(e => e.date !== todayStr)
+        const updated = next > 0
+          ? [...filtered, { date: todayStr, type: existing?.type ?? 'LISS', minutes: next }]
+          : filtered
+        localStorage.setItem('cardio_log', JSON.stringify(updated))
+      } catch {}
       return next
     })
   }
@@ -609,12 +619,14 @@ export default function Diet() {
           {totalMeals > 0 && (() => {
             const cardioPct = Math.min(100, cardioTarget > 0 ? Math.round((cardioMin / cardioTarget) * 100) : 0)
             const cardioDone = cardioMin >= cardioTarget
-            const weeklyCardio = weekDays
-              .filter(({ dateStr }) => dateStr <= todayStr)
-              .reduce((sum, { dateStr }) => {
-                const stored = parseInt(localStorage.getItem(`cardio_min_${dateStr}`) ?? '0', 10)
-                return sum + (isNaN(stored) ? 0 : stored)
-              }, 0)
+            const weeklyCardio = (() => {
+              try {
+                const log: Array<{ date: string; minutes: number }> = JSON.parse(localStorage.getItem('cardio_log') ?? '[]')
+                return weekDays
+                  .filter(({ dateStr }) => dateStr <= todayStr)
+                  .reduce((sum, { dateStr }) => sum + (log.find(e => e.date === dateStr)?.minutes ?? 0), 0)
+              } catch { return 0 }
+            })()
             return (
               <div className={`bg-gray-900 border rounded-xl p-4 ${cardioDone ? 'border-purple-800/50' : 'border-gray-800'}`}>
                 <div className="flex items-center justify-between mb-2.5">

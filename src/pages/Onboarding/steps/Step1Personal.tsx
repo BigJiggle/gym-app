@@ -150,7 +150,7 @@ export default function Step1Personal({ data, update }: Props) {
                 required
               />
               {data.height_cm && (data.height_cm > 220 || data.height_cm < 100) && (
-                <p className="text-xs text-amber-500 mt-1">⚠ Please double-check this measurement.</p>
+                <p className="text-xs text-amber-500 mt-1">⚠ Expected 100–220 cm — please double-check.</p>
               )}
             </>
           ) : (
@@ -211,7 +211,7 @@ export default function Step1Personal({ data, update }: Props) {
                 required
               />
               {data.weight_kg && (data.weight_kg > 200 || data.weight_kg < 30) && (
-                <p className="text-xs text-amber-500 mt-1">⚠ Please double-check this measurement.</p>
+                <p className="text-xs text-amber-500 mt-1">⚠ Expected 30–200 kg — please double-check.</p>
               )}
             </>
           ) : (
