@@ -1,11 +1,11 @@
-# PrepCoach QA Report — Automated Run 9 (2026-06-27)
+# PrepCoach QA Report — Automated Run 10 (2026-06-28)
 
 ## Summary
 
 | Phase | Result |
 |-------|--------|
-| Phase 1 – QA Engineer | 0 bugs found; 105/105 tests passing; TypeScript clean |
-| Phase 2 – Feature (Prep Athlete) | "Then vs Now" progress photo comparison on Progress page |
+| Phase 1 – QA Engineer | 1 bug fixed; 105/105 tests passing; TypeScript clean |
+| Phase 2 – Feature (Prep Athlete) | Progressive overload targets on Dashboard today card |
 | Phase 3 – UX Simplicity | 2 surgical clarity fixes committed |
 
 ---
@@ -16,7 +16,7 @@
 `npx tsc --noEmit` → clean, no errors.
 
 ### Unit Tests
-`./node_modules/.bin/vitest run` → **105/105 passed** across 9 test files.
+`npm test` → **105/105 passed** across 9 test files (checkinSchedule × 28, nutritionEngine × 16, storeJourneys × 18, trainingEngine × 12, audit-logic × 11, checkinEngine × 10, audit-coverage × 3, spot-check × 2, audit-training × 5).
 
 ### Audit Coverage (`tests/unit/audit-coverage.test.ts`)
 - Every scalable template food ID has a calorie entry ✓
@@ -24,93 +24,114 @@
 - Every substitute subId with a category has a calorie entry ✓
 
 ### Audit Logic (`tests/unit/audit-logic.test.ts`)
-All 10 logic invariants verified:
+All 11 logic invariants verified:
 - Per-meal calorie sums within ±80 kcal of daily target across all meal/snack count combinations ✓
 - Meal times in ascending order ✓
 - Vegetarian lunch contains no meat across all 9 cultures ✓
-- No undefined/NaN in foods or macros for all pref × culture combinations ✓
-- Protein ~2.3 g/kg, fat ~0.9 g/kg ✓
-- Peak week deficit milder than mid-prep ✓
-- Off-season cut applies a deficit ✓
-- Bulk + show overrides to cut deficit; bulk off-season is surplus ✓
-- weight_kg=0 guard: protein > 0, finite calories ✓
-- meal_count < 3 clamps to ≥ 3 ✓
+- Vegan plan contains no animal products ✓
+- TDEE–target calories match goal direction (cut=deficit, bulk=surplus) ✓
+- Protein within safe range (1.8–3.5 g/kg) ✓
+- Fat at or above minimum (0.5 g/kg) ✓
+- Peak week deficit eased to –200 vs full cut –700 ✓
+- Culture food returns TemplateFoodItem for all 8 cultures ✓
+- Macro math: protein×4 + carb×4 + fat×9 ≈ calories ±5% ✓
+- Snack count resolves correctly from input.snack_count and include_snacks ✓
 
-### Domain Logic — 7 User Flow Audits
-All previously verified and unchanged this run:
-1. **Onboarding → First plan**: `createUser` → `addShow` → `generateDietPlan` + `generateTrainingPlan` ✓
-2. **Weekly check-in and macro adjustment**: `submitCheckin` → `recalculateMacros` using latest check-in weight ✓
-3. **Show countdown and peak-week protocol**: `getPhaseAwareDeficit` eases deficit at ≤1 week out ✓
-4. **Meal swap and food exclusions**: `plan:applyAIRequest` handles exclusion aliases ✓
-5. **Bulk off-season → show added → auto-switch to cut**: `shows:add` calls `regenerateDietForGoal` ✓
-6. **Past-show guard**: `shows:setPrimary` throws for past dates ✓
-7. **Duplicate check-in guard**: `DUPLICATE_CHECKIN:` error thrown on same-date resubmission ✓
+### Audit Training (`tests/unit/audit-training.test.ts`)
+All 5 training invariants verified:
+- Session count matches training_frequency (2–6) ✓
+- freq=7 clamps to 6; freq=0/NaN defaults to 2/4 ✓
+- Days of week are distinct within every plan ✓
+- Peak week (weeks_out ≤ 3) produces deload phase with reduced sets ✓
+- Every session has ≥ 1 exercise across all freq/pref/equipment combos ✓
 
-### Bugs Fixed This Run
-None — 0 bugs found.
+### Domain Sanity Checks
+- **Protein**: 2.3 g/kg (safe range 1.8–3.5) ✓
+- **Fat**: 0.9 g/kg (above 0.5 g/kg floor) ✓
+- **Training frequency clamping**: [2, 6], NaN → 4 ✓
+- **Deload sets**: reduced correctly (getSets: phase=deload does –1) ✓
+- **Duplicate check-ins rejected**: `DUPLICATE_CHECKIN:${date}` error ✓
+- **shows:setPrimary past-show guard**: throws for past dates ✓
+- **Peak week energy balance**: deficit eases to –200 (vs –700 standard cut) ✓
+- **`exercises_per_session` DB field**: stored in migration 5, passed via IPC ✓
+
+### 7 User Flow Traces
+1. **New user onboarding → plan generation**: `user:create` → DB migration safe → `plan:generate` → training + nutrition plans written ✓
+2. **Weekly check-in cycle**: submit → adjustments calculated → next date set → duplicate on same day rejected ✓
+3. **Show registration → countdown → cancellation**: `shows:add` → `shows:setPrimary` (past guard) → `shows:cancelShow` (off-season transition) ✓
+4. **Training plan regeneration**: `plan:generate` with updated user → new plan replaces old ✓
+5. **`exercises_per_session` end-to-end**: onboarding stores value in DB → IPC reads it → trainingEngine applies it to all 5 split builders ✓ *(was bugged – fixed this run)*
+6. **Nutrition culture preference**: `culture_pref=indian` → getCultureFood returns valid TemplateFoodItem → meals built with correct foods ✓
+7. **Progress photo comparison**: `getProgressPhotos` / `saveProgressPhoto` → stored locally → compared on Progress page ✓
+
+---
+
+## Bugs Found and Fixed
+
+### Bug 1 (Fixed): `exercises_per_session` silently ignored by training engine
+
+**File**: `electron/services/trainingEngine.ts`
+
+**Root cause**: `TrainingInput` interface was missing the `exercises_per_session` field. All five split builder functions (`buildPPLSessions`, `buildUpperLowerSessions`, `buildArnoldSplit`, `buildBroSplit`, `buildFullBodySplit`) used hardcoded exercise counts and did not accept an `exPerSession` parameter. The value stored in the DB (migration 5) and passed via `planHandlers.ts` IPC was silently dropped.
+
+**Fix**: Added `exercises_per_session?: number` to `TrainingInput`. Updated all five builder functions with an `exPerSession?: number` parameter, derived proportional sub-counts for split sessions (e.g. `half = floor(exPerSession/2)` for upper/lower), and wired the value through `generateTrainingPlan`.
+
+**Commit**: `ba1f591` — `[QA] 2026-06-28: fix exercises_per_session silently ignored by rule-based training engine`
 
 ---
 
 ## Phase 2 — Prep Athlete Feature
 
-**Feature: "Then vs Now" progress photo comparison** (`src/pages/Progress/index.tsx`)
+**Feature**: Progressive overload target weight on Dashboard today card
 
-**Why it matters for a 12-week-out competitor:**
-Visual progress tracking is one of the most important feedback loops in contest prep. Coaches and athletes review photos weekly to assess conditioning changes. The previous grid showed all photos in a mixed-pose list with no comparison view — it was hard to see whether you're improving.
-
-**What was added:**
-- When a user has ≥ 2 photos of the selected pose, a prominent side-by-side panel appears above the grid showing the oldest ("THEN") and newest ("NOW") photo of that pose.
-- The grid below now filters to only show photos matching the selected pose (previously showed all poses mixed together).
-- Empty state message when no photos exist for the selected pose.
-- Uses only the existing `getProgressPhotos` IPC call — no new backend code needed.
-
-**Commit:** `[FEATURE] 2026-06-27: add Then vs Now photo comparison to Progress page`
-
----
-
-## Phase 3 — UX Simplicity Reviewer
-
-### Fix 1 — Diet page button hint text
-**Before:** `⟳ adjusts macro targets · ⚠ replaces all meals`
-**After:** `⟳ updates targets from latest weigh-in · ⚠ rebuilds plan, erases swaps`
-
-The original phrasing assumed domain knowledge ("macro targets" means nothing to a new user). The new phrasing explains the actual consequence in plain terms.
-
-**File:** `src/pages/Diet/index.tsx`
-
-### Fix 2 — Settings save button label
-**Before:** `Save (Keep Plans)`
-**After:** `Save Profile`
-
-The parenthetical "(Keep Plans)" was redundant clutter — the adjacent primary button already says "Regenerate Plans", making it clear what *not* choosing regenerate means. "Save Profile" is a universally understood action label.
-
-**File:** `src/pages/Settings/index.tsx`
-
-**Commit:** `[UX] 2026-06-27: clarify Diet hint text and Settings save button label`
-
----
-
-## Commits This Run
+**What it does**: When an athlete opens the Dashboard on a training day, each exercise in the "Today" workout card now shows both the last recorded performance and a suggested target weight for today:
 
 ```
-776e895  [UX] 2026-06-27: clarify Diet hint text and Settings save button label
-474846c  [FEATURE] 2026-06-27: add Then vs Now photo comparison to Progress page
+Barbell Bench Press
+last: 90kg × 8  → target: 92.5kg
 ```
+
+Targets use standard increments (compounds: +2.5 kg / +5 lbs; isolations: +1.25 kg / +2.5 lbs), capped at +5% of last weight to prevent unrealistic jumps. Suppressed on deload weeks. Imperial units round to nearest 2.5 lbs.
+
+**Implementation**: Pure frontend using `workoutHistory` + `exerciseLibrary` already loaded in the plan store. Zero new IPC calls or backend changes. Added `isCompoundMap` from `exerciseLibrary` and a `progressionTarget()` helper function in `src/pages/Dashboard/index.tsx`.
+
+**Commit**: `6d8ff65` — `[Feature] 2026-06-28: show progressive overload target weight on dashboard today card`
 
 ---
 
-## Cumulative QA History
+## Phase 3 — UX Simplicity Review
 
-| Run | Date       | Bugs Fixed | Feature Added | UX Fixes |
-|-----|------------|-----------|---------------|----------|
-| 1   | 2026-06-23 | 3         | —             | 0        |
-| 2   | 2026-06-23 | 2         | —             | 1        |
-| 3   | 2026-06-24 | 1         | Culture food coverage | 2 |
-| 4   | 2026-06-24 | 0         | Per-day macro compliance row | 2 |
-| 5   | 2026-06-25 | 1         | —             | 2        |
-| 6   | 2026-06-25 | 2         | —             | 2        |
-| 7   | 2026-06-26 | 0         | Peak week daily protocol | 2 |
-| 8   | 2026-06-27 | 1         | Water tracker sync | 2 |
-| 9   | 2026-06-27 | 0         | Then vs Now photo comparison | 2 |
+### Fix 1: Remove "no previous data" noise label from today's workout card
 
-Total bugs fixed across all runs: **10**
+The Phase 2 implementation initially showed "no previous data" in `text-gray-700` (near-invisible) below exercises with no workout history. The absence of a "last:" line already communicates this clearly — the extra text was visual noise. Removed entirely.
+
+### Fix 2: Fix misleading "rest wk" in Weekly Prep Scorecard Training pill
+
+The Training pill showed the count from Mon-to-today only, so early in the week (e.g. Monday before a Tuesday–Friday training schedule) it displayed "rest wk" even though sessions were planned. Changed to show `${completed}/${sessions.length} sessions` against the full weekly plan total so athletes always see their weekly progress clearly.
+
+**Commit**: `361ace2` — `[UX] 2026-06-28: two surgical clarity fixes on Dashboard`
+
+---
+
+## Test Results (Final)
+
+```
+Test Files  9 passed (9)
+     Tests  105 passed (105)
+  Duration  1.34s
+```
+
+TypeScript: clean (`npx tsc --noEmit` — no errors).
+
+---
+
+## Files Changed This Run
+
+| File | Change |
+|------|--------|
+| `electron/services/trainingEngine.ts` | Bug fix: wire `exercises_per_session` through all 5 split builders |
+| `src/pages/Dashboard/index.tsx` | Feature: progressive overload targets; UX: remove noise label; fix scorecard label |
+
+---
+
+*Previous runs: Run 9 (2026-06-27) — 0 bugs, photo comparison feature, 2 UX fixes.*
