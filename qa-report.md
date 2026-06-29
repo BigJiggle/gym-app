@@ -205,3 +205,99 @@ Out-of-range warnings previously said *"Please double-check this measurement."* 
 |------|--------|
 | `src/pages/Diet/index.tsx` | Feature: daily cardio tracker; UX: unify cardio localStorage key |
 | `src/pages/Onboarding/steps/Step1Personal.tsx` | UX: clearer height/weight range validation messages |
+
+---
+
+# PrepCoach QA Report — Automated Run 12 (2026-06-29)
+
+## Summary
+
+| Phase | Result |
+|-------|--------|
+| Phase 1 – QA Engineer | 3 bugs fixed; 105/105 tests passing; TypeScript clean |
+| Phase 2 – Feature (Prep Athlete) | Skipped (3 bugs fixed → threshold met) |
+| Phase 3 – UX Simplicity | 0 new fixes (prior session already applied relevant improvements) |
+
+---
+
+## Phase 1 — QA Engineer
+
+### TypeScript
+`npx tsc --noEmit` → clean, no errors.
+
+### Unit Tests
+`npm test` → **105/105 passed** across 9 test files.
+
+### Full Audit
+
+All nutrition engine invariants, food database coverage, training engine invariants, handler guards, and user flow traces re-audited.
+
+---
+
+## Bugs Found and Fixed
+
+### Bug 1 (Fixed): `generateNutritionPlan` missing upper-bound clamp on `meal_count`
+
+**File**: `electron/services/nutritionEngine.ts` (line 527)
+
+**Root cause**: `buildMeals` was called with `Math.max(3, input.meal_count)` — enforcing the lower bound of 3 but no upper bound. `getMealTemplates` only has keys 3–6; a value >6 would silently fall back to `mainSets[3]` producing incorrect meal structure.
+
+**Fix**: Changed to `Math.max(3, Math.min(6, input.meal_count))`.
+
+### Bug 2 (Fixed): `applyAIRequest` passes unclamped `meal_count` to `buildMealsPublic`
+
+**File**: `electron/ipc/planHandlers.ts` (~line 865)
+
+**Root cause**: The `plan:applyAIRequest` handler's `regenerateDiet` path called `buildMealsPublic(...)` with `(updatedUser.meal_count as number) ?? 4` directly — no bounds check. If Claude returned `meal_count: 8` and it was written to the DB, `buildMealsPublic` would receive 8 and produce malformed meal arrays.
+
+**Fix**: Changed to `Math.max(3, Math.min(6, (updatedUser.meal_count as number) ?? 4))`.
+
+### Bug 3 (Fixed): AI `settingChanges` write loop has no numeric bounds for `meal_count` and `training_frequency`
+
+**File**: `electron/ipc/planHandlers.ts` (~line 726)
+
+**Root cause**: The AI settings write loop applied `include_snacks` boolean coercion but no numeric bounds for other fields. Claude could write `meal_count: 10` or `training_frequency: 0` directly to the DB, corrupting downstream plan generation.
+
+**Fix**: Added `NUMERIC_BOUNDS` guard: `meal_count` clamped to [3, 6], `training_frequency` clamped to [2, 6].
+
+**Commit**: `63dcd0d` — `[QA] 2026-06-29: Fix meal_count upper-clamp and AI settings bounds`
+
+---
+
+## Phase 2 — Prep Athlete Feature
+
+Skipped — 3 bugs were fixed this run (threshold is < 3).
+
+---
+
+## Phase 3 — UX Simplicity Review
+
+No new fixes committed. The two issues identified (goal-aware Prep Pace color and Cardio label consistency) were already applied by previous QA sessions:
+
+- **Goal-aware Prep Pace color**: already present in `origin/master` (bulk users see green for weight gain)
+- **Cardio label consistency**: already `text-gray-500` across Training/Nutrition/Cardio labels
+
+---
+
+## Test Results (Final)
+
+```
+Test Files  9 passed (9)
+     Tests  105 passed (105)
+  Duration  1.21s
+```
+
+TypeScript: clean (`npx tsc --noEmit` — no errors).
+
+---
+
+## Files Changed This Run
+
+| File | Change |
+|------|--------|
+| `electron/services/nutritionEngine.ts` | Bug 1: add `Math.min(6,...)` to `meal_count` clamp in `generateNutritionPlan` |
+| `electron/ipc/planHandlers.ts` | Bug 2: clamp `meal_count` in `applyAIRequest → buildMealsPublic`; Bug 3: NUMERIC_BOUNDS guard in AI settings write loop |
+
+---
+
+*Previous runs: Run 11 (2026-06-28) — 0 bugs, daily cardio tracker feature, 2 UX fixes.*
