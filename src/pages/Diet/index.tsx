@@ -404,7 +404,7 @@ export default function Diet() {
                 tab === t ? 'bg-brand-600 text-white' : 'text-gray-400 hover:text-gray-200'
               }`}
             >
-              {t === 'plan' ? 'Meal Plan' : t === 'weekly' ? 'Weekly View' : 'Grocery List'}
+              {t === 'plan' ? 'Meal Plan' : t === 'weekly' ? 'This Week' : 'Grocery List'}
             </button>
           ))}
         </div>
@@ -443,7 +443,7 @@ export default function Diet() {
               title="Regenerate meal plan with current settings"
               className="text-xs text-amber-500 font-medium bg-amber-900/20 hover:bg-amber-900/40 border border-amber-800/60 hover:border-amber-700 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-40"
             >
-              {regenDone ? '✓ Done' : regenLoading ? 'Regenerating...' : '⚠ Regenerate Meals'}
+              {regenDone ? '✓ Done' : regenLoading ? 'Regenerating...' : '↺ Regenerate Meals'}
             </button>
           </>
         )}
