@@ -723,7 +723,16 @@ Ensure every exercise respects the constraints above while maintaining phase-app
           changes[k] = JSON.stringify(next)
           continue
         }
-        changes[k] = v
+        const NUMERIC_BOUNDS: Record<string, [number, number]> = {
+          meal_count: [3, 6],
+          training_frequency: [2, 6],
+        }
+        if (k in NUMERIC_BOUNDS && typeof v === 'number') {
+          const [lo, hi] = NUMERIC_BOUNDS[k]
+          changes[k] = Math.max(lo, Math.min(hi, v))
+        } else {
+          changes[k] = v
+        }
       }
       if (Object.keys(changes).length > 0) {
         const fields = Object.keys(changes).map(k => `${k} = @${k}`).join(', ')
@@ -853,7 +862,7 @@ Ensure every exercise respects the constraints above while maintaining phase-app
           currentDiet.protein_g as number,
           currentDiet.carbs_g as number,
           currentDiet.fat_g as number,
-          (updatedUser.meal_count as number) ?? 4,
+          Math.max(3, Math.min(6, (updatedUser.meal_count as number) ?? 4)),
           (updatedUser.dietary_preference as string) ?? 'omnivore',
           (() => { try { return JSON.parse((updatedUser.food_exclusions as string) ?? '[]') } catch { return [] } })(),
           (() => { try { return JSON.parse((updatedUser.food_preferences as string) ?? '[]') } catch { return [] } })(),
