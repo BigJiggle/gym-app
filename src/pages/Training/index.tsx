@@ -26,7 +26,7 @@ const PHASE_SUBTITLE: Record<string, string> = {
 }
 
 export default function Training() {
-  const { user } = useUserStore()
+  const { user, shows } = useUserStore()
   const {
     trainingPlan,
     loadTrainingPlan,
@@ -347,6 +347,62 @@ export default function Training() {
 
       {tab === 'plan' && (
         <>
+          {/* Show Day Countdown — the single most important number for a prep athlete */}
+          {user?.show_date && (() => {
+            const todayMidnight = new Date(); todayMidnight.setHours(0, 0, 0, 0)
+            const showMidnight = new Date(user.show_date + 'T00:00:00')
+            const totalDays = Math.round((showMidnight.getTime() - todayMidnight.getTime()) / 86400000)
+            if (totalDays <= 0) return null
+            const weeksOut = Math.floor(totalDays / 7)
+            const daysRemainder = totalDays % 7
+            const primaryShow = shows.find((s) => s.is_primary === 1)
+            const showName = primaryShow?.name || 'Show Day'
+            const prepWeeks = trainingPlan?.weeks_total || 20
+            const weeksDone = Math.max(0, prepWeeks - weeksOut)
+            const prepPct = Math.min(100, Math.round((weeksDone / prepWeeks) * 100))
+            const urgencyLabel =
+              weeksOut <= 2 ? 'PEAK WEEK ZONE' :
+              weeksOut <= 4 ? 'FINAL PUSH' :
+              weeksOut <= 8 ? 'SHOW PREP' : 'BUILDING'
+            const accentColor =
+              weeksOut <= 3 ? 'text-red-400' :
+              weeksOut <= 8 ? 'text-amber-400' : 'text-brand-400'
+            const barColor =
+              weeksOut <= 3 ? 'bg-red-500' :
+              weeksOut <= 8 ? 'bg-amber-500' : 'bg-brand-500'
+            const borderColor =
+              weeksOut <= 3 ? 'border-red-700/60' :
+              weeksOut <= 8 ? 'border-amber-700/50' : 'border-gray-800'
+            const badgeStyle =
+              weeksOut <= 3 ? 'bg-red-900/30 text-red-400' :
+              weeksOut <= 8 ? 'bg-amber-900/30 text-amber-400' : 'bg-brand-900/20 text-brand-400'
+            const showDateStr = showMidnight.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+            return (
+              <div className={`bg-gray-900 border rounded-xl p-4 ${borderColor}`}>
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wider truncate max-w-[180px]">{showName}</p>
+                    <div className="flex items-baseline gap-2 mt-0.5">
+                      <span className={`text-4xl font-black tabular-nums leading-none ${accentColor}`}>{weeksOut}</span>
+                      <span className="text-sm font-semibold text-gray-400">
+                        {weeksOut === 1 ? 'week' : 'weeks'} out
+                        {daysRemainder > 0 && <span className="text-gray-600 font-normal"> + {daysRemainder}d</span>}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-600 mt-1">{totalDays} days · {showDateStr}</p>
+                  </div>
+                  <span className={`text-xs font-semibold px-2 py-1 rounded-full flex-shrink-0 ${badgeStyle}`}>
+                    {urgencyLabel}
+                  </span>
+                </div>
+                <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full ${barColor}`} style={{ width: `${prepPct}%` }} />
+                </div>
+                <p className="text-xs text-gray-700 mt-1.5">{prepPct}% of prep complete</p>
+              </div>
+            )
+          })()}
+
           {/* Phase summary */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
             <div className="grid grid-cols-3 gap-4 text-center">
