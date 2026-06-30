@@ -1,4 +1,4 @@
-# PrepCoach QA Report — 2026-06-30
+# PrepCoach QA Report — 2026-06-30 (run 14)
 
 ## Phase 1 — QA Engineer
 
@@ -6,7 +6,9 @@
 `npx tsc --noEmit` — **CLEAN** (0 errors)
 
 ### Unit Tests
-All **105 tests passed** across nutrition engine, food database, and supporting utilities.
+**109/109 tests passed** (105 pre-existing + 4 new regression tests added this run) across nutrition engine, food database, checkin engine, training engine, and supporting utilities.
+
+### Bugs Fixed: 7
 
 ### Nutrition Engine Audit
 | Check | Result |
@@ -14,12 +16,13 @@ All **105 tests passed** across nutrition engine, food database, and supporting 
 | `getPhaseAwareDeficit` phase boundaries (≤3/≤8/≤16/>16 weeks) | ✅ Correct |
 | `MEAL_CAL_FRACTIONS` sum (0.45 + 0.35 + 0.15 = 0.95, 0.05 buffer) | ✅ Intentional |
 | `calcPortionStr` role-fixed portions (veg 120g, fruit 100g, powder 30g) | ✅ Correct |
-| `safeWeightKg` guard (finite + ≥30) | ✅ Present |
+| `safeWeightKg` guard in `generateNutritionPlan` (finite + ≥30) | ✅ Present, now also reused as `clampWeightKg` at other call sites (see Bugs Fixed) |
 | `resolvedSnackCount` fallback | ✅ Correct |
-| Meal count clamped [3, 6] | ✅ Correct |
+| Meal count clamped [3, 6] | ✅ Correct, but **NaN bypassed the clamp** — fixed (see Bugs Fixed #7) |
 | Meal templates sorted by time before delivery | ✅ Correct |
 | Culture food lookups (`getCultureFood`) — all 8 cultures | ✅ |
 | `generateNutritionPlan` off-season vs deficit logic | ✅ Correct |
+| Spot check: 80kg male omnivore 6 meals 0 snacks cut, 70kg female vegan 4 meals 1 snack maintain | ✅ No NaN/undefined/absurd portions (see `spot-check.test.ts` output) |
 
 ### Food Database Audit
 | Check | Result |
@@ -30,68 +33,81 @@ All **105 tests passed** across nutrition engine, food database, and supporting 
 | `SNACK_ONLY_FOODS` set vs main-meal logic | ✅ |
 | `EXCLUSION_ALIASES` map completeness | ✅ |
 
-### IPC / Logic Audit
+### Logic & Domain Sanity Check
 | Check | Result |
 |---|---|
-| `determinePhase` boundary conditions (undefined/null, ≤3, ≤8, ≤16, >16) | ✅ |
-| DAY_SCHEDULES freq clamp [2, 6] | ✅ |
-| Deload reduces sets by 1 (`Math.max(1, sets - 1)`) | ✅ |
-| Same-day check-in duplicate guard (`DUPLICATE_CHECKIN:date`) | ✅ |
-| Early check-in guard (`EARLY_CHECKIN:ISO`) | ✅ |
-| `meal_completions` UNIQUE constraint respected by upsert logic | ✅ |
-| Schema migrations v1–v13 sequential and idempotent | ✅ |
-| `syncPrimaryToNearest` + `setPrimary` past-show guard | ✅ |
-| weeks_out calculation (`Math.max(0, Math.floor(ms / week_ms))`) | ✅ |
+| Meal calorie sum ≈ daily target (±80kcal) | ✅ |
+| Meal times ascending chronological order | ✅ |
+| Protein g/kg in 1.8–3.5 safe range | ✅ (fixed 2.3g/kg) |
+| Fat g/kg never below 0.5 | ✅ (fixed 0.9g/kg) |
+| Peak week (≤1 wk out) calories not at max deficit | ✅ |
+| Off-season cut/recomp still applies deficit | ✅ |
+| `training_frequency` exact session count match, distinct days | ✅ (freq 2–6; 7 silently clamps to 6) |
+| `training_frequency=3` gets a real 3-day split, not PPL truncated | ✅ |
+| Peak week reflects deload (sets −1, higher reps/RIR) | ✅ |
+| Show today/yesterday → `weeks_out=0` (never negative/undefined) | ✅ |
+| Cancelled show + no upcoming → off-season transition | ✅ |
+| `shows:setPrimary` rejects a past show date | ✅ |
+| Duplicate same-date check-in rejected (not silently overwritten) | ✅ |
+| Prep-pace projection uses real `show_date`, not hardcoded | ✅ |
+| `weight_kg=0`/negative guarded in `generateNutritionPlan` | ✅ present, but **bypassed in `checkin:submit` and `plan:recalculateMacros`** — fixed (see Bugs Fixed #2, #3) |
+| `meal_count<3` clamped in plan generation | ✅ present, but **not clamped when persisted via `user:create`/`user:update`** — fixed (see Bugs Fixed #4) |
+| `body_fat_pct` negative/>60 flagged | ❌ was completely unvalidated — fixed (see Bugs Fixed #6) |
+| Schema migrations v1–v13 sequential and idempotent | ✅ version-gated via `settings.schema_version`; re-run is impossible by construction |
+| `meal_completions` UNIQUE constraint respected by upsert logic | ✅ `INSERT OR REPLACE` keyed on `(user_id, date, meal_index)` |
 
-### User Flow Tracing (7 flows)
-1. **Onboarding → Plan generation**: `createUser` → `generateTrainingPlan` + `generateDietPlan` ✅
-2. **Weekly check-in**: duplicate guard, cascade diet update on calorie delta ✅
-3. **Workout session**: start → logSet → complete (batch saveSetsBatch) ✅
-4. **Meal logging**: logMealCompletion upsert, unlogMealCompletion filter ✅
-5. **Show management**: add/setPrimary/delete cascade, off-season transition ✅
-6. **Settings save**: `handleSaveProfile(regenerate=true)` regenerates both plans ✅
-7. **Progress/weight chart**: empty state, single check-in, 2+ check-ins, projected show-day weight ✅
+### User Flow Audit (7 flows)
+| Flow | Result |
+|---|---|
+| Onboarding → plan gen | ✅ `user:create` → `plan:generateTraining`/`plan:generateDiet` → correct per-meal calorie targets |
+| Diet page portion scaling | ✅ `calcPortionStr` scales protein/carb/fat to each meal's calorie budget, clamped to role min/max |
+| Meal completion persistence | ✅ `INSERT OR REPLACE` on UNIQUE key — no double-counting |
+| Check-in → macro recalc → updated diet plan | ❌ was stale for bulk/maintain/on-track-cut goals — fixed (see Bugs Fixed #1) |
+| Settings regen | ✅ `handleSaveProfile(true)` regenerates both plans with correctly clamped meal_count |
+| Workout session → stats | ✅ start → logSet/saveSetsBatch → complete (`status='completed'`) → history/stats reflect it |
+| Progress chart empty-state handling | ✅ 0/1/2+ check-ins all handled without NaN/crash |
 
-### Bugs Found
-**0 bugs found.** Codebase was in clean condition entering this session.
+### Bugs Fixed
+1. **Stale diet plan macros after check-in for bulk/maintain/on-track-cut goals** — `checkin:submit` (`electron/ipc/checkinHandlers.ts`) only recalculated the diet plan's protein/fat/carbs when `adjustments.calories_delta !== 0`. `calculateAdjustments` returns `calories_delta = 0` for bulk and maintain goals (no delta branch exists for them) and for a cut "on track" week — so an athlete's protein target (weight × 2.3) never updated as their bodyweight changed, even though they were checking in weekly. Fixed by recalculating macros on every check-in whenever a diet plan exists, regardless of calorie delta.
+2. **`checkin:submit` bypassed the bodyweight safety floor** — computed `protein_g`/`fat_g` directly from `data.weight_kg ?? user.weight_kg`, where `??` only catches `null`/`undefined`, not `0`. A `weight_kg=0` check-in produced `protein_g=0, fat_g=0` silently saved to the diet plan. Fixed using the new shared `clampWeightKg` guard.
+3. **`plan:recalculateMacros` had the same bodyweight safety-floor bypass** — same failure mode, separate call site (`electron/ipc/planHandlers.ts`). Fixed with the same `clampWeightKg` guard.
+4. **`meal_count` stored unclamped at the database layer** — `generateNutritionPlan` clamps `meal_count` to [3,6] internally, but `user:create`/`user:update` (`electron/ipc/userHandlers.ts`) stored the raw value with no validation. A bad value (0, 1, NaN) would persist and be read back as `user.meal_count ?? 4` elsewhere, reaching plan generation unclamped. Fixed by clamping at the IPC boundary.
+5. **`snack_count` stored unclamped at the database layer** — same issue as #4, same fix location.
+6. **`body_fat_pct` completely unvalidated** — no DB constraint, no IPC validation, no frontend range check. A value like `-5` or `150` would be stored as-is and corrupt any future body-fat trend chart. Fixed by clamping to a physiologically plausible [3, 60]% range at `user:create`/`user:update`.
+7. **NaN `meal_count` could collapse a plan to zero main meals** — `Math.max(3, Math.min(6, NaN))` evaluates to `NaN`, which downstream causes `mainSets[NaN]` to miss and `.slice(0, NaN)` to return an empty array (0 main meals generated). This is now defended against in `generateNutritionPlan` itself (`Number.isFinite` fallback to 4) in addition to the upstream fix in #4 that prevents NaN from being persisted in the first place.
+
+Added regression tests for `clampWeightKg` and the NaN `meal_count` guard to `tests/unit/nutritionEngine.test.ts`.
+
+### Known Issues (not fixed this run — flagged for future attention)
+- `training_frequency=7` silently clamps to 6 rather than producing a 7-day plan. This is existing, intentional-looking behavior (no crash, no NaN) and is a product decision rather than a correctness bug, so left as-is.
+- Settings' "Edit Profile" panel surfaces ~25 fields across 4 sections at once with no per-section save — dense but each field is clearly labeled; flagged by the Phase 3 UX review as borderline, not actioned (see Phase 3).
+- Dashboard stacks 13+ full-width cards in sequence with no collapsing/tabs — a real information-density concern flagged by the Phase 3 UX review, but fixing it properly is a layout/IA redesign, out of scope for a surgical fix.
 
 ---
 
 ## Phase 2 — Prep Athlete Feature
 
-**Feature implemented:** Pre-workout last-session reference in expanded plan session card
-
-**Rationale:** Athletes check the plan card before starting a workout to know what to lift. The workout overlay already showed last-session performance (weight × reps) per exercise once a session was started, but before tapping "Start Workout" the plan view showed only prescribed sets/reps/RIR with no historical reference. An athlete had to either remember or start the workout just to check. This was the clearest daily-use gap across all pages.
-
-**What was built:**
-- `lastPerfBySession` useMemo (after `exerciseTrend`) — for each plan session, finds the most recent completed `WorkoutLog` with that `session_id`, then maps each exercise name to its top-set weight and reps from that log
-- "Last session: Mon, Jun 23" date header shown in expanded session cards when history exists
-- Per-exercise "Last: X kg × N reps" annotation in cyan, visible without starting the workout
-- ★PR badge appears on the exercise line when last-session weight equals the all-time PR
-- Trend arrow (↑↓→) shown alongside last-session or PR line for overall strength direction
-- Zero new IPC calls — uses `workoutHistory` already loaded by `loadWorkoutHistory`
-
-**Files changed:** `src/pages/Training/index.tsx`  
-**Commit:** `[FEATURE] 2026-06-30: pre-workout last-session reference`
+**Status: SKIPPED** — Phase 1 fixed 7 bugs (≥3 threshold), so per the task spec Phase 2 does not run this session.
 
 ---
 
 ## Phase 3 — UX Simplicity Review
 
-### Issues Found & Fixed
+### Changes Made: 2
 
-**Fix 1 — Raw IPC error message on check-in submit (CheckIn page)**
-- **Issue:** `handleSubmit` catch block formatted errors as `` `Submission failed: ${msg}` `` where `msg` was the raw Electron string: `Error invoking remote method 'checkin:submit': Error: DUPLICATE_CHECKIN:2026-06-30`. This exposed internal error codes and the full Electron IPC call name to users.
-- `DUPLICATE_CHECKIN` was also not handled specifically — it fell through as a generic error showing the raw sentinel string.
-- **Fix:** Added a specific `DUPLICATE_CHECKIN` branch with a friendly message ("You already submitted a check-in today. Edit it from the locked screen.") and stripped the IPC method prefix from all other errors using the same regex pattern already used on Diet and Training pages.
-- File: `src/pages/CheckIn/index.tsx`
+**Fix 1 — Raw IPC error messages in Settings (profile save + add show)**
+- **Issue:** `handleSaveProfile`'s catch block (`src/pages/Settings/index.tsx:120`) did `setEditError(String(e))`, and the "Add Show" handler (`src/pages/Settings/index.tsx:754`) did `setShowError(String(e))` — both render Electron's raw IPC string directly to the user (e.g. `Error invoking remote method 'updateUser': Error: ...`), the same problem already fixed in CheckIn in a prior run but left unaddressed here.
+- **Fix:** Applied the same IPC-prefix-stripping regex already used in Training/CheckIn (`.replace(/Error invoking remote method '[^']+': /, '').trim()`) to both catch blocks.
+- File: `src/pages/Settings/index.tsx`
 
-**Fix 2 — Raw IPC error message on locked-screen edit save (CheckIn page)**
-- **Issue:** The `saveEdit` function (editing a past check-in from the locked state) did `setEditError(String(e))` with no cleanup — identical problem: raw Electron IPC prefix shown to user on any save error.
-- **Fix:** Applied the same IPC-prefix strip regex to the `saveEdit` catch block so edit errors are also user-readable.
-- File: `src/pages/CheckIn/index.tsx`
+**Fix 2 — Raw IPC error message on Onboarding account creation**
+- **Issue:** `handleSubmit`'s catch block (`src/pages/Onboarding/index.tsx:73`) did `` setError(`Failed to create profile: ${String(e)}`) ``, showing the same raw Electron IPC string at the worst possible moment — a brand-new user's very first interaction with the app.
+- **Fix:** Applied the same IPC-prefix-stripping treatment before formatting the error message.
+- File: `src/pages/Onboarding/index.tsx`
 
-**Commit:** `[UX] 2026-06-30: CheckIn error clarity — strip raw IPC prefix and handle DUPLICATE_CHECKIN`
+A third-party background review additionally flagged Dashboard information density and a minor Education "Mark Done" label ambiguity, but both were judged to require more than a surgical fix (or were low-confidence) and were left as known issues rather than actioned, per the Phase 3 scope (clarity-only, no redesigns).
+
+**Commit:** `[UX] 2026-06-30: strip raw IPC error prefix in Settings and Onboarding`
 
 ---
 
@@ -99,7 +115,7 @@ All **105 tests passed** across nutrition engine, food database, and supporting 
 
 | Phase | Outcome |
 |---|---|
-| Phase 1 — QA | 0 bugs found · 105 tests pass · TypeScript clean |
-| Phase 2 — Feature | Pre-workout last-session reference in Training plan card |
-| Phase 3 — UX | 2 error-clarity fixes in CheckIn page |
-| Push | ✅ Pushed to `origin/master` (commits b603a47, 32d7222) |
+| Phase 1 — QA | 7 bugs fixed · 109 tests pass (4 new) · TypeScript clean |
+| Phase 2 — Feature | SKIPPED (Phase 1 fixed ≥3 bugs) |
+| Phase 3 — UX | 2 error-clarity fixes (Settings, Onboarding) |
+| Push | (pending — see commit log) |
