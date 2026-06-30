@@ -536,7 +536,7 @@ export default function CheckIn() {
         }
         setTimeout(() => setEditOpen(false), 1000)
       } catch (e) {
-        setEditError(String(e))
+        setEditError(String(e).replace(/Error invoking remote method '[^']+': /, '').trim())
       } finally {
         setEditSaving(false)
       }
@@ -854,8 +854,10 @@ export default function CheckIn() {
       if (msg.includes('EARLY_CHECKIN:')) {
         const iso = msg.split('EARLY_CHECKIN:')[1]
         setNextAllowed(new Date(iso))
+      } else if (msg.includes('DUPLICATE_CHECKIN')) {
+        setError('You already submitted a check-in today. Edit it from the locked screen.')
       } else {
-        setError(`Submission failed: ${msg}`)
+        setError(msg.replace(/Error invoking remote method '[^']+': /, '').trim())
       }
     }
   }
