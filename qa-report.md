@@ -1,4 +1,4 @@
-# PrepCoach QA Report — 2026-06-29
+# PrepCoach QA Report — 2026-06-30
 
 ## Phase 1 — QA Engineer
 
@@ -59,20 +59,20 @@ All **105 tests passed** across nutrition engine, food database, and supporting 
 
 ## Phase 2 — Prep Athlete Feature
 
-**Feature implemented:** Show Day Countdown card on Training tab
+**Feature implemented:** Pre-workout last-session reference in expanded plan session card
 
-**Rationale:** A competitive bodybuilder checks their countdown daily. Despite `user.show_date` being available throughout the app, no countdown was surfaced on the Training page — the page visited before every session.
+**Rationale:** Athletes check the plan card before starting a workout to know what to lift. The workout overlay already showed last-session performance (weight × reps) per exercise once a session was started, but before tapping "Start Workout" the plan view showed only prescribed sets/reps/RIR with no historical reference. An athlete had to either remember or start the workout just to check. This was the clearest daily-use gap across all pages.
 
 **What was built:**
-- Card at the top of the "My Plan" tab whenever a future show date exists
-- Displays: show name (from shows store), weeks out (large number), +remainder days, total days, show date formatted for readability
-- Colour-coded by urgency: red ≤3 weeks (PEAK WEEK ZONE), amber ≤8 weeks (FINAL PUSH / SHOW PREP), brand-purple otherwise (BUILDING)
-- Progress bar showing percent of prep completed (using `trainingPlan.weeks_total` as total duration)
-- Hidden when no show date is set or show date has already passed
-- Uses only existing `useUserStore` (for `shows`) and `user.show_date` — zero new IPC calls
+- `lastPerfBySession` useMemo (after `exerciseTrend`) — for each plan session, finds the most recent completed `WorkoutLog` with that `session_id`, then maps each exercise name to its top-set weight and reps from that log
+- "Last session: Mon, Jun 23" date header shown in expanded session cards when history exists
+- Per-exercise "Last: X kg × N reps" annotation in cyan, visible without starting the workout
+- ★PR badge appears on the exercise line when last-session weight equals the all-time PR
+- Trend arrow (↑↓→) shown alongside last-session or PR line for overall strength direction
+- Zero new IPC calls — uses `workoutHistory` already loaded by `loadWorkoutHistory`
 
 **Files changed:** `src/pages/Training/index.tsx`  
-**Commit:** `[FEATURE] 2026-06-29: Show Day Countdown on Training tab`
+**Commit:** `[FEATURE] 2026-06-30: pre-workout last-session reference`
 
 ---
 
@@ -80,17 +80,18 @@ All **105 tests passed** across nutrition engine, food database, and supporting 
 
 ### Issues Found & Fixed
 
-**Fix 1 — Regenerate Meals button icon (Diet page)**
-- **Before:** `⚠ Regenerate Meals` — the `⚠` symbol made users think their plan was broken or in an error state
-- **After:** `↺ Regenerate Meals` — clearly signals a reset/refresh action; the amber styling + confirm dialog already communicate the significance of the action
-- File: `src/pages/Diet/index.tsx`
+**Fix 1 — Raw IPC error message on check-in submit (CheckIn page)**
+- **Issue:** `handleSubmit` catch block formatted errors as `` `Submission failed: ${msg}` `` where `msg` was the raw Electron string: `Error invoking remote method 'checkin:submit': Error: DUPLICATE_CHECKIN:2026-06-30`. This exposed internal error codes and the full Electron IPC call name to users.
+- `DUPLICATE_CHECKIN` was also not handled specifically — it fell through as a generic error showing the raw sentinel string.
+- **Fix:** Added a specific `DUPLICATE_CHECKIN` branch with a friendly message ("You already submitted a check-in today. Edit it from the locked screen.") and stripped the IPC method prefix from all other errors using the same regex pattern already used on Diet and Training pages.
+- File: `src/pages/CheckIn/index.tsx`
 
-**Fix 2 — "Weekly View" tab label (Diet page)**
-- **Before:** `Weekly View` — ambiguous; users unsure if it shows a weekly meal schedule or weekly progress tracking
-- **After:** `This Week` — concrete and immediately tells the user it's the current week's meal view
-- File: `src/pages/Diet/index.tsx`
+**Fix 2 — Raw IPC error message on locked-screen edit save (CheckIn page)**
+- **Issue:** The `saveEdit` function (editing a past check-in from the locked state) did `setEditError(String(e))` with no cleanup — identical problem: raw Electron IPC prefix shown to user on any save error.
+- **Fix:** Applied the same IPC-prefix strip regex to the `saveEdit` catch block so edit errors are also user-readable.
+- File: `src/pages/CheckIn/index.tsx`
 
-**Commit:** `[UX] 2026-06-29: Clarity fixes on Diet page`
+**Commit:** `[UX] 2026-06-30: CheckIn error clarity — strip raw IPC prefix and handle DUPLICATE_CHECKIN`
 
 ---
 
@@ -99,6 +100,6 @@ All **105 tests passed** across nutrition engine, food database, and supporting 
 | Phase | Outcome |
 |---|---|
 | Phase 1 — QA | 0 bugs found · 105 tests pass · TypeScript clean |
-| Phase 2 — Feature | Show Day Countdown added to Training tab |
-| Phase 3 — UX | 2 surgical label fixes on Diet page |
-| Push | ✅ Pushed to `origin/master` |
+| Phase 2 — Feature | Pre-workout last-session reference in Training plan card |
+| Phase 3 — UX | 2 error-clarity fixes in CheckIn page |
+| Push | ✅ Pushed to `origin/master` (commits b603a47, 32d7222) |
