@@ -176,6 +176,28 @@ export default function Training() {
     return result
   }, [workoutHistory])
 
+  // Top-set weight per exercise from the most recent completed log for each plan session.
+  // Gives the athlete a pre-workout "what to beat" reference without opening the workout overlay.
+  const lastPerfBySession = useMemo(() => {
+    const result = new Map<number, Map<string, { weightKg: number; reps: number; date: string }>>()
+    for (const session of (trainingPlan?.sessions ?? [])) {
+      const sid = session.id
+      if (!sid) continue
+      const recentLog = workoutHistory.find((l) => l.status === 'completed' && l.session_id === sid)
+      if (!recentLog) continue
+      const exMap = new Map<string, { weightKg: number; reps: number; date: string }>()
+      for (const s of recentLog.sets ?? []) {
+        if (s.skipped || !s.weight_kg || !s.reps_actual) continue
+        const existing = exMap.get(s.exercise_name)
+        if (!existing || s.weight_kg > existing.weightKg) {
+          exMap.set(s.exercise_name, { weightKg: s.weight_kg, reps: s.reps_actual, date: recentLog.date })
+        }
+      }
+      result.set(sid, exMap)
+    }
+    return result
+  }, [workoutHistory, trainingPlan?.sessions])
+
   // Consecutive full weeks (Mon–Sun) where completed workouts >= sessionsPerWeek
   const trainingStreak = useMemo(() => {
     const totalSessions = trainingPlan?.sessions?.length ?? 0
@@ -723,6 +745,15 @@ export default function Training() {
                       >
                         {startingWorkout ? 'Starting...' : isDoneToday ? '↺ Redo Workout' : '▶ Start Workout'}
                       </button>
+                      {/* Last session date header */}
+                      {session.id && (() => {
+                        const lastLog = workoutHistory.find((l) => l.status === 'completed' && l.session_id === session.id)
+                        if (!lastLog) return null
+                        const dateLabel = new Date(lastLog.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+                        return (
+                          <p className="text-xs text-gray-600 -mt-0.5">Last session: {dateLabel}</p>
+                        )
+                      })()}
                       {session.exercises.map((ex, i) => {
                         const pr = exercisePRs.get(ex.name)
                         const prDisplay = pr
@@ -731,15 +762,27 @@ export default function Training() {
                         const trend = exerciseTrend.get(ex.name)
                         const trendSymbol = trend === 'up' ? '↑' : trend === 'down' ? '↓' : trend === 'stable' ? '→' : null
                         const trendColor = trend === 'up' ? 'text-green-400' : trend === 'down' ? 'text-red-400' : 'text-gray-500'
+                        const lastPerf = session.id ? lastPerfBySession.get(session.id)?.get(ex.name) : undefined
+                        const lastW = lastPerf ? (isImperial ? Math.round(lastPerf.weightKg * 2.20462 * 10) / 10 : lastPerf.weightKg) : null
+                        const lastIsCurrentPR = !!(pr && lastPerf && pr.weightKg === lastPerf.weightKg)
                         return (
                           <div key={i} className="flex justify-between items-start text-sm">
                             <div>
                               <span className="text-gray-200">{ex.name}</span>
                               {ex.notes && <p className="text-xs text-gray-600 mt-0.5">{ex.notes}</p>}
-                              {prDisplay && (
+                              {lastPerf && lastW !== null && (
+                                <p className="text-xs text-cyan-400/80 mt-0.5">
+                                  Last: {lastW} {isImperial ? 'lbs' : 'kg'} × {lastPerf.reps}
+                                  {lastIsCurrentPR && <span className="text-amber-400 ml-1">★PR</span>}
+                                  {!lastIsCurrentPR && trendSymbol && (
+                                    <span className={`font-bold ml-1 ${trendColor}`} title={`Trend: ${trend}`}>{trendSymbol}</span>
+                                  )}
+                                </p>
+                              )}
+                              {prDisplay && !lastIsCurrentPR && (
                                 <p className="text-xs text-amber-400/80 mt-0.5 flex items-center gap-1">
                                   PR: {prDisplay}
-                                  {trendSymbol && (
+                                  {!lastPerf && trendSymbol && (
                                     <span className={`font-bold ${trendColor}`} title={`Strength trend (last 3 sessions): ${trend}`}>
                                       {trendSymbol}
                                     </span>
