@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { generateNutritionPlan } from '../../electron/services/nutritionEngine'
+import { generateNutritionPlan, clampWeightKg } from '../../electron/services/nutritionEngine'
 
 const BASE_INPUT = {
   weight_kg: 80,
@@ -81,6 +81,31 @@ describe('nutritionEngine', () => {
     const macroCalories = plan.protein_g * 4 + plan.carbs_g * 4 + plan.fat_g * 9
     const tolerance = 20
     expect(Math.abs(macroCalories - plan.calories_target)).toBeLessThanOrEqual(tolerance)
+  })
+
+  // Regression: a NaN meal_count used to survive Math.max/Math.min(NaN) unchanged,
+  // which made buildMeals' mainSets lookup + .slice(0, NaN) produce zero main meals.
+  it('falls back to a valid meal count when meal_count is NaN', () => {
+    const plan = generateNutritionPlan({ ...BASE_INPUT, meal_count: NaN as any })
+    expect(plan.meals.length).toBeGreaterThanOrEqual(3)
+    expect(plan.meals.every((m) => m.foods.length > 0)).toBe(true)
+  })
+})
+
+describe('clampWeightKg', () => {
+  it('passes through a valid weight unchanged', () => {
+    expect(clampWeightKg(80)).toBe(80)
+  })
+
+  it('falls back to the default for 0/negative/NaN weight', () => {
+    expect(clampWeightKg(0)).toBe(70)
+    expect(clampWeightKg(-10)).toBe(70)
+    expect(clampWeightKg(NaN)).toBe(70)
+    expect(clampWeightKg(undefined)).toBe(70)
+  })
+
+  it('honors a custom fallback', () => {
+    expect(clampWeightKg(0, 65)).toBe(65)
   })
 })
 

@@ -700,12 +700,17 @@ export function buildMealsPublic(
   return buildMeals(totalCal, protein_g, carbs_g, fat_g, mealCount, dietary_preference, food_exclusions, food_preferences, cooking_time_pref, snack_count, culture_pref, dietary_restrictions)
 }
 
+// Guard against absent / nonsensical bodyweight. A weight of 0 (or NaN) would
+// yield 0g protein and 0g fat — physiologically impossible and dangerous to
+// present to a user — and could propagate NaN into downstream macro math.
+// Shared by every call site that derives protein/fat directly from bodyweight
+// (plan generation, check-in macro recalculation, manual macro recalculation).
+export function clampWeightKg(weightKg: number | undefined | null, fallback = 70): number {
+  return Number.isFinite(weightKg) && (weightKg as number) >= 30 ? (weightKg as number) : fallback
+}
+
 export function generateNutritionPlan(input: NutritionInput): NutritionPlan {
-  // Guard against absent / nonsensical bodyweight. A weight of 0 (or NaN) would
-  // yield 0g protein and 0g fat — physiologically impossible and dangerous to
-  // present to a user — and could propagate NaN into downstream macro math.
-  const safeWeightKg =
-    Number.isFinite(input.weight_kg) && input.weight_kg >= 30 ? input.weight_kg : 70
+  const safeWeightKg = clampWeightKg(input.weight_kg)
   input = { ...input, weight_kg: safeWeightKg }
   const bmr = calcBMR(input.weight_kg, input.height_cm, input.age, input.sex)
   const tdee = Math.round(bmr * (ACTIVITY_MULTIPLIERS[input.activity_level] ?? 1.55))
@@ -721,12 +726,16 @@ export function generateNutritionPlan(input: NutritionInput): NutritionPlan {
 
   const resolvedSnackCount = input.snack_count ?? (input.include_snacks ? 1 : 0)
 
+  // A non-finite meal_count (e.g. NaN) survives Math.max/Math.min unchanged — NaN
+  // propagating into buildMeals' mainSets[mealCount] lookup and .slice(0, NaN) yields
+  // zero main meals. Fall back to 4 before clamping so the result is always finite.
+  const safeMealCount = Number.isFinite(input.meal_count) ? input.meal_count : 4
   const meals = buildMeals(
     calories,
     protein_g,
     carbs_g,
     fat_g,
-    Math.max(3, Math.min(6, input.meal_count)),
+    Math.max(3, Math.min(6, safeMealCount)),
     input.dietary_preference,
     input.food_exclusions,
     input.food_preferences,

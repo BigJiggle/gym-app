@@ -2,6 +2,7 @@ import { IpcMain } from 'electron'
 import { getDb, namedParams } from '../database/db'
 import { calculateAdjustments } from '../services/checkinEngine'
 import { getNextCheckinDate, computeMissedSlots } from '../services/checkinSchedule'
+import { clampWeightKg } from '../services/nutritionEngine'
 
 export { getNextCheckinDate, computeMissedSlots }
 
@@ -113,12 +114,17 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
         interval_days: s.intervalDays,
       }))
 
-    if (adjustments.calories_delta !== 0 && dietPlan) {
+    if (dietPlan) {
+      // Recalculate every check-in, not just ones with a non-zero calorie delta —
+      // goals like bulk/maintain (and an "on track" cut) leave calories_delta at 0,
+      // but protein/fat targets are derived straight from bodyweight and must still
+      // track the athlete's latest weigh-in even when the calorie target doesn't move.
       const newCalories = Math.max(1200, (dietPlan.calories_target as number) + adjustments.calories_delta)
       // Use the just-submitted weigh-in (current bodyweight), not the stale onboarding
       // weight on the user record — protein/fat targets must track the athlete's
-      // actual weight as it changes week to week through their cut.
-      const weightKg = (data.weight_kg as number) ?? (user.weight_kg as number)
+      // actual weight as it changes week to week through their cut. Guard against a
+      // 0/negative/non-finite weigh-in falling straight through to 0g protein/fat.
+      const weightKg = clampWeightKg(data.weight_kg as number, clampWeightKg(user.weight_kg as number))
       const protein_g = Math.round(weightKg * 2.3)
       const fat_g = Math.round(weightKg * 0.9)
       const carbs_g = Math.max(0, Math.round((newCalories - protein_g * 4 - fat_g * 9) / 4))

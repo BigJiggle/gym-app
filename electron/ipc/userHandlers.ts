@@ -1,6 +1,29 @@
 import { IpcMain } from 'electron'
 import { getDb, namedParams } from '../database/db'
 
+// meal_count/snack_count are stored unclamped otherwise — a plan generated from a
+// clamped value still reads the raw stored value next time (e.g. AI profile payloads,
+// `user.meal_count ?? 4` fallbacks), and an unreachable count (NaN, 0, 1, 50) can
+// reach the meal-template `mainSets[mealCount]` lookup downstream.
+function clampMealCount(value: unknown): number | undefined {
+  if (value === undefined) return undefined
+  const n = Math.round(Number(value))
+  return Number.isFinite(n) ? Math.max(3, Math.min(6, n)) : 4
+}
+function clampSnackCount(value: unknown): number | undefined {
+  if (value === undefined) return undefined
+  const n = Math.round(Number(value))
+  return Number.isFinite(n) ? Math.max(0, Math.min(6, n)) : 0
+}
+// body_fat_pct has no DB constraint and flows straight into trend charts —
+// clamp to a physiologically plausible range instead of storing -5 or 150 as-is.
+function clampBodyFatPct(value: unknown): number | null | undefined {
+  if (value === undefined) return undefined
+  if (value === null) return null
+  const n = Number(value)
+  return Number.isFinite(n) ? Math.max(3, Math.min(60, n)) : null
+}
+
 export function registerUserHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('user:create', (_event, data) => {
     const db = getDb()
@@ -27,7 +50,9 @@ export function registerUserHandlers(ipcMain: IpcMain): void {
       dietary_restrictions: JSON.stringify(data.dietary_restrictions ?? []),
       is_natural: data.is_natural ? 1 : 0,
       include_snacks: data.include_snacks ? 1 : 0,
-      snack_count: data.snack_count ?? 0,
+      meal_count: clampMealCount(data.meal_count) ?? 4,
+      snack_count: clampSnackCount(data.snack_count) ?? 0,
+      body_fat_pct: clampBodyFatPct(data.body_fat_pct) ?? null,
       food_preferences: JSON.stringify(data.food_preferences ?? []),
       food_exclusions: JSON.stringify(data.food_exclusions ?? []),
       culture_pref: data.culture_pref ?? 'any',
@@ -61,6 +86,9 @@ export function registerUserHandlers(ipcMain: IpcMain): void {
         ? JSON.stringify(data.food_exclusions) : undefined,
       is_natural: data.is_natural !== undefined ? (data.is_natural ? 1 : 0) : undefined,
       include_snacks: data.include_snacks !== undefined ? (data.include_snacks ? 1 : 0) : undefined,
+      meal_count: clampMealCount(data.meal_count),
+      snack_count: clampSnackCount(data.snack_count),
+      body_fat_pct: clampBodyFatPct(data.body_fat_pct),
     }
     // Drop undefined entries so they don't appear as UPDATE fields
     const cleanData = Object.fromEntries(

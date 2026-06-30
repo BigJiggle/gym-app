@@ -1,7 +1,7 @@
 import { IpcMain } from 'electron'
 import { getDb, namedParams } from '../database/db'
 import { generateTrainingPlan, getExerciseLibraryForUI, determinePhase } from '../services/trainingEngine'
-import { generateNutritionPlan, buildMealsPublic, calcBMR, getPhaseAwareDeficit, ACTIVITY_MULTIPLIERS } from '../services/nutritionEngine'
+import { generateNutritionPlan, buildMealsPublic, calcBMR, getPhaseAwareDeficit, ACTIVITY_MULTIPLIERS, clampWeightKg } from '../services/nutritionEngine'
 import { generateDietWithClaude, generateWorkoutWithClaude, refineDietPlan, refineWorkoutWithClaude, processAIRequest, refineWorkoutForSafety } from '../services/claudeService'
 import { regenerateDietForGoal } from './showHandlers'
 import { clearOrphanedMealCompletions } from './mealCompletionHandlers'
@@ -523,7 +523,7 @@ Ensure every exercise respects the constraints above while maintaining phase-app
     const latestCheckin = db
       .prepare('SELECT weight_kg FROM weekly_checkins WHERE user_id=? ORDER BY check_in_date DESC LIMIT 1')
       .get(userId) as { weight_kg: number } | undefined
-    const weightKg = latestCheckin?.weight_kg ?? (user.weight_kg as number)
+    const weightKg = clampWeightKg(latestCheckin?.weight_kg, clampWeightKg(user.weight_kg as number))
     const protein_g = Math.round(weightKg * 2.3)
     const fat_g = Math.round(weightKg * 0.9)
     const carbs_g = Math.max(0, Math.round((calories - protein_g * 4 - fat_g * 9) / 4))
