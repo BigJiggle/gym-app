@@ -70,7 +70,8 @@ export default function Onboarding() {
       generateTrainingPlan(user.id)
       generateDietPlan(user.id)
     } catch (e) {
-      setError(`Failed to create profile: ${String(e)}`)
+      const msg = String(e).replace(/Error invoking remote method '[^']+': /, '').trim()
+      setError(`Failed to create profile: ${msg}`)
       setSubmitting(false)
     }
   }

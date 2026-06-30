@@ -117,7 +117,7 @@ export default function Settings() {
       setTimeout(() => setEditSaved(false), 2500)
       if (!regenerate) setEditOpen(false)
     } catch (e) {
-      setEditError(String(e))
+      setEditError(String(e).replace(/Error invoking remote method '[^']+': /, '').trim())
       console.error('Failed to update profile:', e)
     } finally {
       setEditSaving(false)
@@ -751,7 +751,7 @@ export default function Settings() {
                       setShowForm({ name: '', show_date: '', division: '', federation: '', notes: '' })
                       setShowFormOpen(false)
                     } catch (e) {
-                      setShowError(String(e))
+                      setShowError(String(e).replace(/Error invoking remote method '[^']+': /, '').trim())
                     } finally {
                       setShowAdding(false)
                     }
