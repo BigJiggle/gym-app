@@ -261,7 +261,12 @@ function buildMeals(
   const snackCount = snack_count ?? 0
   const mealTemplates = getMealTemplates(mealCount, snackCount, dietary_preference, allExclusions, cooking_time_pref ?? 'medium', culture_pref ?? 'any', allPreferences)
 
-  const SNACK_CAL = 200
+  // On very low-calorie plans (e.g. 1200 kcal min) a fixed 200 kcal snack can exceed
+  // the per-main-meal allocation. Cap at the even per-slot share so snacks never
+  // outsize main meals. When there are no snacks the value is unused.
+  const SNACK_CAL = snackCount > 0
+    ? Math.min(200, Math.floor(totalCal / mealTemplates.length))
+    : 200
   const mainCount = mealTemplates.length - snackCount
   const totalSnackCal = snackCount * SNACK_CAL
   // Do not inflate mainCalories with an 800-floor — when snack_count=3 on a 1200 kcal
@@ -745,13 +750,19 @@ export function generateNutritionPlan(input: NutritionInput): NutritionPlan {
     input.dietary_restrictions
   )
 
+  // Derive phase from the actual calorie adjustment rather than a static goal→phase map.
+  // A 'maintain' goal with a show on the calendar applies a deficit; mapping goal→'maintenance'
+  // would label the plan incorrectly while the athlete is actually in a deficit.
+  const actualPhase: NutritionPlan['phase'] =
+    adjustment < 0 ? 'deficit' : adjustment > 0 ? 'surplus' : 'maintenance'
+
   return {
     calories_target: calories,
     protein_g,
     carbs_g,
     fat_g,
     meal_count: meals.length,
-    phase: PHASE_MAP[input.goal] ?? 'deficit',
+    phase: actualPhase,
     meals
   }
 }

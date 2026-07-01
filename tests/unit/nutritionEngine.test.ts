@@ -90,6 +90,39 @@ describe('nutritionEngine', () => {
     expect(plan.meals.length).toBeGreaterThanOrEqual(3)
     expect(plan.meals.every((m) => m.foods.length > 0)).toBe(true)
   })
+
+  // Regression: phase was derived from goal string via PHASE_MAP, so a 'maintain'
+  // goal with weeks_out set was labeled 'maintenance' even though getPhaseAwareDeficit
+  // returns a negative value → the plan was actually in deficit but labeled wrong.
+  it('maintain off-season (no weeks_out) → phase maintenance', () => {
+    const plan = generateNutritionPlan({ ...BASE_INPUT, goal: 'maintain' })
+    expect(plan.phase).toBe('maintenance')
+  })
+
+  it('maintain with show approaching (weeks_out=6) → phase deficit', () => {
+    const plan = generateNutritionPlan({ ...BASE_INPUT, goal: 'maintain', weeks_out: 6 })
+    expect(plan.phase).toBe('deficit')
+  })
+
+  // Regression: on minimum 1200 kcal plans a fixed 200 kcal snack exceeded
+  // the per-main-meal allocation, making snack the largest "meal" of the day.
+  it('snack calories do not exceed per-main-meal calories on a 1200 kcal plan', () => {
+    const plan = generateNutritionPlan({
+      ...BASE_INPUT,
+      weight_kg: 45,
+      activity_level: 'sedentary',
+      goal: 'cut',
+      sex: 'female',
+      meal_count: 6,
+      snack_count: 1,
+    } as any)
+    const snack = plan.meals.find((m) => m.name.toLowerCase().includes('snack'))
+    const mains = plan.meals.filter((m) => !m.name.toLowerCase().includes('snack'))
+    if (snack && mains.length > 0) {
+      const avgMain = mains.reduce((s, m) => s + m.calories, 0) / mains.length
+      expect(snack.calories).toBeLessThanOrEqual(Math.ceil(avgMain) + 5) // allow 5 kcal rounding
+    }
+  })
 })
 
 describe('clampWeightKg', () => {
