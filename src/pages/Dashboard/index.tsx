@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import { useUserStore } from '../../store/userStore'
 import { usePlanStore } from '../../store/planStore'
 import { useSettingsStore } from '../../store/settingsStore'
+import { useCardioStore } from '../../store/cardioStore'
+import WidgetZone from '../../components/widgets/WidgetZone'
 import { StatCard } from '../../components/ui/Card'
 import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
@@ -42,20 +44,10 @@ export default function Dashboard() {
 
   const todayStr = localDateStr()
   const [exerciseLibrary, setExerciseLibrary] = useState<ExerciseLibraryItem[]>([])
-  const [waterMl, setWaterMl] = useState(0)
-  const [waterTargetMl, setWaterTargetMl] = useState(3000)
-  const [editingWaterTarget, setEditingWaterTarget] = useState(false)
-  const [waterTargetInput, setWaterTargetInput] = useState('')
   const [nextCheckinAt, setNextCheckinAt] = useState<Date | null>(null)
   const [checkedMilestones, setCheckedMilestones] = useState<boolean[]>([])
 
-  interface CardioEntry { date: string; type: string; minutes: number }
-  const [cardioLog, setCardioLog] = useState<CardioEntry[]>(() => {
-    try { return JSON.parse(localStorage.getItem('cardio_log') ?? '[]') } catch { return [] }
-  })
-  const [cardioInputOpen, setCardioInputOpen] = useState(false)
-  const [cardioType, setCardioType] = useState('LISS')
-  const [cardioMinutes, setCardioMinutes] = useState('')
+  const { cardioLog } = useCardioStore()
 
   interface PosingEntry { date: string; focus: string; minutes: number }
   const [posingLog, setPosingLog] = useState<PosingEntry[]>(() => {
@@ -64,29 +56,6 @@ export default function Dashboard() {
   const [posingInputOpen, setPosingInputOpen] = useState(false)
   const [posingFocus, setPosingFocus] = useState('Full Routine')
   const [posingMinutes, setPosingMinutes] = useState('')
-
-  function saveCardioLog(entries: CardioEntry[]) {
-    setCardioLog(entries)
-    localStorage.setItem('cardio_log', JSON.stringify(entries))
-  }
-
-  function logCardio() {
-    const mins = parseInt(cardioMinutes, 10)
-    if (!cardioType || isNaN(mins) || mins <= 0) return
-    const updated = [...cardioLog.filter(e => e.date !== todayStr), { date: todayStr, type: cardioType, minutes: mins }]
-    saveCardioLog(updated)
-    setCardioInputOpen(false)
-    setCardioMinutes('')
-  }
-
-  function removeCardioToday() {
-    saveCardioLog(cardioLog.filter(e => e.date !== todayStr))
-  }
-
-  function quickLogCardio(type: string, minutes: number) {
-    const updated = [...cardioLog.filter(e => e.date !== todayStr), { date: todayStr, type, minutes }]
-    saveCardioLog(updated)
-  }
 
   function savePosingLog(entries: PosingEntry[]) {
     setPosingLog(entries)
@@ -253,14 +222,6 @@ export default function Dashboard() {
     window.api.getExerciseLibrary().then(setExerciseLibrary)
   }, [])
 
-  useEffect(() => {
-    const stored = parseInt(localStorage.getItem(`water_ml_${todayStr}`) ?? '0', 10)
-    setWaterMl(isNaN(stored) ? 0 : stored)
-    const storedTarget = parseInt(localStorage.getItem('water_target_ml') ?? '0', 10)
-    if (storedTarget > 0) setWaterTargetMl(storedTarget)
-    else setWaterTargetMl(settings.units === 'imperial' ? 3785 : 3000)
-  }, [todayStr])
-
   // Nearest upcoming show + this week's prep guidance — drives both the
   // "This Week in Prep" card and its persisted milestone checklist below.
   const nearestShow = [...shows]
@@ -326,12 +287,6 @@ export default function Dashboard() {
     } else {
       logMealCompletion(user!.id, todayStr, idx, name)
     }
-  }
-
-  function addWater(ml: number) {
-    const newVal = Math.max(0, waterMl + ml)
-    setWaterMl(newVal)
-    localStorage.setItem(`water_ml_${todayStr}`, String(newVal))
   }
 
   // ISO weekday: Mon=1 … Sun=7 — matches day_of_week in training sessions
@@ -479,6 +434,9 @@ export default function Dashboard() {
           </button>
         </div>
       )}
+
+      {/* Customizable widgets */}
+      <WidgetZone />
 
       {/* Stats row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -1462,210 +1420,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Water Intake */}
-      {(() => {
-        const isImp = settings.units === 'imperial'
-        const waterPct = waterTargetMl > 0 ? Math.min(100, Math.round((waterMl / waterTargetMl) * 100)) : 0
-        const displayCurrent = isImp
-          ? `${Math.round(waterMl / 29.5735)} oz`
-          : waterMl >= 1000
-            ? `${(waterMl / 1000).toFixed(1)} L`
-            : `${waterMl} ml`
-        const displayTarget = isImp
-          ? `${Math.round(waterTargetMl / 29.5735)} oz`
-          : waterTargetMl >= 1000
-            ? `${(waterTargetMl / 1000).toFixed(1)} L`
-            : `${waterTargetMl} ml`
-        const quickAdds = isImp
-          ? [{ ml: 237, label: '8oz' }, { ml: 355, label: '12oz' }, { ml: 473, label: '16oz' }, { ml: 946, label: '32oz' }]
-          : [{ ml: 200, label: '200ml' }, { ml: 350, label: '350ml' }, { ml: 500, label: '500ml' }, { ml: 750, label: '750ml' }]
-        return (
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="font-semibold text-gray-100">Water Intake</h2>
-              {!editingWaterTarget ? (
-                <button
-                  onClick={() => {
-                    setWaterTargetInput(isImp
-                      ? String(Math.round(waterTargetMl / 29.5735))
-                      : String(waterTargetMl))
-                    setEditingWaterTarget(true)
-                  }}
-                  className="text-xs text-gray-500 hover:text-brand-400 transition-colors"
-                >
-                  Target: {displayTarget}
-                </button>
-              ) : (
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="number"
-                    value={waterTargetInput}
-                    onChange={e => setWaterTargetInput(e.target.value)}
-                    className="w-20 bg-gray-800 border border-gray-700 rounded-lg px-2 py-0.5 text-xs text-gray-200 focus:outline-none focus:border-brand-500"
-                    autoFocus
-                  />
-                  <span className="text-xs text-gray-500">{isImp ? 'oz' : 'ml'}</span>
-                  <button
-                    onClick={() => {
-                      const v = parseInt(waterTargetInput, 10)
-                      if (!isNaN(v) && v > 0) {
-                        const ml = isImp ? Math.round(v * 29.5735) : v
-                        setWaterTargetMl(ml)
-                        localStorage.setItem('water_target_ml', String(ml))
-                      }
-                      setEditingWaterTarget(false)
-                    }}
-                    className="text-xs bg-brand-600 hover:bg-brand-500 text-white px-2 py-0.5 rounded-lg transition-colors"
-                  >
-                    Save
-                  </button>
-                  <button
-                    onClick={() => setEditingWaterTarget(false)}
-                    className="text-xs text-gray-500 hover:text-gray-400 transition-colors"
-                  >
-                    ✕
-                  </button>
-                </div>
-              )}
-            </div>
-            <div className="mb-3">
-              <div className="flex justify-between items-end mb-1.5">
-                <span className={`text-2xl font-bold ${waterPct >= 100 ? 'text-blue-400' : 'text-gray-100'}`}>
-                  {displayCurrent}
-                </span>
-                <span className="text-xs text-gray-500">{waterPct}% of goal</span>
-              </div>
-              <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
-                <div
-                  className={`h-full transition-all duration-300 ${waterPct >= 100 ? 'bg-blue-400' : 'bg-blue-500'}`}
-                  style={{ width: `${waterPct}%` }}
-                />
-              </div>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              {quickAdds.map(({ ml, label }) => (
-                <button
-                  key={ml}
-                  onClick={() => addWater(ml)}
-                  className="text-xs font-medium px-2.5 py-1.5 bg-blue-900/20 border border-blue-800/40 text-blue-400 rounded-lg hover:bg-blue-900/40 transition-colors"
-                >
-                  +{label}
-                </button>
-              ))}
-              {waterMl > 0 && (
-                <button
-                  onClick={() => { if (window.confirm('Reset today\'s water to zero?')) addWater(-waterMl) }}
-                  className="text-xs text-gray-600 hover:text-gray-400 ml-auto transition-colors"
-                >
-                  Reset
-                </button>
-              )}
-            </div>
-          </div>
-        )
-      })()}
-
-      {/* Cardio Tracker */}
-      {(() => {
-        const jsDay = new Date().getDay()
-        const daysFromMon = jsDay === 0 ? 6 : jsDay - 1
-        const weekStart = new Date(Date.now() - daysFromMon * 86400000).toLocaleDateString('en-CA')
-        const weekEntries = cardioLog.filter(e => e.date >= weekStart && e.date <= todayStr)
-        const todayEntry = cardioLog.find(e => e.date === todayStr)
-        const weekMins = weekEntries.reduce((s, e) => s + e.minutes, 0)
-        const CARDIO_TYPES = ['LISS', 'HIIT', 'Stairs', 'Bike', 'Other']
-        return (
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="font-semibold text-gray-100">Cardio</h2>
-              <div className="flex items-center gap-2 text-xs text-gray-500">
-                <span>{weekEntries.length} session{weekEntries.length !== 1 ? 's' : ''} this week</span>
-                {weekMins > 0 && <span>· {weekMins} min</span>}
-              </div>
-            </div>
-            {todayEntry ? (
-              <div className="flex items-center justify-between bg-green-950/20 border border-green-800/40 rounded-xl px-3 py-2.5 mb-3">
-                <div>
-                  <span className="text-green-400 font-semibold text-sm">{todayEntry.type}</span>
-                  <span className="text-gray-400 text-sm ml-2">{todayEntry.minutes} min</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => { setCardioType(todayEntry.type); setCardioMinutes(String(todayEntry.minutes)); setCardioInputOpen(true) }}
-                    className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
-                  >Edit</button>
-                  <button onClick={removeCardioToday} aria-label="Delete today's cardio session" title="Delete" className="text-xs text-red-500 hover:text-red-400 transition-colors">✕</button>
-                </div>
-              </div>
-            ) : (
-              <p className="text-sm text-gray-500 mb-3">No cardio logged today.</p>
-            )}
-            {cardioInputOpen ? (
-              <div className="space-y-2">
-                <div className="flex gap-1.5 flex-wrap">
-                  {CARDIO_TYPES.map(t => (
-                    <button
-                      key={t}
-                      onClick={() => setCardioType(t)}
-                      className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${cardioType === t ? 'bg-brand-600/20 border-brand-500 text-brand-400' : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'}`}
-                    >{t}</button>
-                  ))}
-                </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min={1}
-                    max={180}
-                    value={cardioMinutes}
-                    onChange={e => setCardioMinutes(e.target.value)}
-                    placeholder="Minutes"
-                    className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-gray-100 focus:outline-none focus:border-brand-500"
-                    autoFocus
-                    onKeyDown={e => e.key === 'Enter' && logCardio()}
-                  />
-                  <span className="text-xs text-gray-500">min</span>
-                  <button onClick={logCardio} className="text-xs bg-brand-600 hover:bg-brand-500 text-white px-3 py-1 rounded-lg transition-colors font-medium">Save</button>
-                  <button onClick={() => { setCardioInputOpen(false); setCardioMinutes('') }} className="text-xs text-gray-500 hover:text-gray-400 transition-colors">Cancel</button>
-                </div>
-                <div className="flex gap-1.5">
-                  {[['LISS', 30], ['LISS', 45], ['HIIT', 20], ['HIIT', 25]].map(([t, m]) => (
-                    <button
-                      key={`${t}-${m}`}
-                      onClick={() => { quickLogCardio(t as string, Number(m)); setCardioInputOpen(false); setCardioMinutes('') }}
-                      className="text-xs px-2 py-1 bg-gray-800 border border-gray-700 rounded-lg text-gray-400 hover:border-brand-700 hover:text-brand-400 transition-colors"
-                    >{t} {m}m</button>
-                  ))}
-                </div>
-              </div>
-            ) : !todayEntry ? (
-              <div className="space-y-2">
-                <div className="flex gap-1.5 flex-wrap">
-                  {[['LISS', 30], ['LISS', 45], ['HIIT', 20], ['HIIT', 25]].map(([t, m]) => (
-                    <button
-                      key={`${t}-${m}`}
-                      onClick={() => quickLogCardio(t as string, Number(m))}
-                      className="text-xs font-medium px-3 py-1.5 bg-gray-800 border border-gray-700 text-gray-400 hover:bg-brand-900/20 hover:border-brand-700 hover:text-brand-400 rounded-lg transition-colors"
-                    >{t} {m}m</button>
-                  ))}
-                </div>
-                <button
-                  onClick={() => { setCardioType('LISS'); setCardioMinutes(''); setCardioInputOpen(true) }}
-                  className="w-full py-1.5 rounded-xl border border-dashed border-gray-700 text-gray-500 hover:border-brand-700 hover:text-brand-400 text-xs transition-colors"
-                >
-                  + Custom duration
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => { setCardioType('LISS'); setCardioMinutes(''); setCardioInputOpen(true) }}
-                className="w-full py-2 rounded-xl border border-dashed border-gray-700 text-gray-500 hover:border-brand-700 hover:text-brand-400 text-sm transition-colors"
-              >
-                + Log another cardio
-              </button>
-            )}
-          </div>
-        )
-      })()}
 
       {/* Posing Practice */}
       {(() => {

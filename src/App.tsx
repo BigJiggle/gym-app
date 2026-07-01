@@ -11,6 +11,7 @@ import CheckIn from './pages/CheckIn'
 import Progress from './pages/Progress'
 import Settings from './pages/Settings'
 import Education from './pages/Education'
+import AddWidgets from './pages/AddWidgets'
 
 function AppRoutes() {
   const { user, loading } = useUserStore()
@@ -40,6 +41,7 @@ function AppRoutes() {
       <Routes>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/widgets" element={<AddWidgets />} />
         <Route path="/training" element={<Training />} />
         <Route path="/diet" element={<Diet />} />
         <Route path="/checkin" element={<CheckIn />} />
