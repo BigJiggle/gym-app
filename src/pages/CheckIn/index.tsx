@@ -914,6 +914,7 @@ export default function CheckIn() {
               onChange={(e) => setWeightDisplay(e.target.value)}
               placeholder={isImperial ? '185.0' : '84.0'}
               required
+              autoFocus
               className="w-36 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200"
             />
             <span className="text-sm text-gray-500 select-none">{weightUnit}</span>

@@ -149,7 +149,7 @@ function ExerciseCard({ exercise, state, isImperial, lastPerf, pr, onSetUpdate, 
                 className="w-16 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-gray-200 text-center"
               />
               <span className="text-gray-600 text-xs">{weightUnit}</span>
-              <span className="text-gray-600 text-xs ml-1">RIR</span>
+              <span className="text-gray-600 text-xs ml-1" title="Reps In Reserve — how many more reps you could do">RIR</span>
               <input
                 type="number"
                 min={0}
