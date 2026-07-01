@@ -1030,7 +1030,7 @@ export default function Dashboard() {
                 </p>
                 <p className="text-xs text-gray-500 leading-tight">Training</p>
                 <p className="text-xs text-gray-700 mt-0.5">
-                  {sessions.length > 0 ? `${completedThisWeek.length}/${sessions.length} sessions` : 'no plan'}
+                  {scheduledThisWeek.length > 0 ? `${completedThisWeek.length}/${scheduledThisWeek.length} sessions` : sessions.length > 0 ? 'not yet' : 'no plan'}
                 </p>
               </div>
               <div className={`rounded-lg border p-2 ${mealC ? mealC.bg : noData}`}>
@@ -1933,6 +1933,7 @@ export default function Dashboard() {
                       onClick={() => removeSupplement(name)}
                       className="opacity-0 group-hover:opacity-100 text-gray-700 hover:text-red-400 text-xs w-4 h-4 flex items-center justify-center transition-all"
                       title={`Remove ${name}`}
+                      aria-label={`Remove ${name}`}
                     >
                       ✕
                     </button>
