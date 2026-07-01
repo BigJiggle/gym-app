@@ -12,8 +12,10 @@ function read(): WidgetId[] {
     if (raw == null) return [...ALL_WIDGET_IDS]
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return [...ALL_WIDGET_IDS]
-    // Keep only known ids, preserving stored order.
-    return parsed.filter((id): id is WidgetId => (ALL_WIDGET_IDS as string[]).includes(id))
+    // Keep only known ids, preserving stored order, and de-dupe so corrupted or
+    // hand-edited storage can't produce duplicate React keys / repeated widgets.
+    const known = parsed.filter((id): id is WidgetId => (ALL_WIDGET_IDS as string[]).includes(id))
+    return [...new Set(known)]
   } catch {
     return [...ALL_WIDGET_IDS]
   }

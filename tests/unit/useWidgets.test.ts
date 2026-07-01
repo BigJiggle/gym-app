@@ -41,4 +41,11 @@ describe('useWidgets', () => {
     const { result } = renderHook(() => useWidgets())
     expect(result.current.enabledIds).toEqual([ALL_WIDGET_IDS[0]])
   })
+
+  it('de-dupes repeated ids from corrupted/hand-edited storage', () => {
+    const id = ALL_WIDGET_IDS[0]
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([id, id, ALL_WIDGET_IDS[1], id]))
+    const { result } = renderHook(() => useWidgets())
+    expect(result.current.enabledIds).toEqual([id, ALL_WIDGET_IDS[1]])
+  })
 })
