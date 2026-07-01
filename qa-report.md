@@ -1,4 +1,4 @@
-# PrepCoach QA Report — 2026-07-01
+# PrepCoach QA Report — 2026-07-01 (Run 2)
 
 ## Phase 1 — QA Engineer Audit
 
@@ -6,88 +6,83 @@
 - `npx tsc --noEmit`: **0 errors** (before and after changes)
 
 ### Unit Tests
-- `npm test`: **109 tests passing, 0 failures**
+- `npm test` before: **109 tests passing** (from run 1)
+- `npm test` after fixes: **112 tests passing, 0 failures** (+3 regression tests)
 
-### Nutrition Engine Logic (19 checks)
-All 19 checks passed:
-1. BMR (Mifflin-St Jeor) formula verified for male/female with sample values
-2. Activity multiplier applied correctly to BMR → TDEE
-3. Phase-aware deficit: hypertrophy/strength 200–500 kcal, peak 300–700 kcal, deload 0 kcal
-4. `clampMealCount` enforces [3–6] range
-5. `clampSnackCount` enforces [0–6] range
-6. `clampWeightKg` returns ≥30 or falls back to 70
-7. Protein target: 2.2–2.6 g/kg bodyweight depending on phase
-8. Fat floor: 20% of total calories minimum
-9. Carbs = remaining calories after protein+fat
-10. Macro math: protein×4 + fat×9 + carbs×4 ≈ total calories (verified)
-11. Peak week carb cycling logic confirmed in `peak_week_protocol.ts`
-12. Training phase selection: hypertrophy→strength→peak→deload by weeks_out
-13. Deload reduces volume by ~40%, intensity by ~10%
-14. Show-date countdown math verified (`getShowCountdown`)
-15. 7-day rolling average weight formula correct (sum/count)
-16. Adherence auto-fill: `actual/expected × 100` rounds correctly
-17. `computeMissedSlots` correctly handles day-based and interval-based schedules
-18. `localDateStr()` returns YYYY-MM-DD in local time (not UTC)
-19. Imperial/metric conversion factors (kg↔lbs, cm↔in) verified
+### Nutrition Engine Logic (full audit)
+Deepened source audit of `nutritionEngine.ts`, `foodDatabase.ts`, `planHandlers.ts`, `showHandlers.ts`, `checkinHandlers.ts`, `userHandlers.ts`, `trainingEngine.ts`, `Progress/index.tsx`.
+
+**2 bugs found and fixed.**
 
 ### User Flow Traces (7 flows)
 All 7 flows verified correct end-to-end:
 
-1. **Onboarding → profile saved → plans generated**: `createUser` IPC → `planStore.generateTrainingPlan` + `generateDietPlan` → stored in SQLite
-2. **Dashboard → log meal → macro progress updates**: `logMealCompletion` IPC → `mealCompletions` state → macro progress re-renders
-3. **Dashboard → log cardio → scorecard updates**: localStorage `cardio_log` → `Weekly Prep Scorecard` re-reads on render
-4. **Check-In → submit → locked state**: `submitCheckin` IPC → `nextAllowed` set → locked UI shown with correct countdown
-5. **Settings → Save & Regenerate → new plan**: `updateUser` IPC (clamps meal_count/snack_count) → `generateTrainingPlan` + `generateDietPlan` → plans replaced
-6. **Workout → log sets → complete → history updated**: `saveSetsBatch` → `completeWorkout` → `loadWorkoutHistory` + `loadActiveWorkout` → history tab shown
-7. **Progress → check-in history → chart renders**: `loadCheckinHistory` → sorted by date → chart data computed from sorted array
+1. **Onboarding → profile save**: `user:create` IPC → clamps meal_count/snack_count/body_fat_pct → serializes JSON arrays → `parseUser` returns deserialized ✓
+2. **Diet plan generation → storage → retrieval**: `plan:generateDiet` → `generateNutritionPlan()` → `diet_plans` table → `plan:getDiet` parses meals JSON ✓
+3. **Weekly check-in → adjustment → plan update**: `checkin:submit` → `calculateAdjustments` → increments week_number → recalculates macros from current bodyweight ✓
+4. **Training plan generation → storage**: `plan:generateTraining` → check-in energy/adherence adjustment → `generateTrainingPlan()` → `training_plans` + `training_sessions` ✓
+5. **Show registration → countdown**: `shows:setPrimary` validates not-past → `syncPrimaryToNearest` keeps user.show_date current ✓
+6. **Progress chart data flow**: `loadCheckinHistory` → sorted by date → chart data computed with proper null guards ✓
+7. **Meal preference/exclusion substitution**: `getFood()` with `isMainMeal` guard → `SNACK_ONLY_FOODS` prevents snack ingredients bleeding into main meals ✓
 
 ### Bugs Found and Fixed
-**0 bugs found** in Phase 1.
+
+**Bug 1 — Phase label mismatch** (`electron/services/nutritionEngine.ts:754`)
+
+`generateNutritionPlan` returned `phase` from a static `PHASE_MAP` (goal→string). A `maintain` goal with `weeks_out` set applied a real deficit (`getPhaseAwareDeficit` returns −150 to −350 kcal) but was labeled `'maintenance'`. Fix: derive `actualPhase` from the `adjustment` value (`< 0 → 'deficit'`, `> 0 → 'surplus'`, `0 → 'maintenance'`).
+
+**Bug 2 — Snack calorie imbalance on low-calorie plans** (`electron/services/nutritionEngine.ts:264`)
+
+`buildMeals` used a fixed `SNACK_CAL = 200` regardless of total plan calories. On minimum 1200 kcal plans with 6 main meals + 1 snack, the snack (200 kcal) exceeded the per-main-meal allocation (167 kcal) — making the snack the largest "meal" of the day. Fix: `SNACK_CAL = snackCount > 0 ? Math.min(200, Math.floor(totalCal / mealTemplates.length)) : 200`.
+
+**Regression tests added** (`tests/unit/nutritionEngine.test.ts`):
+- `maintain` off-season (no `weeks_out`) → `phase === 'maintenance'`
+- `maintain` with `weeks_out=6` → `phase === 'deficit'`
+- Snack calories ≤ average main meal calories on 1200 kcal plan
+
+**Commit**: `4020f15` — `[QA] 2026-07-01: fix phase label mismatch and snack calorie imbalance on low-kcal plans`
 
 ---
 
-## Phase 2 — Prep Athlete Feature (triggered: Phase 1 fixed < 3 bugs)
+## Phase 2 — Prep Athlete Feature (triggered: 2 bugs < 3)
 
-### Feature Added: Daily Weigh-In with 7-Day Rolling Average
+### Feature Added: Recent Check-Ins Card on Dashboard
 
 **File**: `src/pages/Dashboard/index.tsx`
 
-**Why**: Weekly check-ins capture trend but a prep athlete's daily weight swings 1–3 lbs from water, food, and sodium. The rolling 7-day average smooths this noise and gives the coach/athlete the true rate of loss. No existing Dashboard widget covered this.
+**Why**: Athletes had no way to see their adherence trend without navigating to the Progress page. The last 4 check-ins' weight, training adherence %, diet adherence %, and calorie adjustment are immediately relevant to prep decision-making (e.g. "my diet adherence dropped from 90% to 70% — that's why my cut slowed").
 
-**What was added**:
-- `dailyWeightLog` state (localStorage `daily_weight_log`)
-- `dailyWeightEditing` state to toggle edit mode
-- `logDailyWeight()` function: validates input, converts imperial→kg, deduplicates today's entry
-- Widget inserted between the stats row and the Peak Week Daily Protocol block:
-  - Logs today's fasted morning weight (kg or lbs)
-  - Shows 7-day rolling average prominently
-  - Shows week-over-week delta (green = losing, red = gaining, grey = stable <0.05 kg)
-  - Edit button pre-fills the input and shows a Cancel button
-  - Delete button removes today's entry
-  - Mini sparkline showing last 7 days with today highlighted
+**What was added**: Compact table card (visible when ≥2 check-ins exist) placed after the today/check-in grid:
+- Columns: Week, Weight, Training %, Diet %, Calorie Adjustment
+- Color-coded adherence (green ≥85%, yellow ≥70%, red <70%)
+- Calorie adjustment column: green for cuts (−kcal), amber for increases, dash for no change
+- Header row shows rolling averages for both adherence metrics
+- Uses already-loaded `checkinHistory` — no new IPC calls
 
-**Implementation constraints respected**:
-- Uses only `localStorage` (no new IPC channels)
-- Reads `settings.units` for imperial/metric display
-- `dailyWeightEditing` state correctly gates the edit flow
+**Commit**: `48d8a0e` — `[Feature] Add Recent Check-Ins card to Dashboard`
 
 ---
 
 ## Phase 3 — UX Simplicity Fixes
 
-### Fix 1: autoFocus on CheckIn weight input
-**File**: `src/pages/CheckIn/index.tsx` — line ~917
+### Fix 1: Weekly Prep Scorecard training session label denominator
+**File**: `src/pages/Dashboard/index.tsx` — line 1033
 
-Added `autoFocus` to the required bodyweight `<input>`. The weight field is pre-filled from the last check-in and is the only required field. Focusing it immediately means the user can adjust the value without tapping the field first, removing a friction point on a form opened once per week.
+The Training scorecard sub-label used `sessions.length` (total weekly sessions, e.g. 3) as the denominator, but the percentage correctly used `scheduledThisWeek.length` (sessions on/before today, e.g. 2 on a Wednesday). The label showed "1/3 sessions" while the score showed 50% — inconsistent. Fixed to use `scheduledThisWeek.length` with a fallback of `'not yet'` when no sessions are scheduled through today.
 
-### Fix 2: RIR label tooltip in WorkoutSession
-**File**: `src/pages/Training/WorkoutSession.tsx` — line ~152
+### Fix 2: Missing aria-label on Remove Supplement button
+**File**: `src/pages/Dashboard/index.tsx` — line ~1935
 
-Added `title="Reps In Reserve — how many more reps you could do"` to the `<span>RIR</span>` label beside the per-set RIR input. RIR is a powerlifting/bodybuilding term not universally known; the tooltip surfaces its meaning on hover without cluttering the compact set-logging UI.
+The supplement remove button (`✕`) had only a `title` attribute. Screen readers announced the button as "button" with no action context. Added `aria-label={`Remove ${name}`}` to match the `title`.
+
+**Commit**: `5f8c5de` — `[UX] Fix Scorecard training session count and add aria-label to supplement remove`
 
 ---
 
-## Commit
-`c1a792a` — `[Phase 2+3] 2026-07-01: Add daily weigh-in rolling average; UX clarity fixes`
-
-Pushed to `origin/master`.
+## Final State
+- **Tests**: 112 passing, 0 failing
+- **TypeScript**: 0 errors
+- **Bugs fixed**: 2 (Phase 1)
+- **Feature added**: Recent Check-Ins adherence table (Phase 2)
+- **UX fixes**: 2 (Phase 3)
+- **Pushed**: `origin/master` @ `5f8c5de`
