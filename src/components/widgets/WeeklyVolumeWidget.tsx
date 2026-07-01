@@ -13,7 +13,9 @@ export default function WeeklyVolumeWidget() {
   const [library, setLibrary] = useState<ExerciseLibraryItem[]>([])
 
   useEffect(() => {
-    window.api.getExerciseLibrary().then(setLibrary)
+    let active = true
+    window.api.getExerciseLibrary().then((lib) => { if (active) setLibrary(lib) })
+    return () => { active = false }
   }, [])
 
   const today = new Date()

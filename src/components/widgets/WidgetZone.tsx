@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useWidgets } from './useWidgets'
 import type { WidgetId } from './useWidgets'
@@ -11,12 +11,18 @@ export default function WidgetZone() {
   const dragIndex = useRef<number | null>(null)
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  function startLongPress() {
+  function startLongPress(e: React.PointerEvent) {
+    // Don't hijack interaction with a widget's own controls — only a hold on the
+    // card body should enter rearrange mode.
+    if ((e.target as HTMLElement).closest('button, input, textarea, select, a')) return
     longPressTimer.current = setTimeout(() => setEditing(true), 400)
   }
   function cancelLongPress() {
     if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null }
   }
+
+  // Clear a pending long-press timer if the zone unmounts mid-hold.
+  useEffect(() => () => { if (longPressTimer.current) clearTimeout(longPressTimer.current) }, [])
 
   function handleDelete(id: WidgetId) {
     if (window.confirm('Are you sure you want to remove this widget?')) disable(id)
@@ -68,6 +74,7 @@ export default function WidgetZone() {
                   }
                   dragIndex.current = null
                 }}
+                onDragEnd={() => { dragIndex.current = null }}
               >
                 <WidgetFrame editing={editing} onDelete={() => handleDelete(id)}>
                   <Component />
