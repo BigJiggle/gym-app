@@ -19,6 +19,7 @@ export default function Diet() {
   const { settings } = useSettingsStore()
 
   const [tab, setTab] = useState<DietTab>('plan')
+  const [currentTime, setCurrentTime] = useState(() => new Date())
   const [swapTarget, setSwapTarget] = useState<{ mealIndex: number; meal: Meal } | null>(null)
   const [swapping, setSwapping] = useState(false)
   const [swapError, setSwapError] = useState<string | null>(null)
@@ -155,6 +156,12 @@ export default function Diet() {
       setStreakCompletions(data ?? [])
     })
   }, [user?.id])
+
+  // Tick every minute so the next-meal countdown stays live without user interaction
+  useEffect(() => {
+    const id = setInterval(() => setCurrentTime(new Date()), 60000)
+    return () => clearInterval(id)
+  }, [])
 
   // Sync prefs panel state from user when panel opens
   useEffect(() => {
@@ -928,8 +935,7 @@ export default function Diet() {
           {totalMeals > 0 && dietPlan.meals && (() => {
             const START_MIN = 5 * 60   // 5 am
             const TOTAL_MINS = 17 * 60 // 5 am – 10 pm
-            const now = new Date()
-            const nowMinutes = now.getHours() * 60 + now.getMinutes()
+            const nowMinutes = currentTime.getHours() * 60 + currentTime.getMinutes()
             const nowPct = Math.max(0, Math.min(100, ((nowMinutes - START_MIN) / TOTAL_MINS) * 100))
 
             const missedMeals = (dietPlan.meals ?? []).filter((meal, i) => {
@@ -950,6 +956,17 @@ export default function Diet() {
                   ) : activeMealIndex !== null ? (
                     <span className="text-xs text-brand-400">
                       Next: <span className="font-semibold">{dietPlan.meals[activeMealIndex].name}</span> at {dietPlan.meals[activeMealIndex].time}
+                      {(() => {
+                        const [mh, mm] = dietPlan.meals[activeMealIndex].time.split(':').map(Number)
+                        const diff = (mh * 60 + mm) - nowMinutes
+                        if (diff > 0) {
+                          const h = Math.floor(diff / 60)
+                          const m = diff % 60
+                          return <span className="text-gray-500"> · in {h > 0 ? `${h}h ` : ''}{m}m</span>
+                        }
+                        if (diff > -10) return <span className="text-amber-400"> · due now</span>
+                        return <span className="text-amber-400"> · {Math.abs(diff)}m overdue</span>
+                      })()}
                     </span>
                   ) : null}
                 </div>
@@ -1099,14 +1116,18 @@ export default function Diet() {
                             <h3 className="text-sm font-semibold text-gray-200">{meal.name}</h3>
                             {i === activeMealIndex && !isMealEaten(i) && (() => {
                               const [mh, mm] = meal.time.split(':').map(Number)
-                              const isPast = (mh * 60 + mm) <= (new Date().getHours() * 60 + new Date().getMinutes())
+                              const diff = (mh * 60 + mm) - (currentTime.getHours() * 60 + currentTime.getMinutes())
+                              const isPast = diff <= 0
+                              const countdown = diff > 0
+                                ? (() => { const h = Math.floor(diff / 60); const m = diff % 60; return h > 0 ? `${h}h ${m}m` : `${m}m` })()
+                                : diff > -5 ? 'now' : `${Math.abs(diff)}m ago`
                               return (
                                 <span className={`text-xs rounded-full px-2 py-0.5 leading-none font-semibold ${
                                   isPast
                                     ? 'bg-amber-900/20 text-amber-400 border border-amber-700/50'
                                     : 'bg-brand-600/20 text-brand-400 border border-brand-600/50'
                                 }`}>
-                                  {isPast ? 'Due' : 'Next'}
+                                  {isPast ? `Due · ${countdown}` : `Next · in ${countdown}`}
                                 </span>
                               )
                             })()}
