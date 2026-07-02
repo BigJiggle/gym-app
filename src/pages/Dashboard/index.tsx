@@ -691,11 +691,11 @@ export default function Dashboard() {
           ? Math.round(5.5 * wt * (new Date(todayWorkout.ended_at!).getTime() - new Date(todayWorkout.started_at).getTime()) / 3600000)
           : 0
 
-        const todayCardioEntry = cardioLog.find(e => e.date === todayStr)
         const CARDIO_MET: Record<string, number> = { LISS: 4.5, HIIT: 8.0, Bike: 6.0, Stairs: 8.0, Other: 5.0 }
-        const cardioBurn = todayCardioEntry
-          ? Math.round((CARDIO_MET[todayCardioEntry.type] ?? 5.0) * wt * todayCardioEntry.minutes / 60)
-          : 0
+        // Sum every cardio session logged today (multiple per day are allowed).
+        const cardioBurn = cardioLog
+          .filter(e => e.date === todayStr)
+          .reduce((sum, e) => sum + Math.round((CARDIO_MET[e.type] ?? 5.0) * wt * e.minutes / 60), 0)
 
         const meals = dietPlan.meals ?? []
         const todayLogged = mealCompletions.filter(c => c.date === todayStr)
