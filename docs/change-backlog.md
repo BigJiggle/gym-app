@@ -15,11 +15,14 @@ Never delete items; only check them off.
 
 ## Queue
 
-- [ ] **Remove the Energy Balance card.** Delete the Dashboard "Today's Energy
+- [x] **Remove the Energy Balance card.** Delete the Dashboard "Today's Energy
   Balance" card entirely (the block in `src/pages/Dashboard/index.tsx`), plus any
   now-dead helpers/variables it used (BMR calc, `CARDIO_MET`, training/cardio burn
   math) that nothing else references. Acceptance: no energy-balance card renders;
-  `tsc` clean with no unused-variable errors.
+  `tsc` clean with no unused-variable errors. — done 2026-07-02: removed the
+  "Today's Energy Balance" IIFE card from Dashboard (BMR/CARDIO_MET/training+cardio
+  burn math were all local to it); cardioLog/workoutHistory/mealCompletions still
+  used elsewhere; tsc/tests/build all clean.
 
 - [ ] **Consistent color scheme for sleep & energy.** Apply the same
   good/medium/bad color-coding used for "stress level" to "sleep quality" and
