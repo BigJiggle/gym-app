@@ -929,7 +929,9 @@ export default function CheckIn() {
               : null
             const deltaColor = deltaKg === null || Math.abs(deltaKg) < 0.05
               ? 'text-gray-500'
-              : deltaKg < 0 ? 'text-green-500' : 'text-amber-400'
+              : user!.goal === 'bulk'
+                ? (deltaKg > 0 ? 'text-green-500' : 'text-amber-400')
+                : (deltaKg < 0 ? 'text-green-500' : 'text-amber-400')
             return (
               <div className="mt-1.5 space-y-0.5">
                 <p className="text-xs text-gray-600">

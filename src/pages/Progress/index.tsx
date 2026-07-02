@@ -399,9 +399,17 @@ export default function Progress() {
                 const oldVal = toMDisplay(oldest[key]!)
                 const newVal = toMDisplay(newest[key]!)
                 const delta = Math.round((newVal - oldVal) * 10) / 10
-                const color = delta < 0 ? 'text-green-400' : delta > 0 ? 'text-amber-400' : 'text-gray-500'
+                // Waist shrinking is always good; for all other sites (chest, arm, thigh, hip)
+                // a decrease means losing lean mass — colour it amber so the athlete notices.
+                const isShrinkGood = label === 'Waist'
+                const color = isShrinkGood
+                  ? (delta < 0 ? 'text-green-400' : delta > 0 ? 'text-amber-400' : 'text-gray-500')
+                  : (delta > 0 ? 'text-green-400' : delta < 0 ? 'text-amber-400' : 'text-gray-500')
                 const arrow = delta < 0 ? '↓' : delta > 0 ? '↑' : '→'
                 const weeklyRate = weeksBetween >= 1 ? Math.round((newVal - oldVal) / weeksBetween * 10) / 10 : null
+                const weeklyRateColor = isShrinkGood
+                  ? (weeklyRate !== null && weeklyRate < 0 ? 'text-green-500/70' : 'text-amber-500/70')
+                  : (weeklyRate !== null && weeklyRate > 0 ? 'text-green-500/70' : 'text-amber-500/70')
                 return (
                   <div key={label} className="bg-gray-800/50 rounded-xl p-3 text-center">
                     <p className="text-xs text-gray-500 mb-1">{label}</p>
@@ -411,7 +419,7 @@ export default function Progress() {
                     </p>
                     <p className="text-xs text-gray-600 mt-0.5">{oldVal} → {newVal}</p>
                     {weeklyRate !== null && weeklyRate !== 0 && (
-                      <p className={`text-xs mt-1 font-medium ${weeklyRate < 0 ? 'text-green-500/70' : 'text-amber-500/70'}`}>
+                      <p className={`text-xs mt-1 font-medium ${weeklyRateColor}`}>
                         {weeklyRate > 0 ? '+' : ''}{weeklyRate.toFixed(1)}{mUnit}/wk
                       </p>
                     )}
