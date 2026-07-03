@@ -24,12 +24,16 @@ Never delete items; only check them off.
   burn math were all local to it); cardioLog/workoutHistory/mealCompletions still
   used elsewhere; tsc/tests/build all clean.
 
-- [ ] **Consistent color scheme for sleep & energy.** Apply the same
+- [x] **Consistent color scheme for sleep & energy.** Apply the same
   good/medium/bad color-coding used for "stress level" to "sleep quality" and
   "energy level" wherever they're shown (Check-in inputs and any Progress/summary
   displays). Find how stress level maps value→color and reuse that logic for sleep
   and energy so all three read consistently. Acceptance: sleep and energy use the
-  same color scale concept as stress.
+  same color scale concept as stress. — done 2026-07-03: extracted the stress
+  green/yellow/red scale into shared `src/utils/ratingColor.ts` (higher/lower
+  direction); Check-in RatingBar now colors Energy/Sleep as higher-is-better
+  (was neutral brand) and Progress wellness tiles reuse it (fixes Sleep's
+  inconsistent blue "good" → green); added ratingColor unit tests; tsc/tests/build clean.
 
 - [ ] **Meals 1–20 and snacks 0–20 in onboarding + settings.** Allow meals per day
   from 1 to 20 (currently the engine clamps to a minimum of 3) and snacks per day

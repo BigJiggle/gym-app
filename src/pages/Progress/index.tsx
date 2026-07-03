@@ -8,6 +8,7 @@ import MeasurementsChart from '../../components/charts/MeasurementsChart'
 import { StatCard } from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import { displayWeight, displayLength, weightLabel, lengthLabel } from '../../utils/units'
+import { ratingTextClass } from '../../utils/ratingColor'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LineChart, Line, CartesianGrid, Legend } from 'recharts'
 import type { CheckIn, ProgressPhoto } from '../../types'
 
@@ -678,21 +679,21 @@ export default function Progress() {
                 <div className="grid grid-cols-3 gap-2 mb-4">
                   <div className="bg-gray-800/60 rounded-xl p-3 text-center">
                     <p className="text-xs text-gray-500 mb-1">Energy</p>
-                    <p className={`text-lg font-bold ${latest.energy_level >= 4 ? 'text-green-400' : latest.energy_level <= 2 ? 'text-red-400' : 'text-yellow-400'}`}>
+                    <p className={`text-lg font-bold ${ratingTextClass(latest.energy_level, 'higher')}`}>
                       {latest.energy_level}/5
                     </p>
                     <p className="text-xs text-gray-600 mt-0.5">avg {avgEnergy}</p>
                   </div>
                   <div className="bg-gray-800/60 rounded-xl p-3 text-center">
                     <p className="text-xs text-gray-500 mb-1">Sleep</p>
-                    <p className={`text-lg font-bold ${latest.sleep_quality >= 4 ? 'text-blue-400' : latest.sleep_quality <= 2 ? 'text-red-400' : 'text-yellow-400'}`}>
+                    <p className={`text-lg font-bold ${ratingTextClass(latest.sleep_quality, 'higher')}`}>
                       {latest.sleep_quality}/5
                     </p>
                     <p className="text-xs text-gray-600 mt-0.5">avg {avgSleep}</p>
                   </div>
                   <div className="bg-gray-800/60 rounded-xl p-3 text-center">
                     <p className="text-xs text-gray-500 mb-1">Stress</p>
-                    <p className={`text-lg font-bold ${latest.stress_level <= 2 ? 'text-green-400' : latest.stress_level >= 4 ? 'text-red-400' : 'text-yellow-400'}`}>
+                    <p className={`text-lg font-bold ${ratingTextClass(latest.stress_level, 'lower')}`}>
                       {latest.stress_level}/5
                     </p>
                     <p className="text-xs text-gray-600 mt-0.5">avg {avgStress}</p>

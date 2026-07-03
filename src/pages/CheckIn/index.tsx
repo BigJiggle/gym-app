@@ -9,6 +9,7 @@ import Card from '../../components/ui/Card'
 import type { CheckIn } from '../../types'
 import { localDateStr } from '../../utils/dates'
 import { computeMissedSlots } from '../../utils/checkinSchedule'
+import { ratingBgClass, ratingTextClass, type RatingDirection } from '../../utils/ratingColor'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -19,6 +20,7 @@ function RatingBar({
   lowLabel,
   highLabel,
   lowerIsBetter,
+  higherIsBetter,
 }: {
   label: string
   value: number
@@ -26,16 +28,15 @@ function RatingBar({
   lowLabel?: string
   highLabel?: string
   lowerIsBetter?: boolean
+  higherIsBetter?: boolean
 }) {
+  // Same good/medium/bad (green/yellow/red) scale for stress, sleep and energy.
+  // Stress is better when low; sleep and energy are better when high.
+  const direction: RatingDirection | null = lowerIsBetter ? 'lower' : higherIsBetter ? 'higher' : null
   function activeColor(n: number) {
-    if (!lowerIsBetter) return 'bg-brand-600 text-white'
-    if (n <= 2) return 'bg-green-600 text-white'
-    if (n === 3) return 'bg-yellow-600 text-white'
-    return 'bg-red-600 text-white'
+    return direction ? ratingBgClass(n, direction) : 'bg-brand-600 text-white'
   }
-  const valueColor = lowerIsBetter
-    ? value <= 2 ? 'text-green-400' : value === 3 ? 'text-yellow-400' : 'text-red-400'
-    : 'text-brand-400'
+  const valueColor = direction ? ratingTextClass(value, direction) : 'text-brand-400'
   return (
     <div>
       <div className="flex justify-between mb-1.5">
@@ -265,8 +266,8 @@ function MissedSlotPanel({ slot, userId, isImperial, onFilled, defaultOpen }: Mi
 
           {/* Wellbeing */}
           <div className="space-y-3">
-            <RatingBar label="Energy Level"  value={energy} onChange={setEnergy} lowLabel="Exhausted"  highLabel="Excellent"    />
-            <RatingBar label="Sleep Quality" value={sleep}  onChange={setSleep}  lowLabel="Poor"        highLabel="Great"        />
+            <RatingBar label="Energy Level"  value={energy} onChange={setEnergy} lowLabel="Exhausted"  highLabel="Excellent"    higherIsBetter />
+            <RatingBar label="Sleep Quality" value={sleep}  onChange={setSleep}  lowLabel="Poor"        highLabel="Great"        higherIsBetter />
             <RatingBar label="Stress Level"  value={stress} onChange={setStress} lowLabel="Relaxed"     highLabel="Overwhelmed" lowerIsBetter  />
           </div>
 
@@ -660,8 +661,8 @@ export default function CheckIn() {
                 </div>
 
                 <div className="space-y-3">
-                  <RatingBar label="Energy Level"  value={editEnergy} onChange={setEditEnergy} lowLabel="Exhausted"   highLabel="Excellent"   />
-                  <RatingBar label="Sleep Quality" value={editSleep}  onChange={setEditSleep}  lowLabel="Poor"         highLabel="Great"        />
+                  <RatingBar label="Energy Level"  value={editEnergy} onChange={setEditEnergy} lowLabel="Exhausted"   highLabel="Excellent"   higherIsBetter />
+                  <RatingBar label="Sleep Quality" value={editSleep}  onChange={setEditSleep}  lowLabel="Poor"         highLabel="Great"        higherIsBetter />
                   <RatingBar label="Stress Level"  value={editStress} onChange={setEditStress} lowLabel="Relaxed"      highLabel="Overwhelmed" lowerIsBetter  />
                 </div>
 
@@ -997,8 +998,8 @@ export default function CheckIn() {
         {/* Wellbeing */}
         <Card title="How are you feeling?" subtitle="Optional">
           <div className="space-y-4">
-            <RatingBar label="Energy Level"  value={energyLevel}  onChange={setEnergyLevel}  lowLabel="Exhausted" highLabel="Excellent"   />
-            <RatingBar label="Sleep Quality" value={sleepQuality} onChange={setSleepQuality} lowLabel="Poor"       highLabel="Great"      />
+            <RatingBar label="Energy Level"  value={energyLevel}  onChange={setEnergyLevel}  lowLabel="Exhausted" highLabel="Excellent"   higherIsBetter />
+            <RatingBar label="Sleep Quality" value={sleepQuality} onChange={setSleepQuality} lowLabel="Poor"       highLabel="Great"      higherIsBetter />
             <RatingBar label="Stress Level"  value={stressLevel}  onChange={setStressLevel}  lowLabel="Relaxed"    highLabel="Overwhelmed" lowerIsBetter  />
           </div>
         </Card>
