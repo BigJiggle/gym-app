@@ -3,17 +3,17 @@ import { getDb, namedParams } from '../database/db'
 
 // meal_count/snack_count are stored unclamped otherwise — a plan generated from a
 // clamped value still reads the raw stored value next time (e.g. AI profile payloads,
-// `user.meal_count ?? 4` fallbacks), and an unreachable count (NaN, 0, 1, 50) can
-// reach the meal-template `mainSets[mealCount]` lookup downstream.
+// `user.meal_count ?? 4` fallbacks), and an out-of-range count (NaN, 0, 50) can
+// reach the meal-template builder downstream. Meals are clamped to 1–20, snacks 0–20.
 function clampMealCount(value: unknown): number | undefined {
   if (value === undefined) return undefined
   const n = Math.round(Number(value))
-  return Number.isFinite(n) ? Math.max(3, Math.min(6, n)) : 4
+  return Number.isFinite(n) ? Math.max(1, Math.min(20, n)) : 4
 }
 function clampSnackCount(value: unknown): number | undefined {
   if (value === undefined) return undefined
   const n = Math.round(Number(value))
-  return Number.isFinite(n) ? Math.max(0, Math.min(6, n)) : 0
+  return Number.isFinite(n) ? Math.max(0, Math.min(20, n)) : 0
 }
 // body_fat_pct has no DB constraint and flows straight into trend charts —
 // clamp to a physiologically plausible range instead of storing -5 or 150 as-is.

@@ -1,8 +1,10 @@
-import { Select } from '../../../components/ui'
+import { Select, Stepper } from '../../../components/ui'
 import type { OnboardingData } from '../useOnboarding'
 
-const MEAL_COUNTS = [3, 4, 5, 6]
-const SNACK_COUNTS = [0, 1, 2, 3]
+const MEAL_MIN = 1
+const MEAL_MAX = 20
+const SNACK_MIN = 0
+const SNACK_MAX = 20
 
 const COMMON_RESTRICTIONS = [
   'Gluten-free',
@@ -18,8 +20,11 @@ interface Props {
   update: (d: Partial<OnboardingData>) => void
 }
 
+const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n))
+
 export default function Step4Nutrition({ data, update }: Props) {
-  const meals = Math.max(3, data.meal_count ?? 4)
+  const meals = clamp(Math.round(data.meal_count ?? 4), MEAL_MIN, MEAL_MAX)
+  const snacks = clamp(Math.round(data.snack_count ?? 0), SNACK_MIN, SNACK_MAX)
 
   const toggleRestriction = (r: string) => {
     const prev = data.dietary_restrictions ?? []
@@ -57,54 +62,33 @@ export default function Step4Nutrition({ data, update }: Props) {
         <label className="text-sm font-medium text-gray-300 mb-2 block">
           Meals Per Day: <span className="text-brand-400 font-bold">{meals}</span>
         </label>
-        <div className="flex gap-2">
-          {MEAL_COUNTS.map((n) => (
-            <button
-              key={n}
-              type="button"
-              onClick={() => update({ meal_count: Math.max(3, n) })}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                meals === n
-                  ? 'bg-brand-600/20 border-brand-500 text-brand-400'
-                  : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'
-              }`}
-            >
-              {n}
-            </button>
-          ))}
-        </div>
+        <Stepper
+          value={meals}
+          min={MEAL_MIN}
+          max={MEAL_MAX}
+          onChange={(n) => update({ meal_count: n })}
+          ariaLabel="Meals per day"
+        />
         <p className="text-xs text-gray-500 mt-1.5">
-          Main meals only — snacks are set separately below.
+          Main meals only ({MEAL_MIN}–{MEAL_MAX}) — snacks are set separately below.
         </p>
       </div>
 
       {/* Snack Count */}
       <div>
         <label className="text-sm font-medium text-gray-300 mb-2 block">
-          Snacks Per Day:{' '}
-          <span className="text-brand-400 font-bold">
-            {data.snack_count ?? 0}
-          </span>
+          Snacks Per Day: <span className="text-brand-400 font-bold">{snacks}</span>
           <span className="text-gray-500 font-normal ml-1 text-xs">— ~200 kcal each, placed between main meals</span>
         </label>
-        <div className="flex gap-2">
-          {SNACK_COUNTS.map((n) => (
-            <button
-              key={n}
-              type="button"
-              onClick={() => update({ snack_count: n })}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                (data.snack_count ?? 0) === n
-                  ? 'bg-brand-600/20 border-brand-500 text-brand-400'
-                  : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'
-              }`}
-            >
-              {n === 0 ? 'None' : n}
-            </button>
-          ))}
-        </div>
+        <Stepper
+          value={snacks}
+          min={SNACK_MIN}
+          max={SNACK_MAX}
+          onChange={(n) => update({ snack_count: n })}
+          ariaLabel="Snacks per day"
+        />
         <p className="text-xs text-gray-500 mt-1.5">
-          Snacks are fixed at ~200 kcal; main meals split the remaining calories.
+          Snacks ({SNACK_MIN}–{SNACK_MAX}) are fixed at ~200 kcal; main meals split the remaining calories.
         </p>
       </div>
 

@@ -3,6 +3,7 @@ import { useUserStore } from '../../store/userStore'
 import { usePlanStore } from '../../store/planStore'
 import { useSettingsStore } from '../../store/settingsStore'
 import { StatCard } from '../../components/ui/Card'
+import Stepper from '../../components/ui/Stepper'
 import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
 import WeeklyMealView from './WeeklyMealView'
@@ -1535,24 +1536,15 @@ export default function Diet() {
                 {/* Snacks count */}
                 <div>
                   <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 block">
-                    Snacks/Day (~200 kcal each)
+                    Snacks/Day (0–20, ~200 kcal each)
                   </label>
-                  <div className="flex gap-2">
-                    {[0, 1, 2, 3].map((n) => (
-                      <button
-                        key={n}
-                        type="button"
-                        onClick={() => setPrefsSnackCount(n)}
-                        className={`flex-1 py-2 rounded-lg border text-xs font-medium transition-colors ${
-                          prefsSnackCount === n
-                            ? 'border-brand-500 bg-brand-600/20 text-brand-400'
-                            : 'border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-600'
-                        }`}
-                      >
-                        {n === 0 ? 'None' : n}
-                      </button>
-                    ))}
-                  </div>
+                  <Stepper
+                    value={Math.max(0, Math.min(20, Math.round(prefsSnackCount)))}
+                    min={0}
+                    max={20}
+                    onChange={setPrefsSnackCount}
+                    ariaLabel="Snacks per day"
+                  />
                 </div>
 
                 {/* Food exclusions */}

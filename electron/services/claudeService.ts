@@ -369,8 +369,8 @@ Use "reject" when: request is genuinely harmful or outrageous for bodybuilding �
 - training_experience_years: number (e.g. 3 or 1.5)
 - division: string (e.g. "Classic Physique", "Men's Physique", "Bikini", "Open Bodybuilding", "Wellness", "Figure", "Women's Physique", "212 Bodybuilding")
 - show_date: string in YYYY-MM-DD format (compute from today ${today} + user's timeframe)
-- meal_count: integer 3–6
-- snack_count: integer 0–3 (snacks per day, ~200 kcal each, placed between main meals)
+- meal_count: integer 1–20
+- snack_count: integer 0–20 (snacks per day, ~200 kcal each, placed between main meals)
 - dietary_preference: "omnivore" | "vegetarian" | "vegan"
 - cooking_time_pref: "quick" | "medium" | "chef"
 - meal_prep_style: "daily" | "batch" | "mixed"

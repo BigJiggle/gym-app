@@ -1,5 +1,50 @@
 # Change Agent Report
 
+## Run: 2026-07-03 (b)
+
+**STEP 1 — Regression guard:** No regressions. On the freshly pulled master,
+`npx tsc --noEmit`, `npm test` (137 tests), and `npx electron-vite build` all
+passed before any new work.
+
+- Setup note: `npm ci` needs `ELECTRON_SKIP_BINARY_DOWNLOAD=1` (electron binary
+  download is blocked by the sandbox proxy; the binary isn't needed for
+  tsc/tests/build).
+
+**Backlog item implemented:** _Meals 1–20 and snacks 0–20 in onboarding + settings._
+
+Widened meals per day from the old 3–6 clamp to **1–20** and snacks from 0–3 to
+**0–20**, generating correct plans at the extremes with no NaN/absurd portions.
+
+- `electron/services/nutritionEngine.ts` — `getMealTemplates` now cycles the 6
+  main-meal and 3 snack templates so any count yields exactly that many entries;
+  `generateNutritionPlan` meal clamp `3–6`→`1–20`, and snack count is resolved to a
+  finite value and clamped `0–20` (NaN previously survived `??` and zeroed out
+  main-meal calories).
+- `electron/ipc/userHandlers.ts` — DB-write clamps widened (`clampMealCount`
+  1–20, `clampSnackCount` 0–20).
+- `src/components/ui/Stepper.tsx` (new, exported from `ui/index.ts`) — reusable
+  −/＋ numeric stepper with a clamped editable field (never emits NaN or
+  out-of-range); replaces the fixed button rows in Onboarding Step4, Settings, and
+  Diet prefs.
+- `src/pages/Onboarding/steps/Step4Nutrition.tsx`, `src/pages/Settings/index.tsx`,
+  `src/pages/Diet/index.tsx` — button rows → Steppers (meals 1–20, snacks 0–20).
+- `electron/services/claudeService.ts` — AI setting-parse prompt bounds updated
+  (`meal_count 1–20`, `snack_count 0–20`).
+- `tests/unit/audit-logic.test.ts` — replaced stale "clamps to >=3" test; added
+  coverage for the 1/20/0/20 extremes (exact counts, correct snack count,
+  finite/positive calories, gram-clamped portions) and above-max clamp to 20.
+
+**Verification (all PASS):**
+- `npx tsc --noEmit` — clean.
+- `npm test` — 15 files, 139 tests (+2 new).
+- `npx electron-vite build` — built successfully.
+
+**Deferred:** Nothing for this item. High counts repeat meal templates (20 meals
+cycle Breakfast…Dinner four times) — acceptable per acceptance criteria; richer
+template variety would be a separate enhancement.
+
+---
+
 ## Run: 2026-07-03
 
 **STEP 1 — Regression guard:** No regressions. `tsc --noEmit`, `npm test`

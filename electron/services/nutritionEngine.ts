@@ -679,9 +679,23 @@ function getMealTemplates(
     5: [0, 1, 2, 4, 5],
     6: [0, 1, 2, 3, 4, 5],
   }
-  const mainIndices = (mainSets[mainCount] ?? mainSets[3]).slice(0, mainCount)
+  const mainOrder = [0, 1, 2, 3, 4, 5]
+  let mainIndices: number[]
+  if (mainSets[mainCount]) {
+    // Curated combinations for the common 3–6 range
+    mainIndices = mainSets[mainCount].slice(0, mainCount)
+  } else if (mainCount <= 2) {
+    // 1–2 meals: take the earliest slots from the 3-meal set (Breakfast, Lunch)
+    mainIndices = mainSets[3].slice(0, Math.max(0, mainCount))
+  } else {
+    // Beyond the six distinct main templates (7+): cycle through all six in order,
+    // repeating as needed so any count yields exactly `mainCount` main meals.
+    mainIndices = Array.from({ length: mainCount }, (_, i) => mainOrder[i % mainOrder.length])
+  }
   // Snack templates: 6=Mid-Morning Snack (10:30), 7=Afternoon Snack (15:30), 8=Evening Snack (21:00)
-  const snackIndices = [6, 7, 8].slice(0, snackCount)
+  // Cycle through the three distinct snack slots so any snack count is supported.
+  const snackOrder = [6, 7, 8]
+  const snackIndices = Array.from({ length: Math.max(0, snackCount) }, (_, i) => snackOrder[i % snackOrder.length])
   const combined = [...mainIndices, ...snackIndices].map((i) => all[i])
   combined.sort((a, b) => a.time.localeCompare(b.time))
   return combined
@@ -729,18 +743,25 @@ export function generateNutritionPlan(input: NutritionInput): NutritionPlan {
   const carbCals = Math.max(0, calories - proteinCals - fatCals)
   const carbs_g = Math.round(carbCals / 4)
 
-  const resolvedSnackCount = input.snack_count ?? (input.include_snacks ? 1 : 0)
+  // A non-finite snack_count (NaN) survives `??` (only null/undefined default) and would
+  // poison buildMeals' `mainCount = length - snackCount` math, zeroing out main-meal
+  // calories. Resolve to a finite value, then clamp to the supported 0–20 range.
+  const rawSnackCount = Number.isFinite(input.snack_count)
+    ? (input.snack_count as number)
+    : (input.snack_count == null && input.include_snacks ? 1 : 0)
+  const resolvedSnackCount = Math.max(0, Math.min(20, Math.round(rawSnackCount)))
 
   // A non-finite meal_count (e.g. NaN) survives Math.max/Math.min unchanged — NaN
-  // propagating into buildMeals' mainSets[mealCount] lookup and .slice(0, NaN) yields
-  // zero main meals. Fall back to 4 before clamping so the result is always finite.
+  // propagating into the meal-template builder and .slice(0, NaN) yields zero main
+  // meals. Fall back to 4 before clamping so the result is always finite. Meals are
+  // supported from 1 to 20.
   const safeMealCount = Number.isFinite(input.meal_count) ? input.meal_count : 4
   const meals = buildMeals(
     calories,
     protein_g,
     carbs_g,
     fat_g,
-    Math.max(3, Math.min(6, safeMealCount)),
+    Math.max(1, Math.min(20, Math.round(safeMealCount))),
     input.dietary_preference,
     input.food_exclusions,
     input.food_preferences,

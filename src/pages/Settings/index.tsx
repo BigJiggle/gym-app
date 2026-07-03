@@ -3,6 +3,7 @@ import { useUserStore } from '../../store/userStore'
 import { usePlanStore } from '../../store/planStore'
 import { useSettingsStore } from '../../store/settingsStore'
 import { Select } from '../../components/ui/Input'
+import Stepper from '../../components/ui/Stepper'
 import Card from '../../components/ui/Card'
 import Badge from '../../components/ui/Badge'
 import GoalPickerModal from '../../components/GoalPickerModal'
@@ -442,15 +443,14 @@ export default function Settings() {
                     <option value="vegan">Vegan</option>
                   </select></div>
                 <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Main Meals/Day</label>
-                  <div className="flex gap-1.5">
-                    {[3, 4, 5, 6].map((n) => (
-                      <button key={n} type="button" onClick={() => setEditForm({...editForm, meal_count: n})}
-                        className={`flex-1 py-1.5 rounded-lg border text-xs transition-colors ${editForm.meal_count === n ? 'bg-brand-600/20 border-brand-500 text-brand-400' : 'bg-gray-800 border-gray-700 text-gray-400'}`}>
-                        {n}
-                      </button>
-                    ))}
-                  </div>
+                  <label className="text-xs text-gray-500 mb-1 block">Main Meals/Day (1–20)</label>
+                  <Stepper
+                    value={Math.max(1, Math.min(20, Math.round(editForm.meal_count ?? 4)))}
+                    min={1}
+                    max={20}
+                    onChange={(n) => setEditForm({ ...editForm, meal_count: n })}
+                    ariaLabel="Main meals per day"
+                  />
                 </div>
                 <div><label className="text-xs text-gray-500 mb-1 block">Cook Time</label>
                   <select value={editForm.cooking_time_pref} onChange={(e) => setEditForm({...editForm, cooking_time_pref: e.target.value as any})} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200">
@@ -484,15 +484,14 @@ export default function Settings() {
                   </div>
                 </div>
                 <div className="col-span-2">
-                  <label className="text-xs text-gray-500 mb-1 block">Snacks/Day (~200 kcal each)</label>
-                  <div className="flex gap-1.5">
-                    {[0, 1, 2, 3].map((n) => (
-                      <button key={n} type="button" onClick={() => setEditForm({...editForm, snack_count: n})}
-                        className={`flex-1 py-1.5 rounded-lg border text-xs transition-colors ${editForm.snack_count === n ? 'bg-brand-600/20 border-brand-500 text-brand-400' : 'bg-gray-800 border-gray-700 text-gray-400'}`}>
-                        {n === 0 ? 'None' : n}
-                      </button>
-                    ))}
-                  </div>
+                  <label className="text-xs text-gray-500 mb-1 block">Snacks/Day (0–20, ~200 kcal each)</label>
+                  <Stepper
+                    value={Math.max(0, Math.min(20, Math.round(editForm.snack_count ?? 0)))}
+                    min={0}
+                    max={20}
+                    onChange={(n) => setEditForm({ ...editForm, snack_count: n })}
+                    ariaLabel="Snacks per day"
+                  />
                 </div>
               </div>
             </div>

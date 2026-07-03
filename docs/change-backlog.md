@@ -35,12 +35,18 @@ Never delete items; only check them off.
   (was neutral brand) and Progress wellness tiles reuse it (fixes Sleep's
   inconsistent blue "good" → green); added ratingColor unit tests; tsc/tests/build clean.
 
-- [ ] **Meals 1–20 and snacks 0–20 in onboarding + settings.** Allow meals per day
+- [x] **Meals 1–20 and snacks 0–20 in onboarding + settings.** Allow meals per day
   from 1 to 20 (currently the engine clamps to a minimum of 3) and snacks per day
   from 0 to 20. Update the Onboarding inputs, the Settings inputs, validation, and
   the `nutritionEngine` clamps (change the meal minimum from 3 to 1). Acceptance:
   can select any meals 1–20 and snacks 0–20; plans generate correctly at the
   extremes (1 meal, 20 meals, 0 snacks, 20 snacks) with no NaN/absurd portions.
+  — done 2026-07-03: engine clamp changed 3–6→1–20 (meals) and snacks resolved+clamped
+  0–20 with NaN guard; `getMealTemplates` now cycles the 6 main / 3 snack templates to
+  hit any count; IPC `clampMealCount`/`clampSnackCount` widened to 1–20/0–20; new
+  reusable `<Stepper>` UI replaces the fixed 3–6 / 0–3 button rows in Onboarding Step4,
+  Settings, and Diet prefs; claudeService prompt bounds updated; added audit-logic tests
+  for the 1/20/0/20 extremes and above-max clamping. tsc/tests(139)/build all clean.
 
 - [ ] **Reset data keeps weigh-ins and water intake.** When the user resets their
   data, clear ALL data EXCEPT: weigh-in history (daily weight log + check-in weight

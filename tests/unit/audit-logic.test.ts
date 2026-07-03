@@ -81,9 +81,41 @@ describe('audit logic', () => {
     expect(Number.isFinite(plan.calories_target)).toBe(true)
   })
 
-  it('meal_count < 3 clamps to >=3', () => {
-    const plan = generateNutritionPlan({ ...base, meal_count: 1, weeks_out: 8 })
-    expect(plan.meals.length).toBeGreaterThanOrEqual(3)
+  it('meal_count 1 yields exactly 1 main meal (no clamp to 3)', () => {
+    const plan = generateNutritionPlan({ ...base, meal_count: 1, snack_count: 0, weeks_out: 8 })
+    expect(plan.meals.length).toBe(1)
+    expect(plan.meals[0].calories).toBeGreaterThan(0)
+    expect(Number.isFinite(plan.meals[0].calories)).toBe(true)
+  })
+
+  it('extreme meal/snack counts (1–20) generate the exact number of entries with no NaN/absurd portions', () => {
+    for (const [mc, sc] of [[1, 0], [20, 0], [1, 20], [20, 20], [3, 20]] as const) {
+      const plan = generateNutritionPlan({ ...base, meal_count: mc, snack_count: sc, weeks_out: 8 })
+      expect(plan.meals.length, `mc=${mc} sc=${sc}`).toBe(mc + sc)
+      const snacks = plan.meals.filter(m => m.name.toLowerCase().includes('snack'))
+      expect(snacks.length, `snack count mc=${mc} sc=${sc}`).toBe(sc)
+      for (const m of plan.meals) {
+        expect(Number.isFinite(m.calories), `cal finite mc=${mc} sc=${sc}`).toBe(true)
+        expect(m.calories, `cal >0 mc=${mc} sc=${sc}`).toBeGreaterThan(0)
+        expect(Number.isFinite(m.protein_g)).toBe(true)
+        expect(m.protein_g).toBeGreaterThanOrEqual(0)
+        for (const f of m.foods) {
+          expect(f, `food mc=${mc} sc=${sc}`).not.toContain('undefined')
+          expect(f).not.toContain('NaN')
+          // Portions are gram-clamped, never negative or absurd
+          const g = /\((\d+)g/.exec(f)
+          if (g) expect(Number(g[1])).toBeLessThanOrEqual(280)
+        }
+      }
+    }
+  })
+
+  it('meal/snack counts above supported max are clamped to 20', () => {
+    const plan = generateNutritionPlan({ ...base, meal_count: 50, snack_count: 99, weeks_out: 8 })
+    const snacks = plan.meals.filter(m => m.name.toLowerCase().includes('snack')).length
+    const mains = plan.meals.length - snacks
+    expect(mains).toBe(20)
+    expect(snacks).toBe(20)
   })
 
   it('maintain off-season is true maintenance, but maintain+show applies a mild deficit that eases at peak', () => {
