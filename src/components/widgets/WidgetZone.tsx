@@ -3,10 +3,12 @@ import { Link } from 'react-router-dom'
 import { useWidgets } from './useWidgets'
 import type { WidgetId } from './useWidgets'
 import { getWidget } from './registry'
+import { useHasShow } from './competitionLogs'
 import WidgetFrame from './WidgetFrame'
 
 export default function WidgetZone() {
   const { enabledIds, disable, reorder } = useWidgets()
+  const hasShow = useHasShow()
   const [editing, setEditing] = useState(false)
   // Source index of the widget being dragged, and the card currently hovered as
   // a drop target — both drive the visual "you can / can't drop here" cues.
@@ -38,6 +40,14 @@ export default function WidgetZone() {
     if (window.confirm('Are you sure you want to remove this widget?')) disable(id)
   }
 
+  // Keep the widget's real index in the stored list (so reorder stays correct)
+  // while dropping unknown ids and competition-only widgets that aren't
+  // unlocked yet.
+  const visible = enabledIds
+    .map((id, index) => ({ id, index, def: getWidget(id) }))
+    .filter((e) => e.def && (!e.def.competitionOnly || hasShow)) as
+      { id: WidgetId; index: number; def: NonNullable<ReturnType<typeof getWidget>> }[]
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -58,23 +68,21 @@ export default function WidgetZone() {
         </div>
       </div>
 
-      {editing && enabledIds.length > 1 && (
+      {editing && visible.length > 1 && (
         <p className="text-xs text-gray-500">
           Drag a widget onto an outlined slot to place it there. Release over the dimmed
           widget or empty space to cancel.
         </p>
       )}
 
-      {enabledIds.length === 0 ? (
+      {visible.length === 0 ? (
         <div className="bg-gray-900 border border-dashed border-gray-700 rounded-xl p-6 text-center">
           <p className="text-sm text-gray-400 mb-2">No widgets on your dashboard.</p>
           <Link to="/widgets" className="text-xs font-medium text-brand-400 hover:text-brand-300">+ Add Widgets</Link>
         </div>
       ) : (
         <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
-          {enabledIds.map((id, index) => {
-            const def = getWidget(id)
-            if (!def) return null
+          {visible.map(({ id, index, def }) => {
             const { Component } = def
             const isSource = dragging === index
             const isTarget = overIndex === index && dragging !== null && dragging !== index

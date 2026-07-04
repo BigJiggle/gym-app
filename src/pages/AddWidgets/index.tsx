@@ -2,10 +2,14 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { WIDGETS } from '../../components/widgets/registry'
 import { useWidgets } from '../../components/widgets/useWidgets'
+import { useHasShow } from '../../components/widgets/competitionLogs'
 
 export default function AddWidgets() {
   const { enabledIds, enable, disable } = useWidgets()
+  const hasShow = useHasShow()
   const [hovered, setHovered] = useState<string | null>(null)
+  // Competition-only widgets aren't offered in the catalog until a show exists.
+  const catalog = WIDGETS.filter((w) => !w.competitionOnly || hasShow)
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
@@ -22,7 +26,7 @@ export default function AddWidgets() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {WIDGETS.map((w) => {
+        {catalog.map((w) => {
           const isEnabled = enabledIds.includes(w.id)
           const { Component } = w
           return (

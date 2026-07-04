@@ -62,12 +62,20 @@ Never delete items; only check them off.
   key) live in the DB `settings` table so they survive untouched. Added resetData unit
   tests (11). tsc/tests(150)/build all clean.
 
-- [ ] **Competition-only widgets, gated on show selection.** Turn posing practice,
+- [x] **Competition-only widgets, gated on show selection.** Turn posing practice,
   supplements, sleep, and daily condition into widgets (dashboard widget system in
   `src/components/widgets`). When NO competition/show is selected, these
   competition-only widgets are removed/hidden and not offered in the Add Widgets
   catalog; when a show exists, they are available. Acceptance: no show → none of
-  these four appear; with a show → all available as widgets.
+  these four appear; with a show → all available as widgets. — done 2026-07-04:
+  extracted the four inline Dashboard sections into `PosingWidget`/`SupplementWidget`/
+  `SleepWidget`/`ConditionWidget`, registered them with a `competitionOnly` flag, and
+  gated them behind `useHasShow()` (shows.length>0 || user.show_date) in both
+  `WidgetZone` (filtered by real stored index so reorder stays correct) and the
+  Add Widgets catalog. Persisted logs moved to a shared reactive localStorage store
+  (`localStore.ts`/`competitionLogs.ts`) so the Dashboard Weekly Prep Scorecard still
+  reads posing/sleep live. Added 5 unit tests (standalone render, logging persistence,
+  WidgetZone hide/show gating, catalog gating). tsc/tests(155)/build all clean.
 
 - [ ] **Simplify Training & Nutrition tabs into widgets.** The Training history tab
   and the Nutrition/Diet page show too much at once. Break their content into

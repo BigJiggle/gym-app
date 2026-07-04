@@ -1,9 +1,17 @@
 import { useCallback, useSyncExternalStore } from 'react'
 
-export type WidgetId = 'water' | 'cardio' | 'sessions-week' | 'weekly-volume'
+export type WidgetId =
+  | 'water' | 'cardio' | 'sessions-week' | 'weekly-volume'
+  | 'posing' | 'supplements' | 'sleep' | 'condition'
 
-// Canonical order widgets appear in when none have been reordered/added.
-export const ALL_WIDGET_IDS: WidgetId[] = ['water', 'cardio', 'sessions-week', 'weekly-volume']
+// Canonical order widgets appear in when none have been reordered/added. The
+// competition-only widgets (posing/supplements/sleep/condition) are included so
+// a fresh install with a show sees them by default; WidgetZone/AddWidgets hide
+// them until a show is selected.
+export const ALL_WIDGET_IDS: WidgetId[] = [
+  'water', 'cardio', 'sessions-week', 'weekly-volume',
+  'posing', 'supplements', 'sleep', 'condition',
+]
 export const STORAGE_KEY = 'dashboard_widgets'
 
 function read(): WidgetId[] {
