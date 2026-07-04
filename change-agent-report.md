@@ -1,5 +1,56 @@
 # Change Agent Report
 
+## Run: 2026-07-04
+
+**STEP 1 — Regression guard:** No regressions. On the freshly pulled master:
+- `npx tsc --noEmit` — PASS (clean)
+- `npm test` — PASS (139 tests, 15 files)
+- `npx electron-vite build` — PASS
+
+Note: `npm ci` initially failed because Electron's binary postinstall download
+from GitHub releases is blocked by the environment egress policy (403). Installed
+with `ELECTRON_SKIP_BINARY_DOWNLOAD=1` — the binary isn't needed for
+tsc/tests/build. No code change required.
+
+**STEP 2 — Backlog item implemented:** *Reset data keeps weigh-ins and water
+intake* (topmost unchecked). On reset, everything is wiped EXCEPT weigh-in history
+(daily weight log + check-in weight history) and water intake logs.
+
+Root cause of the gap: the old reset did `DELETE FROM users` (cascades, wiping
+`weekly_checkins` = check-in weigh-in history) but did **nothing** to localStorage,
+so all app-local logs (cardio, sleep, posing, condition, supplements, refeed,
+dashboard widgets, milestones) survived a "reset" while check-in weigh-ins were
+lost. Both wrong per the item.
+
+Fix:
+- `electron/ipc/userHandlers.ts` — `user:resetAll` snapshots each check-in's
+  `(check_in_date, weight_kg)` before the cascade delete, returns them as
+  `checkinWeights`.
+- `src/utils/resetData.ts` (new) — `resetLocalData(storage, checkinWeights)` folds
+  the preserved check-in weigh-ins into `daily_weight_log` (existing daily entry
+  wins on a same-date clash; invalid/NaN/non-positive dropped; sorted asc), then
+  removes every localStorage key that isn't preserved. Preserved keys:
+  `daily_weight_log`, `water_target_ml`, `water_ml_*`.
+- `src/store/userStore.ts` — `resetAllData` calls `resetLocalData` with the returned
+  weigh-ins (try/catch so a localStorage failure can't undo the successful DB reset).
+- `src/types/index.ts` — widened `resetAllData` return type.
+- `src/pages/Settings/index.tsx` — reset card copy now notes weigh-ins + water are kept.
+
+App settings (theme/units/Claude key) live in the DB `settings` table (not
+localStorage), so they survive both the cascade delete and the localStorage sweep —
+matching the existing "settings are kept" behavior.
+
+**Files changed:** `electron/ipc/userHandlers.ts`, `src/utils/resetData.ts` (new),
+`src/store/userStore.ts`, `src/types/index.ts`, `src/pages/Settings/index.tsx`,
+`tests/unit/resetData.test.ts` (new, 11 tests), `docs/change-backlog.md`.
+
+**Verification:** `npx tsc --noEmit` PASS · `npm test` PASS (150 tests, 16 files;
++11 new) · `npx electron-vite build` PASS.
+
+**Deferred:** Nothing for this item. Remaining backlog items untouched (one per run).
+
+---
+
 ## Run: 2026-07-03 (b)
 
 **STEP 1 — Regression guard:** No regressions. On the freshly pulled master,

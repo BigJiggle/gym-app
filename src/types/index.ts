@@ -282,7 +282,7 @@ declare global {
       saveSetsBatch: (workoutLogId: number, sets: unknown[]) => Promise<{ count: number }>
       cancelWorkout: (workoutLogId: number) => Promise<{ success: boolean }>
       // Data reset
-      resetAllData: () => Promise<{ success: boolean }>
+      resetAllData: () => Promise<{ success: boolean; checkinWeights?: { date: string; weight_kg: number }[] }>
       // Off-season goal selection
       selectOffSeasonGoal: (userId: number, goal: string) => Promise<DietPlan>
       previewGoalCalories: (userId: number) => Promise<Record<string, number>>

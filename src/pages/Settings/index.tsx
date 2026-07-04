@@ -805,7 +805,7 @@ export default function Settings() {
       {/* Reset Data */}
       <Card title="Reset App Data">
         <p className="text-sm text-gray-400 mb-4">
-          Permanently deletes your profile, plans, check-ins, workout logs, and all shows. App settings (theme, units, Claude key) are kept. Use this to restart onboarding.
+          Permanently deletes your profile, plans, check-ins, workout logs, and all shows. Your weigh-in history and water intake logs are kept, as are app settings (theme, units, Claude key). Use this to restart onboarding.
         </p>
         <button
           onClick={async () => {

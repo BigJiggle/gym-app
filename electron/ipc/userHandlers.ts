@@ -106,9 +106,16 @@ export function registerUserHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle('user:resetAll', () => {
     const db = getDb()
+    // Preserve weigh-in history: snapshot each check-in's date + weight before the
+    // cascade delete wipes weekly_checkins, so the renderer can fold them into the
+    // persistent daily weight log. Everything else in the DB is intentionally wiped.
+    const checkinWeights = (db
+      .prepare('SELECT check_in_date, weight_kg FROM weekly_checkins ORDER BY check_in_date ASC')
+      .all([]) as Array<{ check_in_date: string; weight_kg: number }>)
+      .map((r) => ({ date: r.check_in_date, weight_kg: r.weight_kg }))
     // Deleting all users cascades to every linked table (plans, checkins, shows, workouts, etc.)
     db.prepare('DELETE FROM users').run([])
-    return { success: true }
+    return { success: true, checkinWeights }
   })
 }
 

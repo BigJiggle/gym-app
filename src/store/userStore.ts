@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { User, CreateUserInput, Show } from '../types'
+import { resetLocalData } from '../utils/resetData'
 
 interface UserStore {
   user: User | null
@@ -108,7 +109,14 @@ export const useUserStore = create<UserStore>((set, get) => ({
   },
 
   resetAllData: async () => {
-    await window.api.resetAllData()
+    const result = await window.api.resetAllData()
+    // Wipe all app-local localStorage data EXCEPT weigh-in history and water
+    // intake, folding the preserved check-in weigh-ins into the daily weight log.
+    try {
+      resetLocalData(localStorage, result?.checkinWeights ?? [])
+    } catch {
+      /* localStorage unavailable — DB reset already succeeded */
+    }
     set({ user: null, shows: [] })
   },
 }))

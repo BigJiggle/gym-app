@@ -48,11 +48,19 @@ Never delete items; only check them off.
   Settings, and Diet prefs; claudeService prompt bounds updated; added audit-logic tests
   for the 1/20/0/20 extremes and above-max clamping. tsc/tests(139)/build all clean.
 
-- [ ] **Reset data keeps weigh-ins and water intake.** When the user resets their
+- [x] **Reset data keeps weigh-ins and water intake.** When the user resets their
   data, clear ALL data EXCEPT: weigh-in history (daily weight log + check-in weight
   history) and water intake logs. Everything else is wiped. Acceptance: after a
   reset, weigh-in history and water intake persist; all other data is gone. Find
   the reset flow (Settings) and the relevant DB tables / localStorage keys.
+  — done 2026-07-04: reset previously wiped the DB (cascade, incl. check-in weigh-ins)
+  but left ALL localStorage logs untouched. New `src/utils/resetData.ts` (`resetLocalData`)
+  now wipes every localStorage key except `daily_weight_log`, `water_ml_*`, and
+  `water_target_ml`; `user:resetAll` snapshots weekly_checkins (date+weight) before the
+  cascade delete and the store folds them into `daily_weight_log` (existing daily entry
+  wins on a same-date clash, invalid entries dropped). App settings (theme/units/Claude
+  key) live in the DB `settings` table so they survive untouched. Added resetData unit
+  tests (11). tsc/tests(150)/build all clean.
 
 - [ ] **Competition-only widgets, gated on show selection.** Turn posing practice,
   supplements, sleep, and daily condition into widgets (dashboard widget system in
