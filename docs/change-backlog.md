@@ -93,11 +93,22 @@ Never delete items; only check them off.
   (store defaults/dedupe/independence + controls toggle). tsc/tests(164)/build clean.
   Drag-reorder deferred to the next backlog item (its dependency).
 
-- [ ] **Rearrange Training & Nutrition widgets.** Enable drag-reorder (Rearrange
+- [x] **Rearrange Training & Nutrition widgets.** Enable drag-reorder (Rearrange
   toggle + long-press, dashed drop-target cues) for the widgets on the Training and
   Nutrition tabs, reusing the dashboard `WidgetZone` mechanics. Acceptance: user can
   reorder widgets on both tabs and the order persists across reloads. (Depends on
-  the previous item.)
+  the previous item.) — done 2026-07-05: new `TabWidgetZone` reuses the dashboard
+  WidgetZone drag mechanics (Rearrange toggle + long-press-to-enter + dashed/ring
+  drop cues) but renders caller-supplied nodes in the store's persisted order and
+  delegates add/remove to `TabWidgetControls` (given a new `actionsSlot` prop for the
+  Rearrange button). Training "My Plan" and Nutrition "Meal Plan" now pass their
+  section cards as a `nodes` map instead of gating inline JSX on set membership; the
+  zone renders enabled ids in stored order and reorders via `store.reorder`, keeping
+  each widget's REAL stored index so slots skipped by a null node stay aligned. Reorder
+  persists through each tab's existing distinct localStorage key (`training_plan_widgets`
+  / `nutrition_plan_widgets`). Added 5 TabWidgetZone unit tests (stored-order render,
+  non-canonical order, drag-reorder persistence, null-node index alignment, single-widget
+  toggle hidden). tsc/tests(169)/build all clean.
 
 - [ ] **Cook time affects meal quality.** Make the onboarding "cook time" input
   actually influence meal generation: more available time → more elaborate/better

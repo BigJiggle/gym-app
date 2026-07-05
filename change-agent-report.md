@@ -1,49 +1,53 @@
 # Change Agent Report
 
-## 2026-07-05
+## Run 2026-07-05 (Rearrange Training & Nutrition widgets)
 
-**STEP 1 — Regression guard:** No regressions. Baseline `npx tsc --noEmit`,
-`npm test` (155 tests), and `npx electron-vite build` all passed before any change.
-(Note: `npm ci` needed `ELECTRON_SKIP_BINARY_DOWNLOAD=1` — the electron binary
-download is 403'd through the agent proxy; not needed for tsc/tests/build.)
+### STEP 1 — Regression guard
+No code regressions. Note: `npm ci` initially failed because Electron's
+postinstall step tries to download the Electron binary over the network and that
+download failed (the package graph itself installed fine). Re-ran with
+`ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci`, which is safe here — tsc, vitest and
+`electron-vite build` do not need the Electron runtime binary. Baseline
+verification then passed clean (tsc 0 errors, 164 tests, build ✓).
 
-**Backlog item implemented:** "Simplify Training & Nutrition tabs into widgets."
+### Backlog item implemented
+**Rearrange Training & Nutrition widgets** (topmost unchecked) — drag-reorder for
+the widget cards on the Training "My Plan" and Nutrition "Meal Plan" tabs, reusing
+the dashboard `WidgetZone` mechanics, with order persisted across reloads.
 
-Broke the Training "My Plan" tab and the Nutrition "Meal Plan" tab into
-add/removable, persisted widgets, reusing the dashboard widget concept.
+What changed:
+- New `TabWidgetZone` component reuses the dashboard WidgetZone drag mechanics —
+  Rearrange toggle, long-press-to-enter rearrange mode (ignoring presses on the
+  card's own controls), and HTML5 drag with dashed-outline / ring "Drop here" cues.
+  Instead of registry components it renders caller-supplied `nodes` (already full
+  cards) in the store's persisted order, and delegates add/remove to
+  `TabWidgetControls`.
+- `TabWidgetControls` gained an optional `actionsSlot` prop so the zone can place
+  its Rearrange button in the same header row as Customize.
+- Training and Diet pages now pass their section cards as a `nodes` map keyed by
+  widget id (previously each card was inline JSX gated on `widgets.has(id)` in a
+  fixed source order). The zone renders enabled ids in stored order and reorders
+  via `store.reorder(from, to)` using each widget's REAL stored index, so slots
+  whose node is currently null (e.g. countdown with no show date, or a widget with
+  no data yet) are skipped without breaking reorder alignment. The Nutrition refeed
+  widget's two adjacent JSX blocks were combined into one fragment node.
+- Reorder persists through each tab's existing distinct localStorage key
+  (`training_plan_widgets` / `nutrition_plan_widgets`) — no new keys, no migration.
 
-- New `src/components/widgets/createWidgetStore.ts` — generic factory
-  (`createWidgetStore(storageKey, allIds, defaultIds?)`) generalizing the
-  dashboard `useWidgets` enabled-list logic: reactive `useSyncExternalStore`,
-  drops unknown ids, de-dupes corrupted storage, supports a trimmed default set
-  distinct from the full catalog. Dashboard `useWidgets` left untouched.
-- New `src/components/widgets/TabWidgetControls.tsx` — reusable "Customize"
-  control (shows N/total shown, add/remove catalog with descriptions).
-- New `src/components/widgets/tabWidgets.ts` — per-tab metadata + stores with
-  distinct keys `training_plan_widgets` / `nutrition_plan_widgets` and trimmed
-  defaults (Training: countdown, sessions-week, volume; Nutrition: today's intake,
-  water, meal schedule).
-- `src/pages/Training/index.tsx` — render `TabWidgetControls` atop the plan tab;
-  each summary card (countdown, phase, sessions-this-week, calorie-burn, volume)
-  renders only when its id is enabled. Session cards / AI refine stay always-on.
-- `src/pages/Diet/index.tsx` — same pattern for 7 cards (today's intake, water,
-  cardio, refeed, adherence streak, this-week, meal schedule). Macro stat cards
-  and the meals list stay always-on.
+### Files changed
+- `src/components/widgets/TabWidgetZone.tsx` (new)
+- `src/components/widgets/TabWidgetControls.tsx` (added `actionsSlot` prop)
+- `src/pages/Training/index.tsx` (widget block → `nodes` map + `<TabWidgetZone>`)
+- `src/pages/Diet/index.tsx` (widget block → `nodes` map + `<TabWidgetZone>`)
+- `tests/unit/tabWidgetZone.test.tsx` (new, 5 tests)
+- `docs/change-backlog.md` (item checked off)
 
-Chose an inline-guard approach (each card gated by a `store.useEnabledIds()` set)
-rather than lifting hundreds of lines of JSX out of these 985- and 1862-line
-pages — the minimum, lowest-risk change that satisfies the acceptance.
+### Verification
+- `npx tsc --noEmit` — PASS (0 errors)
+- `npm test` — PASS (169 tests, up from 164)
+- `npx electron-vite build` — PASS
 
-**Files changed:** `src/components/widgets/createWidgetStore.ts` (new),
-`src/components/widgets/TabWidgetControls.tsx` (new),
-`src/components/widgets/tabWidgets.ts` (new),
-`tests/unit/tabWidgets.test.tsx` (new, 9 tests),
-`src/pages/Training/index.tsx`, `src/pages/Diet/index.tsx`,
-`docs/change-backlog.md`.
-
-**Verification:** `npx tsc --noEmit` PASS · `npm test` PASS (164 tests) ·
-`npx electron-vite build` PASS.
-
-**Deferred:** Drag-reorder for these tabs is the next backlog item ("Rearrange
-Training & Nutrition widgets") and depends on this one — intentionally left out to
-respect one-item-per-run. The new store already exposes `reorder` for that follow-up.
+### Deferred
+Nothing for this item. Remaining backlog items (cook time → meal quality, meal-prep
+style threading, refeed-day meal adjustment, adaptive nutrition, AI-tailored
+onboarding) are untouched and left for future runs.

@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
+import type { ReactNode } from 'react'
 import { useUserStore } from '../../store/userStore'
 import { usePlanStore } from '../../store/planStore'
 import { useSettingsStore } from '../../store/settingsStore'
@@ -8,7 +9,7 @@ import WorkoutSession from './WorkoutSession'
 import SessionEditor from './SessionEditor'
 import WorkoutLogEditor from './WorkoutLogEditor'
 import WorkoutStats from './WorkoutStats'
-import TabWidgetControls from '../../components/widgets/TabWidgetControls'
+import TabWidgetZone from '../../components/widgets/TabWidgetZone'
 import { TRAINING_WIDGET_META, trainingWidgetStore } from '../../components/widgets/tabWidgets'
 import type { TrainingSession, ExerciseLibraryItem } from '../../types'
 import { parseLocalDate } from '../../utils/dates'
@@ -56,10 +57,6 @@ export default function Training() {
   const [editingLogExercises, setEditingLogExercises] = useState<import('../../types').Exercise[] | null>(null)
   const [exerciseLibrary, setExerciseLibrary] = useState<ExerciseLibraryItem[]>([])
   const [startingWorkout, setStartingWorkout] = useState(false)
-
-  // Which "My Plan" summary cards the user has chosen to show (add/removable
-  // widgets, persisted per-tab). Set membership gates each card below.
-  const trainingWidgets = new Set(trainingWidgetStore.useEnabledIds())
 
   useEffect(() => {
     if (!user?.id) return
@@ -375,11 +372,14 @@ export default function Training() {
 
       {tab === 'plan' && (
         <>
-          {/* Add/remove the summary cards below */}
-          <TabWidgetControls store={trainingWidgetStore} items={TRAINING_WIDGET_META} label="Plan widgets" />
-
-          {/* Show Day Countdown — the single most important number for a prep athlete */}
-          {trainingWidgets.has('countdown') && user?.show_date && (() => {
+          {/* Add / remove / rearrange the summary cards below */}
+          <TabWidgetZone
+            store={trainingWidgetStore}
+            items={TRAINING_WIDGET_META}
+            label="Plan widgets"
+            nodes={{
+              /* Show Day Countdown — the single most important number for a prep athlete */
+              countdown: user?.show_date && (() => {
             const todayMidnight = new Date(); todayMidnight.setHours(0, 0, 0, 0)
             const showMidnight = new Date(user.show_date + 'T00:00:00')
             const totalDays = Math.round((showMidnight.getTime() - todayMidnight.getTime()) / 86400000)
@@ -432,12 +432,12 @@ export default function Training() {
                 <p className="text-xs text-gray-700 mt-1.5">{prepPct}% of prep complete</p>
               </div>
             )
-          })()}
+          })(),
 
-          {/* Phase summary */}
-          {trainingWidgets.has('phase') && (
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <div className="grid grid-cols-3 gap-4 text-center">
+              /* Phase summary */
+              phase: (
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                <div className="grid grid-cols-3 gap-4 text-center">
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wider">Phase</p>
                 <p className={`text-sm font-semibold mt-1 capitalize ${PHASE_COLOR[trainingPlan.phase] ?? 'text-gray-200'}`}>
@@ -457,10 +457,10 @@ export default function Training() {
               </div>
             </div>
           </div>
-          )}
+              ),
 
-          {/* Weekly sessions completion tracker */}
-          {trainingWidgets.has('sessions-week') && (() => {
+              /* Weekly sessions completion tracker */
+              'sessions-week': (() => {
             const today = new Date()
             const jsDay = today.getDay()
             const daysFromMon = jsDay === 0 ? 6 : jsDay - 1
@@ -525,10 +525,10 @@ export default function Training() {
                 )}
               </div>
             )
-          })()}
+          })(),
 
-          {/* Weekly calorie burn estimate from completed workouts */}
-          {trainingWidgets.has('calorie-burn') && (() => {
+              /* Weekly calorie burn estimate from completed workouts */
+              'calorie-burn': (() => {
             const today = new Date()
             const jsDay = today.getDay()
             const daysFromMon = jsDay === 0 ? 6 : jsDay - 1
@@ -578,10 +578,10 @@ export default function Training() {
                 <p className="text-xs text-gray-700 mt-2">Estimated from workout duration × bodyweight. Actual burn varies by intensity and exercise selection.</p>
               </div>
             )
-          })()}
+          })(),
 
-          {/* This Week's Muscle Coverage + vs Last Week + MEV indicator */}
-          {trainingWidgets.has('volume') && exerciseLibrary.length > 0 && (
+              /* This Week's Muscle Coverage + vs Last Week + MEV indicator */
+              volume: exerciseLibrary.length > 0 && (
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
               <div className="flex items-center justify-between mb-3">
                 <div>
@@ -643,7 +643,9 @@ export default function Training() {
                 <p className="text-xs text-gray-600 mt-1">No workouts logged yet this week.</p>
               )}
             </div>
-          )}
+              ),
+            }}
+          />
 
           {/* AI refine — only shown when Claude API key is set */}
           {(settings.claude_api_key ?? '') && (

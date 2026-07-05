@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import type { WidgetStore } from './createWidgetStore'
 
 export interface TabWidgetMeta {
@@ -12,13 +13,16 @@ interface TabWidgetControlsProps {
   items: TabWidgetMeta[]
   // Optional heading (e.g. "Plan widgets"). Defaults to a generic label.
   label?: string
+  // Optional extra control(s) rendered to the left of the Customize button —
+  // used by TabWidgetZone to place its Rearrange toggle in the same header row.
+  actionsSlot?: ReactNode
 }
 
 // Reusable "Customize" control for a tab's widget layout. It owns only the
 // add/remove catalog + persistence (via the given store's distinct localStorage
 // key); the page itself gates each card with `store.useEnabledIds()` so no card
-// markup has to move. Drag-reorder is a separate backlog item.
-export default function TabWidgetControls({ store, items, label = 'Widgets' }: TabWidgetControlsProps) {
+// markup has to move. Drag-reorder is layered on by TabWidgetZone.
+export default function TabWidgetControls({ store, items, label = 'Widgets', actionsSlot }: TabWidgetControlsProps) {
   const enabledIds = store.useEnabledIds()
   const [open, setOpen] = useState(false)
   const enabled = new Set(enabledIds)
@@ -31,16 +35,19 @@ export default function TabWidgetControls({ store, items, label = 'Widgets' }: T
           {label}
           <span className="ml-2 text-gray-600 normal-case font-normal">{shownCount}/{items.length} shown</span>
         </h2>
-        <button
-          onClick={() => setOpen((o) => !o)}
-          className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors ${
-            open
-              ? 'bg-brand-600 border-brand-500 text-white'
-              : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'
-          }`}
-        >
-          {open ? 'Done' : 'Customize'}
-        </button>
+        <div className="flex items-center gap-2">
+          {actionsSlot}
+          <button
+            onClick={() => setOpen((o) => !o)}
+            className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors ${
+              open
+                ? 'bg-brand-600 border-brand-500 text-white'
+                : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'
+            }`}
+          >
+            {open ? 'Done' : 'Customize'}
+          </button>
+        </div>
       </div>
 
       {open && (
