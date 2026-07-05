@@ -77,12 +77,21 @@ Never delete items; only check them off.
   reads posing/sleep live. Added 5 unit tests (standalone render, logging persistence,
   WidgetZone hide/show gating, catalog gating). tsc/tests(155)/build all clean.
 
-- [ ] **Simplify Training & Nutrition tabs into widgets.** The Training history tab
+- [x] **Simplify Training & Nutrition tabs into widgets.** The Training history tab
   and the Nutrition/Diet page show too much at once. Break their content into
   add/removable widgets using the same widget system as the dashboard
   (`useWidgets`/`WidgetZone`/registry pattern, with a per-tab persisted enabled
   list). Acceptance: both tabs render as widgets the user can add/remove; default
-  layout is not overwhelming.
+  layout is not overwhelming. — done 2026-07-05: extracted the dashboard widget
+  enabled-list logic into a generic `createWidgetStore(key, allIds, defaultIds?)`
+  factory + reusable `TabWidgetControls` (Customize add/remove catalog). Training
+  "My Plan" tab (`training_plan_widgets`, 5 sections) and Nutrition "Meal Plan" tab
+  (`nutrition_plan_widgets`, 7 sections) now gate each summary card on its enabled
+  id; core actions (session cards / macro stats + meals list) stay always-on. Each
+  tab ships a trimmed default set so the default layout isn't a wall of cards, with
+  the rest addable. Distinct localStorage keys per tab. Added 9 unit tests
+  (store defaults/dedupe/independence + controls toggle). tsc/tests(164)/build clean.
+  Drag-reorder deferred to the next backlog item (its dependency).
 
 - [ ] **Rearrange Training & Nutrition widgets.** Enable drag-reorder (Rearrange
   toggle + long-press, dashed drop-target cues) for the widgets on the Training and

@@ -8,6 +8,8 @@ import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
 import WeeklyMealView from './WeeklyMealView'
 import GroceryList from './GroceryList'
+import TabWidgetControls from '../../components/widgets/TabWidgetControls'
+import { NUTRITION_WIDGET_META, nutritionWidgetStore } from '../../components/widgets/tabWidgets'
 import { FOODS } from '../../data/foods'
 import { localDateStr } from '../../utils/dates'
 import type { Meal, MealCompletion } from '../../types'
@@ -81,6 +83,10 @@ export default function Diet() {
     const stored = parseInt(localStorage.getItem('cardio_target_min') ?? '30', 10)
     return [30, 45, 60].includes(stored) ? stored : 30
   })
+
+  // Which "Meal Plan" summary cards the user has chosen to show (add/removable
+  // widgets, persisted per-tab). Set membership gates each card below.
+  const nutritionWidgets = new Set(nutritionWidgetStore.useEnabledIds())
 
   function updateWater(delta: number) {
     setWaterGlasses(prev => {
@@ -471,8 +477,11 @@ export default function Diet() {
             <StatCard label="Fat" value={dietPlan.fat_g} unit={`g (${fatPct}%)`} />
           </div>
 
+          {/* Add/remove the summary cards below */}
+          <TabWidgetControls store={nutritionWidgetStore} items={NUTRITION_WIDGET_META} label="Plan widgets" />
+
           {/* Today's intake progress */}
-          {totalMeals > 0 && (
+          {nutritionWidgets.has('todays-intake') && totalMeals > 0 && (
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-semibold text-gray-200">Today's Intake</p>
@@ -557,7 +566,7 @@ export default function Diet() {
           )}
 
           {/* Water Intake Tracker */}
-          {totalMeals > 0 && (() => {
+          {nutritionWidgets.has('water') && totalMeals > 0 && (() => {
             const waterPct = Math.min(100, Math.round((waterGlasses / waterTarget) * 100))
             const waterMl = waterGlasses * 250
             const done = waterGlasses >= waterTarget
@@ -624,7 +633,7 @@ export default function Diet() {
           })()}
 
           {/* Cardio Tracker */}
-          {totalMeals > 0 && (() => {
+          {nutritionWidgets.has('cardio') && totalMeals > 0 && (() => {
             const cardioPct = Math.min(100, cardioTarget > 0 ? Math.round((cardioMin / cardioTarget) * 100) : 0)
             const cardioDone = cardioMin >= cardioTarget
             const weeklyCardio = (() => {
@@ -680,7 +689,7 @@ export default function Diet() {
           })()}
 
           {/* Refeed Day Planner */}
-          {(() => {
+          {nutritionWidgets.has('refeed') && (() => {
             const dayPickerRow = (
               <div className="flex flex-wrap gap-1.5 mt-2">
                 {REFEED_DAY_NAMES.map((name, d) => (
@@ -766,7 +775,7 @@ export default function Diet() {
               </div>
             )
           })()}
-          {refeedPanelOpen && !isRefeedDay && (
+          {nutritionWidgets.has('refeed') && refeedPanelOpen && !isRefeedDay && (
             <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 -mt-4">
               <p className="text-xs text-gray-500 mb-1">Pick your weekly refeed day — targets will automatically adjust on that day:</p>
               <div className="flex flex-wrap gap-1.5 mt-2">
@@ -792,7 +801,7 @@ export default function Diet() {
           )}
 
           {/* Meal adherence streak */}
-          {totalMeals > 0 && (
+          {nutritionWidgets.has('adherence-streak') && totalMeals > 0 && (
             <div className={`bg-gray-900 border rounded-xl p-4 flex items-center gap-4 ${mealAdherenceStreak > 0 ? 'border-brand-800/50' : 'border-gray-800'}`}>
               <div className={`text-4xl font-black min-w-[3.5rem] text-center tabular-nums ${mealAdherenceStreak > 0 ? 'text-brand-400' : 'text-gray-600'}`}>
                 {mealAdherenceStreak}
@@ -821,7 +830,7 @@ export default function Diet() {
           )}
 
           {/* This Week — day-by-day meal completion + weekly totals */}
-          {(() => {
+          {nutritionWidgets.has('week') && (() => {
             const totalMealsPerDay = dietPlan.meals?.length ?? 0
             if (totalMealsPerDay === 0) return null
             const pastOrToday = weekDays.filter(({ dateStr }) => dateStr <= todayStr)
@@ -933,7 +942,7 @@ export default function Diet() {
           })()}
 
           {/* ── Meal Schedule Timeline ── */}
-          {totalMeals > 0 && dietPlan.meals && (() => {
+          {nutritionWidgets.has('meal-schedule') && totalMeals > 0 && dietPlan.meals && (() => {
             const START_MIN = 5 * 60   // 5 am
             const TOTAL_MINS = 17 * 60 // 5 am – 10 pm
             const nowMinutes = currentTime.getHours() * 60 + currentTime.getMinutes()
