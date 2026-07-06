@@ -212,3 +212,80 @@ describe('nutritionEngine — preference substitution respects meal context', ()
     expect(foods.length).toBeGreaterThan(0)
   })
 })
+
+// ── Cook time affects meal richness (not macros) ──────────────────────────────
+// 'quick' → simpler plates (fewer items); 'chef' → more elaborate (extra garnishes);
+// macro targets stay identical because they're derived from calories, not the food list.
+describe('nutritionEngine — cook time affects meal quality', () => {
+  const BASE_6 = { ...BASE_INPUT, meal_count: 6, include_snacks: false }
+
+  const plan = (pref: string) =>
+    generateNutritionPlan({ ...BASE_6, cooking_time_pref: pref } as any)
+
+  const mainMeals = (p: ReturnType<typeof plan>) =>
+    p.meals.filter((m) => !m.name.toLowerCase().includes('snack'))
+
+  it('macros/calories are identical across quick, medium, and chef', () => {
+    const q = plan('quick')
+    const m = plan('medium')
+    const c = plan('chef')
+    for (const key of ['calories_target', 'protein_g', 'carbs_g', 'fat_g'] as const) {
+      expect(q[key]).toBe(m[key])
+      expect(c[key]).toBe(m[key])
+    }
+    // Per-meal macro targets also match (same order/count of meals)
+    for (let i = 0; i < m.meals.length; i++) {
+      expect(q.meals[i].calories).toBe(m.meals[i].calories)
+      expect(c.meals[i].protein_g).toBe(m.meals[i].protein_g)
+      expect(c.meals[i].carbs_g).toBe(m.meals[i].carbs_g)
+    }
+  })
+
+  it('chef meals are richer (more foods) than quick meals', () => {
+    const chefMains = mainMeals(plan('chef'))
+    const quickMains = mainMeals(plan('quick'))
+    const chefTotal = chefMains.reduce((n, m) => n + m.foods.length, 0)
+    const quickTotal = quickMains.reduce((n, m) => n + m.foods.length, 0)
+    expect(chefTotal).toBeGreaterThan(quickTotal)
+    // Every chef main meal has at least as many items as its medium counterpart
+    const mediumMains = mainMeals(plan('medium'))
+    chefMains.forEach((meal, i) => {
+      expect(meal.foods.length).toBeGreaterThanOrEqual(mediumMains[i].foods.length)
+    })
+  })
+
+  it('quick trims main meals to at most 2 core items', () => {
+    for (const meal of mainMeals(plan('quick'))) {
+      expect(meal.foods.length).toBeLessThanOrEqual(2)
+      expect(meal.foods.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('chef adds garnish variety to main meals but leaves snacks simple', () => {
+    const c = generateNutritionPlan({
+      ...BASE_INPUT,
+      meal_count: 5,
+      include_snacks: true,
+      snack_count: 2,
+      cooking_time_pref: 'chef',
+    } as any)
+    const dinner = c.meals.find((m) => m.name === 'Dinner')!
+    const dinnerText = dinner.foods.join(' ').toLowerCase()
+    // A garnish from the chef pool is present on a main meal
+    expect(dinnerText).toMatch(/herbs|salad|roasted|garlic|spice|pickled/)
+    // Snacks are not garnished — they stay at their simple 2-item form
+    for (const snack of c.meals.filter((m) => m.name.toLowerCase().includes('snack'))) {
+      expect(snack.foods.length).toBeLessThanOrEqual(2)
+    }
+  })
+
+  it('unknown/absent cook time behaves like medium', () => {
+    const def = generateNutritionPlan({ ...BASE_6 } as any) // no cooking_time_pref
+    const med = plan('medium')
+    const defMains = mainMeals(def)
+    const medMains = mainMeals(med)
+    defMains.forEach((meal, i) => {
+      expect(meal.foods.length).toBe(medMains[i].foods.length)
+    })
+  })
+})

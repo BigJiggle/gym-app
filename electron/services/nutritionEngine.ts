@@ -171,6 +171,48 @@ function calcPortionStr(item: TemplateFoodItem, mealCal: number): string {
   return `${display} (${grams}g${suffix})`
 }
 
+// ─────────────────────────────────────────────
+// Cook-time meal richness
+// ─────────────────────────────────────────────
+// A meal's calories/macros are computed independently of its `foods` display list
+// (see buildMeals), so we can vary how elaborate the plate reads without touching the
+// macro targets. Cook time controls that richness:
+//   'quick'  → under 15 min: trim to the two core components (protein + carb), minimal prep
+//   'medium' → 15–30 min: the hand-authored template, unchanged
+//   'chef'   → 30+ min: append rotating garnishes/sides for a more elaborate, varied plate
+// Garnishes are allergen-free, vegan, fixed-label items so they never collide with a
+// user's exclusions/restrictions and never enter portion/calorie math.
+const CHEF_GARNISHES: TemplateFoodItem[] = [
+  { id: 'herbs',       display: 'Fresh Herbs & Lemon',    role: 'fixed', fixedLabel: 'Fresh Herbs & Lemon' },
+  { id: 'side_salad',  display: 'Mixed Side Salad',       role: 'fixed', fixedLabel: 'Mixed Side Salad' },
+  { id: 'roasted_veg', display: 'Roasted Seasonal Veg',   role: 'fixed', fixedLabel: 'Roasted Seasonal Veg' },
+  { id: 'garlic_evoo', display: 'Garlic & Olive Oil',     role: 'fixed', fixedLabel: 'Garlic & Olive Oil Drizzle' },
+  { id: 'spice_rub',   display: 'Spice Rub & Marinade',   role: 'fixed', fixedLabel: 'Spice Rub & Marinade' },
+  { id: 'pickled_veg', display: 'Pickled Vegetables',     role: 'fixed', fixedLabel: 'Pickled Vegetables' },
+]
+
+function applyCookingStyle(
+  foods: TemplateFoodItem[],
+  cookingPref: string,
+  mealIndex: number,
+  isSnack: boolean
+): TemplateFoodItem[] {
+  if (cookingPref === 'quick') {
+    // Fast, minimal prep: keep just the core components. Snacks already read as simple
+    // (≤2 items) so slicing leaves them untouched.
+    return foods.length > 2 ? foods.slice(0, 2) : foods
+  }
+  if (cookingPref === 'chef' && !isSnack) {
+    // Elaborate main meals: add two rotating garnishes for variety. Snacks stay simple —
+    // a herb garnish on a yogurt snack would read as noise.
+    const n = CHEF_GARNISHES.length
+    const g1 = CHEF_GARNISHES[mealIndex % n]
+    const g2 = CHEF_GARNISHES[(mealIndex + 3) % n]
+    return [...foods, g1, g2]
+  }
+  return foods
+}
+
 // Checks if a food ID is excluded, including via alias and normalized human-readable name.
 function isExcluded(id: string, exclusions: string[]): boolean {
   if (!exclusions.length) return false
@@ -259,7 +301,7 @@ function buildMeals(
   const allExclusions = [...(food_exclusions ?? []), ...restrictionAliases]
   const allPreferences = food_preferences ?? []
   const snackCount = snack_count ?? 0
-  const mealTemplates = getMealTemplates(mealCount, snackCount, dietary_preference, allExclusions, cooking_time_pref ?? 'medium', culture_pref ?? 'any', allPreferences)
+  const mealTemplates = getMealTemplates(mealCount, snackCount, dietary_preference, allExclusions, culture_pref ?? 'any', allPreferences)
 
   // On very low-calorie plans (e.g. 1200 kcal min) a fixed 200 kcal snack can exceed
   // the per-main-meal allocation. Cap at the even per-slot share so snacks never
@@ -279,7 +321,7 @@ function buildMeals(
   const proteinCalRatio = (protein_g * 4) / totalCal
   const fatCalRatio = (fat_g * 9) / totalCal
 
-  return mealTemplates.map((t) => {
+  return mealTemplates.map((t, i) => {
     const isSnack = t.name.toLowerCase().includes('snack')
     const cal = isSnack ? SNACK_CAL : perMainCal
     const pro = Math.round((cal * proteinCalRatio) / 4)
@@ -287,7 +329,9 @@ function buildMeals(
     const carb = Math.max(0, Math.round((cal - pro * 4 - fat * 9) / 4))
 
     const rawFoods = t.foods(dietary_preference)
-    const foods = rawFoods.map(item => calcPortionStr(item, cal))
+    // Cook time modulates how elaborate the plate reads (macros above are unaffected).
+    const styledFoods = applyCookingStyle(rawFoods, cooking_time_pref ?? 'medium', i, isSnack)
+    const foods = styledFoods.map(item => calcPortionStr(item, cal))
 
     return {
       name: t.name,
@@ -408,13 +452,9 @@ function getMealTemplates(
   snackCount: number,
   _pref: string,
   exclusions: string[] = [],
-  cookingPref: string = 'medium',
   culturePref: string = 'any',
   preferences: string[] = []
 ): MealTemplate[] {
-  // cookingPref reserved for future template variants
-  void cookingPref
-
   const all: MealTemplate[] = [
     // ── 0: Breakfast ──
     {

@@ -110,11 +110,21 @@ Never delete items; only check them off.
   non-canonical order, drag-reorder persistence, null-node index alignment, single-widget
   toggle hidden). tsc/tests(169)/build all clean.
 
-- [ ] **Cook time affects meal quality.** Make the onboarding "cook time" input
+- [x] **Cook time affects meal quality.** Make the onboarding "cook time" input
   actually influence meal generation: more available time → more elaborate/better
   meals (more ingredients/variety); less time → simpler, quicker meals. Thread
   cook time through `nutritionEngine` meal building. Acceptance: higher cook time
   produces richer meals, low cook time produces simple ones, for the same macros.
+  — done 2026-07-06: cook time (`cooking_time_pref`) was threaded to `getMealTemplates`
+  but ignored (`void cookingPref`). Added `applyCookingStyle` in `buildMeals`: 'quick'
+  trims each main meal to its 2 core components (fast, minimal prep), 'chef' appends two
+  rotating allergen-free/vegan fixed-label garnishes per main meal (herbs, side salad,
+  roasted veg, garlic-oil, spice rub, pickled veg) for variety, 'medium' is unchanged.
+  Snacks stay simple in all modes. Because meal calories/macros are derived from the
+  calorie budget (not the food list), macros are identical across quick/medium/chef —
+  only richness/variety changes. Removed the now-dead `cookingPref` param from
+  `getMealTemplates`. Added 5 unit tests (macro invariance, chef>quick richness, quick
+  ≤2 items, chef garnishes main-not-snacks, default==medium). tsc/tests(174)/build clean.
 
 - [ ] **Meal prep style in food selection + nutrition.** Ensure the selected
   meal-prep style is taken into account both when choosing foods and in the
