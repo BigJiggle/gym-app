@@ -58,6 +58,7 @@ export function regenerateDietForGoal(
     food_exclusions: (() => { try { return JSON.parse((user.food_exclusions as string) ?? '[]') } catch { return [] } })(),
     food_preferences: (() => { try { return JSON.parse((user.food_preferences as string) ?? '[]') } catch { return [] } })(),
     cooking_time_pref: (user.cooking_time_pref as string) ?? 'medium',
+    meal_prep_style: (user.meal_prep_style as string) ?? 'daily',
     snack_count: (user.snack_count as number) ?? 0,
     culture_pref: (user.culture_pref as string) ?? 'any',
   })

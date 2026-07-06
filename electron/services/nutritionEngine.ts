@@ -213,6 +213,48 @@ function applyCookingStyle(
   return foods
 }
 
+// ─────────────────────────────────────────────
+// Meal-prep style food consolidation
+// ─────────────────────────────────────────────
+// How the user preps changes which foods land on the plate (macros are unaffected —
+// see buildMeals; consolidation only swaps food identities of the same role, and every
+// portion is derived from the meal's calories, not the food, so totals never move):
+//   'daily' → cook fresh each day: every meal keeps its own varied foods (default).
+//   'batch' → cook in bulk once: all cooked main meals converge on ONE shared protein and
+//             ONE shared carb — the batch-cooked staples portioned across the day.
+//   'mixed' → part batch, part fresh: cooked mains share ONE batch protein but keep their
+//             own carbs.
+// A "cooked main" is a non-snack meal carrying both a protein-role and a carb-role item
+// (Lunch/Dinner/Mid-Morning). Breakfast (no protein-role item), grab-and-go meals, and
+// snacks are never consolidated — you don't batch-cook eggs or a protein shake.
+function isCookedMain(foods: TemplateFoodItem[], name: string): boolean {
+  return (
+    !name.toLowerCase().includes('snack') &&
+    foods.some(f => f.role === 'protein') &&
+    foods.some(f => f.role === 'carb')
+  )
+}
+
+function applyPrepStyle(
+  foodLists: TemplateFoodItem[][],
+  templates: MealTemplate[],
+  prepStyle: string
+): TemplateFoodItem[][] {
+  if (prepStyle !== 'batch' && prepStyle !== 'mixed') return foodLists
+  const baseIdx = foodLists.findIndex((foods, i) => isCookedMain(foods, templates[i].name))
+  if (baseIdx < 0) return foodLists // no cooked main to batch (e.g. only breakfast + snacks)
+  const baseProtein = foodLists[baseIdx].find(f => f.role === 'protein')
+  const baseCarb = foodLists[baseIdx].find(f => f.role === 'carb')
+  return foodLists.map((foods, i) => {
+    if (!isCookedMain(foods, templates[i].name)) return foods
+    return foods.map(f => {
+      if (baseProtein && f.role === 'protein') return baseProtein
+      if (prepStyle === 'batch' && baseCarb && f.role === 'carb') return baseCarb
+      return f
+    })
+  })
+}
+
 // Checks if a food ID is excluded, including via alias and normalized human-readable name.
 function isExcluded(id: string, exclusions: string[]): boolean {
   if (!exclusions.length) return false
@@ -294,7 +336,8 @@ function buildMeals(
   cooking_time_pref?: string,
   snack_count?: number,
   culture_pref?: string,
-  dietary_restrictions?: string[]
+  dietary_restrictions?: string[],
+  meal_prep_style?: string
 ): Meal[] {
   // Merge specific food ID exclusions with aliases derived from restriction labels
   const restrictionAliases = restrictionsToAliasKeys(dietary_restrictions ?? [])
@@ -321,6 +364,17 @@ function buildMeals(
   const proteinCalRatio = (protein_g * 4) / totalCal
   const fatCalRatio = (fat_g * 9) / totalCal
 
+  // Pass 1: build each meal's food list, applying cook-time styling per meal.
+  const styledLists = mealTemplates.map((t, i) => {
+    const isSnack = t.name.toLowerCase().includes('snack')
+    const rawFoods = t.foods(dietary_preference)
+    // Cook time modulates how elaborate the plate reads (macros are unaffected).
+    return applyCookingStyle(rawFoods, cooking_time_pref ?? 'medium', i, isSnack)
+  })
+  // Pass 2: meal-prep style consolidates food selection across cooked main meals
+  // (batch/mixed share a protein ± carb). 'daily' leaves the varied lists untouched.
+  const preppedLists = applyPrepStyle(styledLists, mealTemplates, meal_prep_style ?? 'daily')
+
   return mealTemplates.map((t, i) => {
     const isSnack = t.name.toLowerCase().includes('snack')
     const cal = isSnack ? SNACK_CAL : perMainCal
@@ -328,10 +382,7 @@ function buildMeals(
     const fat = Math.round((cal * fatCalRatio) / 9)
     const carb = Math.max(0, Math.round((cal - pro * 4 - fat * 9) / 4))
 
-    const rawFoods = t.foods(dietary_preference)
-    // Cook time modulates how elaborate the plate reads (macros above are unaffected).
-    const styledFoods = applyCookingStyle(rawFoods, cooking_time_pref ?? 'medium', i, isSnack)
-    const foods = styledFoods.map(item => calcPortionStr(item, cal))
+    const foods = preppedLists[i].map(item => calcPortionStr(item, cal))
 
     return {
       name: t.name,
@@ -754,9 +805,10 @@ export function buildMealsPublic(
   cooking_time_pref?: string,
   snack_count?: number,
   culture_pref?: string,
-  dietary_restrictions?: string[]
+  dietary_restrictions?: string[],
+  meal_prep_style?: string
 ) {
-  return buildMeals(totalCal, protein_g, carbs_g, fat_g, mealCount, dietary_preference, food_exclusions, food_preferences, cooking_time_pref, snack_count, culture_pref, dietary_restrictions)
+  return buildMeals(totalCal, protein_g, carbs_g, fat_g, mealCount, dietary_preference, food_exclusions, food_preferences, cooking_time_pref, snack_count, culture_pref, dietary_restrictions, meal_prep_style)
 }
 
 // Guard against absent / nonsensical bodyweight. A weight of 0 (or NaN) would
@@ -808,7 +860,8 @@ export function generateNutritionPlan(input: NutritionInput): NutritionPlan {
     input.cooking_time_pref,
     resolvedSnackCount,
     input.culture_pref,
-    input.dietary_restrictions
+    input.dietary_restrictions,
+    input.meal_prep_style
   )
 
   // Derive phase from the actual calorie adjustment rather than a static goal→phase map.

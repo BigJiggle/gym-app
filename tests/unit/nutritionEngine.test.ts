@@ -289,3 +289,86 @@ describe('nutritionEngine — cook time affects meal quality', () => {
     })
   })
 })
+
+// ── Meal prep style affects food selection (not macros) ───────────────────────
+// 'daily' keeps each meal's own varied foods; 'batch' collapses every cooked main
+// meal onto ONE shared protein + carb (the batch-cooked staples); 'mixed' shares the
+// protein but keeps each meal's own carb. Macros never move — they're derived from
+// calories, and consolidation only swaps a food identity for another of the same role.
+describe('nutritionEngine — meal prep style affects food selection', () => {
+  const BASE_6 = { ...BASE_INPUT, meal_count: 6, include_snacks: false }
+  const plan = (style?: string) =>
+    generateNutritionPlan({ ...BASE_6, meal_prep_style: style } as any)
+  const foodsOf = (p: ReturnType<typeof plan>, name: string) =>
+    (p.meals.find((m) => m.name === name)?.foods ?? []).join(' | ').toLowerCase()
+
+  it('macros/calories are identical across daily, batch, and mixed', () => {
+    const d = plan('daily')
+    const b = plan('batch')
+    const m = plan('mixed')
+    for (const key of ['calories_target', 'protein_g', 'carbs_g', 'fat_g'] as const) {
+      expect(b[key]).toBe(d[key])
+      expect(m[key]).toBe(d[key])
+    }
+    // Per-meal macro targets also match (same order/count of meals)
+    for (let i = 0; i < d.meals.length; i++) {
+      expect(b.meals[i].calories).toBe(d.meals[i].calories)
+      expect(b.meals[i].protein_g).toBe(d.meals[i].protein_g)
+      expect(m.meals[i].carbs_g).toBe(d.meals[i].carbs_g)
+    }
+  })
+
+  it('daily keeps varied proteins across cooked main meals', () => {
+    const d = plan('daily')
+    // Dinner defaults to salmon, Lunch to chicken — genuinely different proteins
+    expect(foodsOf(d, 'Dinner')).toContain('salmon')
+    expect(foodsOf(d, 'Lunch')).toContain('chicken')
+  })
+
+  it('batch collapses every cooked main onto one shared protein and carb', () => {
+    const b = plan('batch')
+    const dinner = foodsOf(b, 'Dinner')
+    // Dinner's salmon → the batch chicken; its white rice → the batch brown rice
+    expect(dinner).toContain('chicken')
+    expect(dinner).not.toContain('salmon')
+    expect(dinner).toContain('brown rice')
+    // No cooked main still carries white rice — the batch carb (brown rice) replaced it
+    for (const name of ['Mid-Morning', 'Lunch', 'Dinner']) {
+      expect(foodsOf(b, name)).not.toContain('white rice')
+    }
+  })
+
+  it('mixed shares the protein but keeps each meal its own carb', () => {
+    const m = plan('mixed')
+    const dinner = foodsOf(m, 'Dinner')
+    // Protein consolidated (salmon → chicken) ...
+    expect(dinner).toContain('chicken')
+    expect(dinner).not.toContain('salmon')
+    // ... but Dinner keeps its own white rice, not the batch brown rice
+    expect(dinner).toContain('white rice')
+  })
+
+  it('never consolidates snacks or non-cooked meals (breakfast eggs stay)', () => {
+    const b = generateNutritionPlan({
+      ...BASE_INPUT,
+      meal_count: 6,
+      include_snacks: true,
+      snack_count: 2,
+      meal_prep_style: 'batch',
+    } as any)
+    // Breakfast has no protein-role item (eggs are a fixed label) — left untouched
+    expect(foodsOf(b, 'Breakfast')).toContain('egg')
+    // Snacks keep their simple grab-and-go form
+    for (const snack of b.meals.filter((mm) => mm.name.toLowerCase().includes('snack'))) {
+      expect(snack.foods.length).toBeLessThanOrEqual(2)
+    }
+  })
+
+  it('unknown/absent prep style behaves like daily', () => {
+    const def = plan(undefined) // no meal_prep_style
+    const daily = plan('daily')
+    for (let i = 0; i < daily.meals.length; i++) {
+      expect(def.meals[i].foods).toEqual(daily.meals[i].foods)
+    }
+  })
+})

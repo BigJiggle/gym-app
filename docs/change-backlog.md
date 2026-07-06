@@ -126,10 +126,23 @@ Never delete items; only check them off.
   `getMealTemplates`. Added 5 unit tests (macro invariance, chef>quick richness, quick
   ≤2 items, chef garnishes main-not-snacks, default==medium). tsc/tests(174)/build clean.
 
-- [ ] **Meal prep style in food selection + nutrition.** Ensure the selected
+- [x] **Meal prep style in food selection + nutrition.** Ensure the selected
   meal-prep style is taken into account both when choosing foods and in the
   nutrition calculations. Thread prep style through the engine. Acceptance: changing
-  prep style visibly changes food selection.
+  prep style visibly changes food selection. — done 2026-07-06: `meal_prep_style`
+  ('daily'|'batch'|'mixed') was stored + declared in `NutritionInput` but ignored by
+  `buildMeals` (never threaded past the type). Added `applyPrepStyle` (mirrors
+  `applyCookingStyle`, runs as a 2nd pass over the per-meal food lists): 'daily' leaves
+  each meal's varied foods untouched; 'batch' collapses every cooked main meal (non-snack
+  with both a protein- and carb-role item) onto ONE shared protein + carb — the batch-cooked
+  staples; 'mixed' shares the protein but keeps each meal's own carb. Breakfast (no
+  protein-role item), grab-and-go meals, and snacks are never consolidated. Macros are
+  untouched (portions derive from calories, and swaps stay same-role). Threaded
+  `meal_prep_style` through `buildMeals`/`buildMealsPublic` and every call site
+  (generateNutritionPlan in plan/show handlers — two were silently omitting it — plus the
+  recalc buildMealsPublic call). Added 6 unit tests (macro invariance, daily variety,
+  batch protein+carb collapse, mixed protein-only share, snack/breakfast untouched,
+  unknown==daily). tsc/tests(180)/build all clean.
 
 - [ ] **Refeed day adjusts daily meals.** If the user enables a refeed day, change
   that day's meals based on calories and user inputs (refeed protocol: higher
