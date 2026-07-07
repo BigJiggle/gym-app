@@ -13,6 +13,7 @@ import TabWidgetZone from '../../components/widgets/TabWidgetZone'
 import { NUTRITION_WIDGET_META, nutritionWidgetStore } from '../../components/widgets/tabWidgets'
 import { FOODS } from '../../data/foods'
 import { localDateStr } from '../../utils/dates'
+import { applyRefeedToMeals } from '../../utils/refeed'
 import type { Meal, MealCompletion } from '../../types'
 
 type DietTab = 'plan' | 'weekly' | 'grocery'
@@ -300,28 +301,36 @@ export default function Diet() {
     )
   }
 
-  const _macroKcal = dietPlan.protein_g * 4 + dietPlan.carbs_g * 4 + dietPlan.fat_g * 9
-  const proteinPct = _macroKcal > 0 ? Math.round((dietPlan.protein_g * 4 / _macroKcal) * 100) : 0
-  const carbsPct = _macroKcal > 0 ? Math.round((dietPlan.carbs_g * 4 / _macroKcal) * 100) : 0
-  const fatPct = 100 - proteinPct - carbsPct
-
-  // Today's intake progress
-  const todayCompletions = mealCompletions.filter((c) => c.date === todayStr)
-  const mealsEaten = todayCompletions.length
-  const totalMeals = dietPlan.meals?.length ?? 0
-  const consumedCalories = todayCompletions.reduce((acc, c) => acc + (dietPlan.meals?.[c.meal_index]?.calories ?? 0), 0)
-  const consumedProtein = todayCompletions.reduce((acc, c) => acc + (dietPlan.meals?.[c.meal_index]?.protein_g ?? 0), 0)
-  const consumedCarbs = todayCompletions.reduce((acc, c) => acc + (dietPlan.meals?.[c.meal_index]?.carbs_g ?? 0), 0)
-  const consumedFat = todayCompletions.reduce((acc, c) => acc + (dietPlan.meals?.[c.meal_index]?.fat_g ?? 0), 0)
-  const calPct = Math.min(100, dietPlan.calories_target > 0 ? Math.round((consumedCalories / dietPlan.calories_target) * 100) : 0)
-  const protPct = Math.min(100, dietPlan.protein_g > 0 ? Math.round((consumedProtein / dietPlan.protein_g) * 100) : 0)
-  const carbPct = Math.min(100, dietPlan.carbs_g > 0 ? Math.round((consumedCarbs / dietPlan.carbs_g) * 100) : 0)
-  const fatIntakePct = Math.min(100, dietPlan.fat_g > 0 ? Math.round((consumedFat / dietPlan.fat_g) * 100) : 0)
-
   const REFEED_DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
   const isRefeedDay = refeedDayOfWeek !== null && jsDay === refeedDayOfWeek
   const refeedCarbBoostG = 100
   const refeedCalBoost = refeedCarbBoostG * 4
+
+  // On the refeed day the whole Meal Plan tab shows the boosted targets and
+  // per-meal macros; the stored plan (dietPlan) is untouched, so every other day
+  // and all persistence (swap/reorder/mark-eaten by index) still use the baseline.
+  const baseMeals = dietPlan.meals ?? []
+  const displayMeals = isRefeedDay ? applyRefeedToMeals(baseMeals, refeedCarbBoostG) : baseMeals
+  const effCaloriesTarget = isRefeedDay ? dietPlan.calories_target + refeedCalBoost : dietPlan.calories_target
+  const effCarbsG = isRefeedDay ? dietPlan.carbs_g + refeedCarbBoostG : dietPlan.carbs_g
+
+  const _macroKcal = dietPlan.protein_g * 4 + effCarbsG * 4 + dietPlan.fat_g * 9
+  const proteinPct = _macroKcal > 0 ? Math.round((dietPlan.protein_g * 4 / _macroKcal) * 100) : 0
+  const carbsPct = _macroKcal > 0 ? Math.round((effCarbsG * 4 / _macroKcal) * 100) : 0
+  const fatPct = 100 - proteinPct - carbsPct
+
+  // Today's intake progress (uses the refeed-boosted meals/targets on a refeed day)
+  const todayCompletions = mealCompletions.filter((c) => c.date === todayStr)
+  const mealsEaten = todayCompletions.length
+  const totalMeals = displayMeals.length
+  const consumedCalories = todayCompletions.reduce((acc, c) => acc + (displayMeals[c.meal_index]?.calories ?? 0), 0)
+  const consumedProtein = todayCompletions.reduce((acc, c) => acc + (displayMeals[c.meal_index]?.protein_g ?? 0), 0)
+  const consumedCarbs = todayCompletions.reduce((acc, c) => acc + (displayMeals[c.meal_index]?.carbs_g ?? 0), 0)
+  const consumedFat = todayCompletions.reduce((acc, c) => acc + (displayMeals[c.meal_index]?.fat_g ?? 0), 0)
+  const calPct = Math.min(100, effCaloriesTarget > 0 ? Math.round((consumedCalories / effCaloriesTarget) * 100) : 0)
+  const protPct = Math.min(100, dietPlan.protein_g > 0 ? Math.round((consumedProtein / dietPlan.protein_g) * 100) : 0)
+  const carbPct = Math.min(100, effCarbsG > 0 ? Math.round((consumedCarbs / effCarbsG) * 100) : 0)
+  const fatIntakePct = Math.min(100, dietPlan.fat_g > 0 ? Math.round((consumedFat / dietPlan.fat_g) * 100) : 0)
 
   function isMealEaten(mealIndex: number) {
     return todayCompletions.some((c) => c.meal_index === mealIndex)
@@ -468,9 +477,9 @@ export default function Diet() {
         <>
           {/* Macro summary */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <StatCard label="Calories" value={dietPlan.calories_target} unit="kcal" color="brand" />
+            <StatCard label={isRefeedDay ? 'Calories · refeed' : 'Calories'} value={effCaloriesTarget} unit="kcal" color="brand" />
             <StatCard label="Protein" value={dietPlan.protein_g} unit={`g (${proteinPct}%)`} color="green" />
-            <StatCard label="Carbs" value={dietPlan.carbs_g} unit={`g (${carbsPct}%)`} color="blue" />
+            <StatCard label={isRefeedDay ? 'Carbs · refeed' : 'Carbs'} value={effCarbsG} unit={`g (${carbsPct}%)`} color="blue" />
             <StatCard label="Fat" value={dietPlan.fat_g} unit={`g (${fatPct}%)`} />
           </div>
 
@@ -493,7 +502,7 @@ export default function Diet() {
                 <div className="flex justify-between text-xs mb-1.5">
                   <span className="text-gray-500">Calories</span>
                   <span className={calPct >= 100 ? 'text-green-400' : 'text-brand-400'}>
-                    {consumedCalories} / {dietPlan.calories_target} kcal
+                    {consumedCalories} / {effCaloriesTarget} kcal
                   </span>
                 </div>
                 <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
@@ -521,7 +530,7 @@ export default function Diet() {
                 <div className="flex justify-between text-xs mb-1.5">
                   <span className="text-gray-500">Carbs</span>
                   <span className={carbPct >= 100 ? 'text-green-400' : 'text-blue-400'}>
-                    {consumedCarbs}g / {dietPlan.carbs_g}g
+                    {consumedCarbs}g / {effCarbsG}g
                   </span>
                 </div>
                 <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
@@ -548,15 +557,15 @@ export default function Diet() {
               {mealsEaten === totalMeals && (
                 <p className="text-xs text-green-400 font-medium">All meals hit today — great work!</p>
               )}
-              {mealsEaten < totalMeals && (consumedCalories < dietPlan.calories_target || consumedProtein < dietPlan.protein_g) && (
+              {mealsEaten < totalMeals && (consumedCalories < effCaloriesTarget || consumedProtein < dietPlan.protein_g) && (
                 <div className="bg-brand-900/20 border border-brand-800/30 rounded-lg px-3 py-2 flex items-center justify-between">
                   <span className="text-xs text-gray-400 font-medium">Still to eat:</span>
                   <span className="text-xs font-semibold">
-                    <span className="text-brand-300">{dietPlan.calories_target - consumedCalories} kcal</span>
+                    <span className="text-brand-300">{effCaloriesTarget - consumedCalories} kcal</span>
                     <span className="text-gray-600 mx-1">·</span>
                     <span className="text-green-300">{Math.max(0, dietPlan.protein_g - consumedProtein)}g P</span>
                     <span className="text-gray-600 mx-1">·</span>
-                    <span className="text-blue-400">{Math.max(0, dietPlan.carbs_g - consumedCarbs)}g C</span>
+                    <span className="text-blue-400">{Math.max(0, effCarbsG - consumedCarbs)}g C</span>
                     <span className="text-gray-600 mx-1">·</span>
                     <span className="text-yellow-400">{Math.max(0, dietPlan.fat_g - consumedFat)}g F</span>
                   </span>
@@ -1082,7 +1091,7 @@ export default function Diet() {
               )
             })()}
             <div className="space-y-1">
-              {dietPlan.meals?.map((meal, i) => {
+              {displayMeals.map((meal, i) => {
                 const snack = meal.name.toLowerCase().includes('snack')
                 return (
                   <div key={i}>

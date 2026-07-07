@@ -1,50 +1,59 @@
 # Change Agent Report
 
-## Run: 2026-07-06
+## Run: 2026-07-07
 
 ### STEP 1 — Regression guard
-- Environment note: `npm ci` initially failed because the `electron@30.5.1`
-  postinstall (`node install.js`) tries to download the prebuilt Electron binary
-  from GitHub release assets, which the org egress proxy blocks (403). The binary
-  is not needed for typecheck / vitest / electron-vite bundling, so installed with
-  `ELECTRON_SKIP_BINARY_DOWNLOAD=1` — `npm ci` then completed cleanly.
-- Baseline verification on `master` before any change: **all PASS**
-  - `npx tsc --noEmit` → clean
-  - `npm test` → 174 passed (19 files)
-  - `npx electron-vite build` → built
-- No regressions found. Proceeded to a backlog item.
+No regressions. Baseline was green on arrival:
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (180 tests)
+- `npx electron-vite build` → PASS
 
-### STEP 2/3 — Backlog item implemented
-**Meal prep style in food selection + nutrition** (topmost unchecked).
+(Note: `npm ci` needed `ELECTRON_SKIP_BINARY_DOWNLOAD=1` — the electron
+postinstall binary download returns 403 from the sandbox proxy. The binary is
+only needed to *run* the desktop app, not to typecheck/test/build, so this does
+not affect verification.)
 
-`meal_prep_style` ('daily' | 'batch' | 'mixed') was persisted and declared in
-`NutritionInput`, but `buildMeals` never used it — food selection was identical
-regardless of the setting. Threaded it through the engine and made it change food
-selection, mirroring the existing `applyCookingStyle` pattern:
+### STEP 2 — Backlog item implemented
+**Refeed day adjusts daily meals** (topmost unchecked item).
 
-- **daily** — cook fresh each day: every meal keeps its own varied foods (default / unchanged).
-- **batch** — cook in bulk once: all *cooked main* meals converge on ONE shared protein + ONE shared carb (batch-cooked staples portioned across the day).
-- **mixed** — part batch: cooked mains share ONE protein but keep their own carbs.
+Before this change the refeed feature only rendered a separate "Refeed Day"
+summary card showing boosted daily targets (+100g carbs / +400 kcal). The actual
+per-meal cards, the headline macro StatCards, and the Today's Intake targets all
+still showed the baseline plan — so the meals themselves did not reflect the
+refeed. This closes that gap.
 
-A "cooked main" is a non-snack meal carrying both a protein-role and a carb-role
-item (Lunch/Dinner/Mid-Morning). Breakfast (no protein-role item), grab-and-go
-meals, and snacks are never consolidated. Macros/calories are untouched —
-portions derive from calories and consolidation only swaps a food for another of
-the same role.
+### Approach
+- New pure, unit-tested helper `src/utils/refeed.ts` → `applyRefeedToMeals(meals, carbBoostG)`:
+  distributes the carb boost across the day's **main** meals (snacks left simple;
+  falls back to all meals when the plan is all snacks). Adds carbs and the calories
+  those carbs carry (4 kcal/g); protein and fat are untouched. The added carbs sum
+  to **exactly** the boost (uneven-split remainder goes to the earliest meals). The
+  input is never mutated.
+- `src/pages/Diet/index.tsx`: compute `displayMeals`, `effCaloriesTarget`,
+  `effCarbsG` once, gated on `isRefeedDay`. On the refeed day the whole Meal Plan
+  tab renders these boosted values — per-meal cards, headline StatCards (labelled
+  "Calories · refeed" / "Carbs · refeed"), the macro-split percentages, and the
+  Today's Intake targets/progress/"still to eat" line. On every other day
+  `displayMeals === dietPlan.meals` and targets are the baseline, so nothing
+  changes.
+- The stored plan (`dietPlan.meals`) is left untouched, so all index-based
+  persistence — mark-eaten, swap, drag-reorder — keeps operating on the baseline.
+  Weekly/analytics aggregates are intentionally left at baseline per-day (a single
+  refeed day's boost there would be out of scope and the acceptance says other days
+  unchanged).
 
 ### Files changed
-- `electron/services/nutritionEngine.ts` — new `applyPrepStyle` + `isCookedMain` helpers; `buildMeals` restructured into a 2-pass (cook-style → prep-style) food build; `meal_prep_style` param added to `buildMeals` and `buildMealsPublic`; passed from `generateNutritionPlan`.
-- `electron/ipc/planHandlers.ts` — pass `meal_prep_style` into two `generateNutritionPlan` inputs that were omitting it, and into the recalc `buildMealsPublic` call.
-- `electron/ipc/showHandlers.ts` — pass `meal_prep_style` into its `generateNutritionPlan` input.
-- `tests/unit/nutritionEngine.test.ts` — new describe block, 6 tests.
-- `docs/change-backlog.md` — item checked off.
+- `src/utils/refeed.ts` (new) — pure refeed distribution helper
+- `src/pages/Diet/index.tsx` — render refeed-boosted meals/targets on the refeed day
+- `tests/unit/refeed.test.ts` (new) — 10 unit tests
+- `docs/change-backlog.md` — item checked off
+- `change-agent-report.md` — this report
 
 ### STEP 4 — Verification (all PASS)
-- `npx tsc --noEmit` → clean
-- `npm test` → **180 passed** (was 174; +6 new)
-- `npx electron-vite build` → built
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (190 tests, +10 new refeed tests)
+- `npx electron-vite build` → PASS
 
 ### Deferred
-- Nothing for this item. (The `meal_count` clamp in the recalc `buildMealsPublic`
-  call still uses the legacy 3–6 range rather than the widened 1–20; unrelated to
-  this item and left untouched.)
+Nothing for this item. Weekly aggregate views deliberately remain baseline-per-day
+(see approach note).

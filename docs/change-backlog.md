@@ -144,10 +144,23 @@ Never delete items; only check them off.
   batch protein+carb collapse, mixed protein-only share, snack/breakfast untouched,
   unknown==daily). tsc/tests(180)/build all clean.
 
-- [ ] **Refeed day adjusts daily meals.** If the user enables a refeed day, change
+- [x] **Refeed day adjusts daily meals.** If the user enables a refeed day, change
   that day's meals based on calories and user inputs (refeed protocol: higher
   carbs/calories that day). Acceptance: on the chosen refeed day, meals reflect the
-  adjusted calories/macros; other days unchanged.
+  adjusted calories/macros; other days unchanged. — done 2026-07-07: the refeed day
+  previously only showed a boosted-target summary card while the actual meal cards
+  and intake targets stayed at baseline. New pure `src/utils/refeed.ts`
+  (`applyRefeedToMeals`) distributes the +100g carb boost (+400 kcal, protein/fat
+  unchanged) across the day's main meals (snacks left simple; falls back to all meals
+  if the plan is all snacks; remainder of an uneven split lands on earliest meals so
+  the total is exact). Diet "Meal Plan" tab now renders `displayMeals` +
+  `effCaloriesTarget`/`effCarbsG` on the refeed day: per-meal cards, headline
+  StatCards (labelled "· refeed"), macro-split %, and Today's Intake targets/progress
+  all reflect the boost; every other day and all index-based persistence
+  (swap/reorder/mark-eaten) still use the untouched baseline `dietPlan.meals`. Weekly
+  aggregates left at baseline. Added 10 refeed unit tests (exact-sum split, cal math,
+  protein/fat invariance, snack handling, no-mutation, invalid/zero boost, empty).
+  tsc/tests(190)/build all clean.
 
 - [ ] **Adaptive nutrition from check-ins + weight.** Nutrition (calorie/macro
   targets) should adapt over time based on check-in data and the weight trend, not
