@@ -5,6 +5,7 @@ export type OnboardingData = Partial<CreateUserInput>
 
 export function useOnboarding() {
   const [step, setStep] = useState(1)
+  const [apiKey, setApiKey] = useState('')
   const [data, setData] = useState<OnboardingData>({
     sex: 'male',
     goal: 'cut',
@@ -27,7 +28,7 @@ export function useOnboarding() {
     culture_pref: 'any' as const,
   })
 
-  const totalSteps = 6
+  const totalSteps = 7
 
   function update(partial: Partial<CreateUserInput>) {
     setData((prev) => ({ ...prev, ...partial }))
@@ -41,5 +42,5 @@ export function useOnboarding() {
     setStep((s) => Math.max(s - 1, 1))
   }
 
-  return { step, totalSteps, data, update, next, back }
+  return { step, totalSteps, data, update, next, back, apiKey, setApiKey }
 }

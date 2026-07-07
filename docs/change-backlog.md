@@ -179,9 +179,20 @@ Never delete items; only check them off.
   (single-week vs trend divergence on a water spike, fast-drop trend, on-track trend,
   <2-prior fallback, NaN filtering). tsc/tests(196)/build all clean.
 
-- [ ] **AI-tailored onboarding via Claude API key.** Make entering the Claude API
+- [x] **AI-tailored onboarding via Claude API key.** Make entering the Claude API
   key the FIRST onboarding step, then use it to produce a more tailored onboarding
   (personalized plan generation / recommendations) via the app's existing Claude
   integration. If no key is provided, fall back gracefully to the current
   deterministic onboarding. Acceptance: user can enter the key first; onboarding
   output is tailored when a key is present; app still works with no key.
+  — done 2026-07-07: added a new FIRST onboarding step `StepAiSetup` (optional
+  Claude API key entry, with "how to get a key" help + live rule-based/AI-tailored
+  status). `useOnboarding` now carries `apiKey`/`setApiKey` state and `totalSteps`
+  7→(was 6); index prepends the step, shifts the Personal-fields validation to
+  step 2, and on submit persists a non-blank trimmed key via
+  `settingsStore.setSetting('claude_api_key', …)` BEFORE `generateTrainingPlan`/
+  `generateDietPlan`. Because the plan IPC handlers already read `claude_api_key`
+  from the DB and use Claude when present (falling back to the rule-based engines
+  otherwise), a key entered at onboarding now yields an AI-tailored plan while a
+  blank key uses the deterministic path unchanged. Added 5 unit tests (7-step flow,
+  apiKey state isolation, step status text, onChange wiring). tsc/tests(201)/build clean.

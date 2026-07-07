@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { useOnboarding } from './useOnboarding'
 import { useUserStore } from '../../store/userStore'
 import { usePlanStore } from '../../store/planStore'
+import { useSettingsStore } from '../../store/settingsStore'
+import StepAiSetup from './steps/StepAiSetup'
 import Step1Personal from './steps/Step1Personal'
 import Step2Goals from './steps/Step2Goals'
 import Step3Training from './steps/Step3Training'
@@ -12,10 +14,10 @@ import Step6Review from './steps/Step6Review'
 import Button from '../../components/ui/Button'
 import type { CreateUserInput } from '../../types'
 
-const STEP_LABELS = ['Personal', 'Goals', 'Training', 'Nutrition', 'Food Setup', 'Review']
+const STEP_LABELS = ['AI Setup', 'Personal', 'Goals', 'Training', 'Nutrition', 'Food Setup', 'Review']
 
 function validateStep(step: number, data: ReturnType<typeof useOnboarding>['data']): string | null {
-  if (step === 1) {
+  if (step === 2) {
     if (!data.name?.trim()) return 'Please enter your name.'
     if (!data.age || data.age < 16 || data.age > 80) return 'Please enter a valid age (16–80).'
     if (!data.height_cm || data.height_cm < 100 || data.height_cm > 250) return 'Please enter a valid height (100–250 cm).'
@@ -26,9 +28,10 @@ function validateStep(step: number, data: ReturnType<typeof useOnboarding>['data
 }
 
 export default function Onboarding() {
-  const { step, totalSteps, data, update, next, back } = useOnboarding()
+  const { step, totalSteps, data, update, next, back, apiKey, setApiKey } = useOnboarding()
   const { createUser, loadShows } = useUserStore()
   const { generateTrainingPlan, generateDietPlan } = usePlanStore()
+  const setSetting = useSettingsStore((s) => s.setSetting)
   const navigate = useNavigate()
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -47,11 +50,18 @@ export default function Onboarding() {
   }
 
   async function handleSubmit() {
-    const err = validateStep(1, data)
+    const err = validateStep(2, data)
     if (err) { setError(err); return }
     setSubmitting(true)
     setError(null)
     try {
+      // Persist the Claude API key (if provided) BEFORE plan generation so the
+      // engine picks it up and produces an AI-tailored plan. Blank key → the
+      // deterministic rule-based engine is used (graceful fallback).
+      const trimmedKey = apiKey.trim()
+      if (trimmedKey) {
+        await setSetting('claude_api_key', trimmedKey)
+      }
       const user = await createUser(data as CreateUserInput)
       // If the user entered a show date, add it to the shows table as their primary show
       if (data.show_date) {
@@ -77,6 +87,7 @@ export default function Onboarding() {
   }
 
   const stepComponents = [
+    <StepAiSetup apiKey={apiKey} setApiKey={setApiKey} />,
     <Step1Personal data={data} update={update} />,
     <Step2Goals data={data} update={update} />,
     <Step3Training data={data} update={update} />,

@@ -1,53 +1,64 @@
 # Change Agent Report
 
-## Run: 2026-07-07 (adaptive nutrition)
+## Run: 2026-07-07 (AI-tailored onboarding)
 
 ### STEP 1 — Regression guard
 No regressions. On a clean pull of `master`:
 - `npx tsc --noEmit` → PASS (clean)
-- `npm test` → PASS (190 tests)
+- `npm test` → PASS (196 tests, 20 files)
 - `npx electron-vite build` → PASS
 
 (`npm ci` run with `ELECTRON_SKIP_BINARY_DOWNLOAD=1` — electron's postinstall
 binary 403s from the sandbox proxy; not needed to typecheck/test/build.)
 
 ### STEP 2 — Backlog item implemented
-**Adaptive nutrition from check-ins + weight** (topmost unchecked item).
-
-Nutrition targets previously adapted off a **single** week-over-week weight delta
-(current vs. immediately-previous check-in). Weekly weight is noisy — a water /
-glycogen / sodium swing could read as "dropping too fast" or "stalling" and
-whipsaw the calorie target on a single weigh-in. Made adaptation key off the
-**weight trend across recent check-ins** instead.
+**AI-tailored onboarding via Claude API key** (topmost unchecked item). Make
+entering the Claude API key the FIRST onboarding step, then use it to produce a
+more tailored onboarding. Fall back gracefully to deterministic onboarding when
+no key is provided.
 
 ### Approach
-- New `weightTrendPct` in `electron/services/checkinEngine.ts`: a smoothed
-  multi-check-in trend — average % of bodyweight change per interval across the
-  last ≤4 prior check-ins (`TREND_WINDOW = 4`).
-- `calculateAdjustments` now accepts an optional `recentCheckins` window and
-  prefers the trend signal. With fewer than 2 priors it falls back to the existing
-  single-week delta, so early check-ins and all prior call sites/tests behave
-  identically (backward compatible). Adjustment notes read "Weight trend …" when
-  the trend drove the change.
-- All three check-in handlers (`checkin:submit`, `checkin:submitMissed`,
-  `checkin:update`) fetch and pass the recent window. The existing diet-plan
-  recalculation already folds `adjustments.calories_delta` (plus bodyweight-derived
-  protein/fat and proportionally scaled meal cards) into the latest `diet_plans`
-  row — so a stalled or fast-moving trend now moves the actual calorie/macro targets.
+The plan-generation IPC handlers (`electron/ipc/planHandlers.ts`) already read
+`claude_api_key` from the DB `settings` table and route to `claudeService` when a
+key is present, falling back to the rule-based engines otherwise. So the work was
+to capture the key at the start of onboarding and persist it *before* plan
+generation fires — the tailoring then happens automatically.
+
+- **New step** `src/pages/Onboarding/steps/StepAiSetup.tsx`: optional Claude API
+  key input (password field), "how to get a key" help (opens console.anthropic.com
+  via `window.api.openExternal`), and a live status dot showing rule-based vs
+  AI-tailored generation. Notes the key can be changed later in Settings.
+- `src/pages/Onboarding/useOnboarding.ts`: added `apiKey`/`setApiKey` state;
+  `totalSteps` 6 → 7.
+- `src/pages/Onboarding/index.tsx`: prepended `StepAiSetup` as step 1; added
+  'AI Setup' to `STEP_LABELS`; shifted the Personal-fields validation from step 1
+  to step 2 (both `validateStep` and the submit-time call); on submit, persists a
+  non-blank trimmed key via `settingsStore.setSetting('claude_api_key', …)` BEFORE
+  `generateTrainingPlan`/`generateDietPlan`. Blank key → no write → deterministic
+  engines (graceful fallback), matching prior behaviour exactly.
+
+### Acceptance criteria
+- User can enter the key first — ✓ (AI Setup is onboarding step 1).
+- Onboarding output tailored when a key is present — ✓ (key saved to DB before
+  plan generation; existing handlers route to Claude).
+- App still works with no key — ✓ (blank key skips the write; rule-based path
+  unchanged).
 
 ### Files changed
-- `electron/services/checkinEngine.ts` — added `weightTrendPct` + `TREND_WINDOW`;
-  `calculateAdjustments` takes optional `recentCheckins`, prefers trend, trend-aware notes.
-- `electron/ipc/checkinHandlers.ts` — submit / submitMissed / update each query the
-  recent check-in window and pass it through.
-- `tests/unit/checkinEngine.test.ts` — 6 new trend tests.
+- `src/pages/Onboarding/steps/StepAiSetup.tsx` — new step component.
+- `src/pages/Onboarding/useOnboarding.ts` — apiKey state + totalSteps 7.
+- `src/pages/Onboarding/index.tsx` — new first step, label, shifted validation,
+  key persistence before plan generation.
+- `tests/unit/onboardingAiSetup.test.tsx` — 5 new tests.
 - `docs/change-backlog.md` — item checked off.
 - `change-agent-report.md` — this report.
 
 ### STEP 4 — Verification (all PASS)
 - `npx tsc --noEmit` → PASS (clean)
-- `npm test` → PASS (196 tests, +6 new)
+- `npm test` → PASS (201 tests, +5 new)
 - `npx electron-vite build` → PASS
 
 ### Deferred
-Nothing for this item. Remaining backlog: "AI-tailored onboarding via Claude API key".
+Nothing for this item. The Claude prompts themselves (meal/workout generation)
+were already threaded with the full profile in prior runs; onboarding now simply
+supplies the key that activates them. This was the last item in the backlog queue.
