@@ -162,10 +162,22 @@ Never delete items; only check them off.
   protein/fat invariance, snack handling, no-mutation, invalid/zero boost, empty).
   tsc/tests(190)/build all clean.
 
-- [ ] **Adaptive nutrition from check-ins + weight.** Nutrition (calorie/macro
+- [x] **Adaptive nutrition from check-ins + weight.** Nutrition (calorie/macro
   targets) should adapt over time based on check-in data and the weight trend, not
   just the initial plan. Acceptance: submitting check-ins that show a stalled or
-  fast-moving weight trend adjusts the diet plan accordingly.
+  fast-moving weight trend adjusts the diet plan accordingly. — done 2026-07-07:
+  calorie adaptation previously keyed off a SINGLE week-over-week weight delta, so
+  one noisy weigh-in (water/glycogen/sodium) could whipsaw the target every check-in.
+  Added `weightTrendPct` in `checkinEngine.ts` — a smoothed multi-check-in trend
+  (avg % bodyweight change per interval over the last ≤4 priors); `calculateAdjustments`
+  now takes an optional `recentCheckins` window and prefers the trend, falling back to
+  the single-week delta when <2 priors exist (early check-ins unchanged). Notes read
+  "Weight trend …" when trend-driven. All three check-in handlers (submit / submitMissed /
+  update) pass the recent window; the existing diet-plan recalc already folds
+  `calories_delta` (and bodyweight-derived protein/fat + scaled meals) into the plan,
+  so a stalled/fast trend now moves the actual targets. Added 6 trend unit tests
+  (single-week vs trend divergence on a water spike, fast-drop trend, on-track trend,
+  <2-prior fallback, NaN filtering). tsc/tests(196)/build all clean.
 
 - [ ] **AI-tailored onboarding via Claude API key.** Make entering the Claude API
   key the FIRST onboarding step, then use it to produce a more tailored onboarding

@@ -1,59 +1,53 @@
 # Change Agent Report
 
-## Run: 2026-07-07
+## Run: 2026-07-07 (adaptive nutrition)
 
 ### STEP 1 — Regression guard
-No regressions. Baseline was green on arrival:
+No regressions. On a clean pull of `master`:
 - `npx tsc --noEmit` → PASS (clean)
-- `npm test` → PASS (180 tests)
+- `npm test` → PASS (190 tests)
 - `npx electron-vite build` → PASS
 
-(Note: `npm ci` needed `ELECTRON_SKIP_BINARY_DOWNLOAD=1` — the electron
-postinstall binary download returns 403 from the sandbox proxy. The binary is
-only needed to *run* the desktop app, not to typecheck/test/build, so this does
-not affect verification.)
+(`npm ci` run with `ELECTRON_SKIP_BINARY_DOWNLOAD=1` — electron's postinstall
+binary 403s from the sandbox proxy; not needed to typecheck/test/build.)
 
 ### STEP 2 — Backlog item implemented
-**Refeed day adjusts daily meals** (topmost unchecked item).
+**Adaptive nutrition from check-ins + weight** (topmost unchecked item).
 
-Before this change the refeed feature only rendered a separate "Refeed Day"
-summary card showing boosted daily targets (+100g carbs / +400 kcal). The actual
-per-meal cards, the headline macro StatCards, and the Today's Intake targets all
-still showed the baseline plan — so the meals themselves did not reflect the
-refeed. This closes that gap.
+Nutrition targets previously adapted off a **single** week-over-week weight delta
+(current vs. immediately-previous check-in). Weekly weight is noisy — a water /
+glycogen / sodium swing could read as "dropping too fast" or "stalling" and
+whipsaw the calorie target on a single weigh-in. Made adaptation key off the
+**weight trend across recent check-ins** instead.
 
 ### Approach
-- New pure, unit-tested helper `src/utils/refeed.ts` → `applyRefeedToMeals(meals, carbBoostG)`:
-  distributes the carb boost across the day's **main** meals (snacks left simple;
-  falls back to all meals when the plan is all snacks). Adds carbs and the calories
-  those carbs carry (4 kcal/g); protein and fat are untouched. The added carbs sum
-  to **exactly** the boost (uneven-split remainder goes to the earliest meals). The
-  input is never mutated.
-- `src/pages/Diet/index.tsx`: compute `displayMeals`, `effCaloriesTarget`,
-  `effCarbsG` once, gated on `isRefeedDay`. On the refeed day the whole Meal Plan
-  tab renders these boosted values — per-meal cards, headline StatCards (labelled
-  "Calories · refeed" / "Carbs · refeed"), the macro-split percentages, and the
-  Today's Intake targets/progress/"still to eat" line. On every other day
-  `displayMeals === dietPlan.meals` and targets are the baseline, so nothing
-  changes.
-- The stored plan (`dietPlan.meals`) is left untouched, so all index-based
-  persistence — mark-eaten, swap, drag-reorder — keeps operating on the baseline.
-  Weekly/analytics aggregates are intentionally left at baseline per-day (a single
-  refeed day's boost there would be out of scope and the acceptance says other days
-  unchanged).
+- New `weightTrendPct` in `electron/services/checkinEngine.ts`: a smoothed
+  multi-check-in trend — average % of bodyweight change per interval across the
+  last ≤4 prior check-ins (`TREND_WINDOW = 4`).
+- `calculateAdjustments` now accepts an optional `recentCheckins` window and
+  prefers the trend signal. With fewer than 2 priors it falls back to the existing
+  single-week delta, so early check-ins and all prior call sites/tests behave
+  identically (backward compatible). Adjustment notes read "Weight trend …" when
+  the trend drove the change.
+- All three check-in handlers (`checkin:submit`, `checkin:submitMissed`,
+  `checkin:update`) fetch and pass the recent window. The existing diet-plan
+  recalculation already folds `adjustments.calories_delta` (plus bodyweight-derived
+  protein/fat and proportionally scaled meal cards) into the latest `diet_plans`
+  row — so a stalled or fast-moving trend now moves the actual calorie/macro targets.
 
 ### Files changed
-- `src/utils/refeed.ts` (new) — pure refeed distribution helper
-- `src/pages/Diet/index.tsx` — render refeed-boosted meals/targets on the refeed day
-- `tests/unit/refeed.test.ts` (new) — 10 unit tests
-- `docs/change-backlog.md` — item checked off
-- `change-agent-report.md` — this report
+- `electron/services/checkinEngine.ts` — added `weightTrendPct` + `TREND_WINDOW`;
+  `calculateAdjustments` takes optional `recentCheckins`, prefers trend, trend-aware notes.
+- `electron/ipc/checkinHandlers.ts` — submit / submitMissed / update each query the
+  recent check-in window and pass it through.
+- `tests/unit/checkinEngine.test.ts` — 6 new trend tests.
+- `docs/change-backlog.md` — item checked off.
+- `change-agent-report.md` — this report.
 
 ### STEP 4 — Verification (all PASS)
 - `npx tsc --noEmit` → PASS (clean)
-- `npm test` → PASS (190 tests, +10 new refeed tests)
+- `npm test` → PASS (196 tests, +6 new)
 - `npx electron-vite build` → PASS
 
 ### Deferred
-Nothing for this item. Weekly aggregate views deliberately remain baseline-per-day
-(see approach note).
+Nothing for this item. Remaining backlog: "AI-tailored onboarding via Claude API key".
