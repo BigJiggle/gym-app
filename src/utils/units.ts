@@ -19,9 +19,11 @@ export function displayLength(cm: number, units: UnitSystem): { value: string; u
 
 export function displayHeight(cm: number, units: UnitSystem): string {
   if (units === 'imperial') {
-    const totalInches = cm / 2.54
+    // Round to whole inches FIRST, then split — otherwise a remainder that
+    // rounds up to 12 (e.g. 181.9 cm ≈ 71.6 in) renders "5'12"" instead of 6'0".
+    const totalInches = Math.round(cm / 2.54)
     const feet = Math.floor(totalInches / 12)
-    const inches = Math.round(totalInches % 12)
+    const inches = totalInches % 12
     return `${feet}'${inches}"`
   }
   return `${Math.round(cm)} cm`

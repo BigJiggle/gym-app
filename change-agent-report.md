@@ -1,5 +1,54 @@
 # Change Agent Report
 
+## Run: 2026-07-10 (BUG FIX — imperial height shows 5'12")
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 done, last
+2026-07-07). So per the mission this run is a **bug hunt**, not a backlog item.
+(The prior two runs, 07-08/07-09, stopped at "backlog empty" without hunting.)
+
+### STEP 1 — Regression guard (clean pull of master)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (201 tests, 21 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.)
+
+### STEP 2 — Area audited: (f) shows/competition + date/week logic + unit conversion
+Traced `electron/ipc/showHandlers.ts`, `electron/services/checkinSchedule.ts`,
+`electron/services/checkinEngine.ts`, `electron/ipc/checkinHandlers.ts`,
+`src/utils/dates.ts`, `src/utils/checkinSchedule.ts`, and `src/utils/units.ts`.
+The date/week arithmetic (next-checkin, missed-slot, week_number, trend window,
+weeks-out) is well-guarded. Found one **real, reachable** defect in the
+unit-conversion path (a SCOPE item: "unit-conversion edges").
+
+### Bug found — `displayHeight` renders `5'12"` instead of `6'0"`
+- **File:** `src/utils/units.ts:20` (`displayHeight`, imperial branch).
+- **Root cause:** it computed `feet = floor(totalInches/12)` and
+  `inches = round(totalInches % 12)` independently. When the fractional inch
+  remainder rounds UP to 12, the feet value isn't carried, so the string reads
+  `5'12"`. Concretely `displayHeight(181.9, 'imperial')` → `5'12"` (71.6 in
+  rounds the remainder 11.6 → 12) when it should be `6'0"`. Reachable from the
+  Settings profile display (`src/pages/Settings/index.tsx:537`) for any height
+  whose inch remainder rounds to ≥11.5 (~181.6–182.8 cm, and the same pattern at
+  every foot boundary).
+- **Fix:** round to whole inches FIRST, then split
+  (`totalInches = round(cm/2.54)`, `feet = floor(totalInches/12)`,
+  `inches = totalInches % 12`). The 12" carry now rolls into feet. Metric branch
+  and `displayWeight`/`displayLength` unchanged.
+
+### Tests added
+- `tests/unit/units.test.ts` (new, 6 tests) — metric rounding, kg→lb / cm→in
+  conversions, exact 5'0", 5'11", and the regression case `181.9 cm → 6'0"`
+  (fails before the fix, passes after).
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (207 tests, +6 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-07-09 (no work — backlog empty, app healthy)
 
 ### STEP 1 — Regression guard
