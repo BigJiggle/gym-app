@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import { useUserStore } from '../../store/userStore'
 import { getShowCountdown } from '../../utils/dates'
+import { useSidebarCollapsed, toggleSidebar } from './useSidebar'
 
 const NAV_ITEMS = [
   { to: '/dashboard', label: 'Dashboard', icon: '⊞' },
@@ -21,6 +22,7 @@ const GOAL_LABELS: Record<string, string> = {
 
 export default function NavSidebar() {
   const { user, shows } = useUserStore()
+  const collapsed = useSidebarCollapsed()
 
   // Nearest upcoming show — source of truth is the shows array, never fall back to user.show_date
   // (user.show_date may lag if a show was just deleted)
@@ -45,15 +47,30 @@ export default function NavSidebar() {
     : null
 
   return (
-    <aside className="w-56 bg-gray-900 border-r border-gray-800 flex flex-col h-screen sticky top-0">
-      {/* Logo */}
-      <div className="px-5 py-5 border-b border-gray-800">
-        <h1 className="text-lg font-black text-brand-500 tracking-tight">PrepCoach</h1>
-        <p className="text-xs text-gray-500 mt-0.5">Competition Prep</p>
+    <aside
+      className={`${collapsed ? 'w-16' : 'w-56'} bg-gray-900 border-r border-gray-800 flex flex-col h-screen sticky top-0 transition-all duration-300`}
+    >
+      {/* Logo + collapse toggle */}
+      <div className={`flex items-center border-b border-gray-800 ${collapsed ? 'justify-center px-2 py-4' : 'justify-between px-4 py-5'}`}>
+        {!collapsed && (
+          <div className="min-w-0">
+            <h1 className="text-lg font-black text-brand-500 tracking-tight">PrepCoach</h1>
+            <p className="text-xs text-gray-500 mt-0.5">Competition Prep</p>
+          </div>
+        )}
+        <button
+          onClick={toggleSidebar}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-expanded={!collapsed}
+          className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors text-lg leading-none"
+        >
+          {collapsed ? '›' : '‹'}
+        </button>
       </div>
 
       {/* User info */}
-      {user && (
+      {user && !collapsed && (
         <div className="px-4 py-3 border-b border-gray-800 space-y-1">
           <p className="text-sm font-semibold text-gray-200 truncate">{user.name}</p>
           {subLabel && <p className="text-xs text-gray-500 truncate">{subLabel}</p>}
@@ -77,8 +94,9 @@ export default function NavSidebar() {
           <NavLink
             key={to}
             to={to}
+            title={collapsed ? label : undefined}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              `flex items-center ${collapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-2.5 rounded-lg text-sm font-medium transition-colors ${
                 isActive
                   ? 'bg-brand-600/20 text-brand-400 border border-brand-600/30'
                   : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
@@ -86,16 +104,18 @@ export default function NavSidebar() {
             }
           >
             <span className="text-base leading-none w-5 text-center">{icon}</span>
-            {label}
+            {!collapsed && label}
           </NavLink>
         ))}
       </nav>
 
       {/* Bottom info */}
-      <div className="px-4 py-3 border-t border-gray-800">
-        <p className="text-xs text-gray-600">PrepCoach v1.0</p>
-        <p className="text-xs text-gray-700 mt-0.5">Educational use only</p>
-      </div>
+      {!collapsed && (
+        <div className="px-4 py-3 border-t border-gray-800">
+          <p className="text-xs text-gray-600">PrepCoach v1.0</p>
+          <p className="text-xs text-gray-700 mt-0.5">Educational use only</p>
+        </div>
+      )}
     </aside>
   )
 }
