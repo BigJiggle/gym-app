@@ -50,6 +50,7 @@ export default function Diet() {
   const [prefsOpen, setPrefsOpen] = useState(false)
   const [prefsCookTime, setPrefsCookTime] = useState<'quick' | 'medium' | 'chef'>('medium')
   const [prefsPrepStyle, setPrefsPrepStyle] = useState<'daily' | 'batch' | 'mixed'>('daily')
+  const [prefsCuisine, setPrefsCuisine] = useState<string>('any')
   const [prefsSnackCount, setPrefsSnackCount] = useState(0)
   const [prefsExclusions, setPrefsExclusions] = useState<string[]>([])
   const [prefsPreferences, setPrefsPreferences] = useState<string[]>([])
@@ -177,6 +178,7 @@ export default function Diet() {
     if (prefsOpen && user) {
       setPrefsCookTime((user.cooking_time_pref as 'quick' | 'medium' | 'chef') ?? 'medium')
       setPrefsPrepStyle((user.meal_prep_style as 'daily' | 'batch' | 'mixed') ?? 'daily')
+      setPrefsCuisine((user.culture_pref as string) ?? 'any')
       setPrefsSnackCount(user.snack_count ?? 0)
       setPrefsExclusions(user.food_exclusions ?? [])
       setPrefsPreferences(user.food_preferences ?? [])
@@ -221,6 +223,7 @@ export default function Diet() {
         id: user.id,
         cooking_time_pref: prefsCookTime,
         meal_prep_style: prefsPrepStyle,
+        culture_pref: prefsCuisine,
         snack_count: prefsSnackCount,
         food_exclusions: prefsExclusions,
         food_preferences: prefsPreferences,
@@ -1574,6 +1577,40 @@ export default function Diet() {
                       </button>
                     ))}
                   </div>
+                </div>
+
+                {/* Cuisine */}
+                <div>
+                  <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 block">
+                    Cuisine
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { value: 'any', label: 'Any' },
+                      { value: 'mediterranean', label: 'Mediterranean' },
+                      { value: 'mexican', label: 'Mexican' },
+                      { value: 'indian', label: 'Indian' },
+                      { value: 'asian', label: 'Asian' },
+                      { value: 'japanese', label: 'Japanese' },
+                      { value: 'korean', label: 'Korean' },
+                      { value: 'middle_eastern', label: 'Middle Eastern' },
+                      { value: 'west_african', label: 'West African' },
+                    ].map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setPrefsCuisine(opt.value)}
+                        className={`p-2 rounded-lg border text-xs font-semibold transition-colors ${
+                          prefsCuisine === opt.value
+                            ? 'border-brand-500 bg-brand-600/20 text-brand-400'
+                            : 'border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-600'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-600 mt-1.5">Flavors and staple foods drawn from the chosen cuisine.</p>
                 </div>
 
                 {/* Snacks count */}
