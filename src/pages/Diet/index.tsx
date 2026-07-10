@@ -9,6 +9,7 @@ import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
 import WeeklyMealView from './WeeklyMealView'
 import GroceryList from './GroceryList'
+import { isMealExpanded as resolveMealExpanded } from './mealAccordion'
 import TabWidgetZone from '../../components/widgets/TabWidgetZone'
 import { NUTRITION_WIDGET_META, nutritionWidgetStore } from '../../components/widgets/tabWidgets'
 import { FOODS } from '../../data/foods'
@@ -40,6 +41,9 @@ export default function Diet() {
   const [regenDone, setRegenDone] = useState(false)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
+  // Per-meal accordion overrides. A meal defaults to expanded only if it's the
+  // active/next meal; an explicit tap records true/false here to override that.
+  const [mealExpandOverrides, setMealExpandOverrides] = useState<Record<number, boolean>>({})
   const [streakCompletions, setStreakCompletions] = useState<MealCompletion[]>([])
 
   // Food preferences panel state
@@ -354,6 +358,12 @@ export default function Diet() {
       .sort((a, b) => a.mins - b.mins)
     return uneaten.length > 0 ? uneaten[0].i : null
   })()
+
+  // Accordion: a meal is expanded if the user explicitly toggled it, otherwise
+  // only the active/next meal is open by default (clean scan of a busy day).
+  const isMealExpanded = (i: number): boolean => resolveMealExpanded(mealExpandOverrides, i, activeMealIndex)
+  const toggleMealExpanded = (i: number) =>
+    setMealExpandOverrides((prev) => ({ ...prev, [i]: !isMealExpanded(i) }))
 
   // Consecutive days where every scheduled meal was logged.
   // Counts backwards from today; today counts only if all meals are done.
@@ -1130,7 +1140,12 @@ export default function Diet() {
                     >
                       {/* Content fades when eaten; buttons stay fully visible so undo is discoverable */}
                       <div className={`transition-opacity ${isMealEaten(i) ? 'opacity-40' : ''}`}>
-                        <div className="flex items-center justify-between mb-2">
+                        <div
+                          className="flex items-center justify-between mb-2 cursor-pointer select-none"
+                          onClick={() => toggleMealExpanded(i)}
+                          role="button"
+                          aria-expanded={isMealExpanded(i)}
+                        >
                           <div className="flex items-center gap-2">
                             {snack && (
                               <span className="text-gray-600 cursor-grab select-none text-base leading-none">⠿</span>
@@ -1158,13 +1173,16 @@ export default function Diet() {
                               <span className="text-xs bg-orange-900/30 text-orange-400 border border-orange-800/40 rounded-full px-2 py-0.5 leading-none">Snack</span>
                             )}
                           </div>
-                          <div className="flex gap-3 text-xs text-gray-500">
+                          <div className="flex items-center gap-3 text-xs text-gray-500">
                             <span className="text-brand-400 font-medium">{meal.calories} kcal</span>
                             <span className="text-green-400">P {meal.protein_g}g</span>
                             <span className="text-blue-400">C {meal.carbs_g}g</span>
                             <span className="text-yellow-400">F {meal.fat_g}g</span>
+                            {isMealEaten(i) && <span className="text-green-500" title="Eaten">✓</span>}
+                            <span className="text-gray-500 text-sm leading-none w-4 text-center" aria-hidden="true">{isMealExpanded(i) ? '▾' : '▸'}</span>
                           </div>
                         </div>
+                        {isMealExpanded(i) && (
                         <div className="flex flex-wrap gap-1.5 mt-2">
                           {meal.foods.map((food, fi) => (
                             <span key={fi} className="flex items-center gap-1 text-xs bg-gray-800 text-gray-400 px-2 py-1 rounded-md">
@@ -1179,7 +1197,9 @@ export default function Diet() {
                             </span>
                           ))}
                         </div>
+                        )}
                       </div>
+                      {isMealExpanded(i) && (
                       <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-800/60">
                         <button
                           onClick={() => { setSwapError(null); setSwapTarget({ mealIndex: i, meal }) }}
@@ -1199,6 +1219,7 @@ export default function Diet() {
                           {isMealEaten(i) ? '✓ Eaten' : 'Mark Eaten'}
                         </button>
                       </div>
+                      )}
                     </div>
                   </div>
                 )
