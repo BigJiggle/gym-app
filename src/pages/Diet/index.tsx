@@ -10,6 +10,7 @@ import Button from '../../components/ui/Button'
 import WeeklyMealView from './WeeklyMealView'
 import GroceryList from './GroceryList'
 import { isMealExpanded as resolveMealExpanded } from './mealAccordion'
+import { buildRecipeSteps } from './recipeSteps'
 import TabWidgetZone from '../../components/widgets/TabWidgetZone'
 import { NUTRITION_WIDGET_META, nutritionWidgetStore } from '../../components/widgets/tabWidgets'
 import { FOODS } from '../../data/foods'
@@ -1186,6 +1187,7 @@ export default function Diet() {
                           </div>
                         </div>
                         {isMealExpanded(i) && (
+                        <>
                         <div className="flex flex-wrap gap-1.5 mt-2">
                           {meal.foods.map((food, fi) => (
                             <span key={fi} className="flex items-center gap-1 text-xs bg-gray-800 text-gray-400 px-2 py-1 rounded-md">
@@ -1200,6 +1202,24 @@ export default function Diet() {
                             </span>
                           ))}
                         </div>
+                        {(() => {
+                          const steps = buildRecipeSteps(meal.foods, user?.cooking_time_pref ?? 'medium')
+                          if (steps.length === 0) return null
+                          return (
+                            <div className="mt-2 pt-2 border-t border-gray-800/60">
+                              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Recipe</p>
+                              <ol className="space-y-0.5">
+                                {steps.map((s, si) => (
+                                  <li key={si} className="text-xs text-gray-400 flex gap-1.5">
+                                    <span className="text-brand-500 flex-shrink-0">{si + 1}.</span>
+                                    <span>{s}</span>
+                                  </li>
+                                ))}
+                              </ol>
+                            </div>
+                          )
+                        })()}
+                        </>
                         )}
                       </div>
                       {isMealExpanded(i) && (
