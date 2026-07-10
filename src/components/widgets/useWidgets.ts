@@ -3,6 +3,7 @@ import { useCallback, useSyncExternalStore } from 'react'
 export type WidgetId =
   // Dashboard content widgets (extracted from the old inline cards)
   | 'quick-stats' | 'todays-macros' | 'next-meal' | 'daily-weigh-in' | 'peak-week'
+  | 'prep-pace' | 'weekly-scorecard'
   // Logging / summary widgets
   | 'water' | 'cardio' | 'sessions-week' | 'weekly-volume'
   // Competition-only widgets
@@ -11,7 +12,8 @@ export type WidgetId =
 // Canonical order widgets appear in the Add Widgets catalog. Competition-only
 // widgets are included but hidden by WidgetZone/AddWidgets until a show exists.
 export const ALL_WIDGET_IDS: WidgetId[] = [
-  'quick-stats', 'todays-macros', 'next-meal', 'daily-weigh-in', 'peak-week',
+  'quick-stats', 'todays-macros', 'next-meal', 'daily-weigh-in',
+  'prep-pace', 'weekly-scorecard', 'peak-week',
   'water', 'cardio', 'sessions-week', 'weekly-volume',
   'posing', 'supplements', 'sleep', 'condition',
 ]
