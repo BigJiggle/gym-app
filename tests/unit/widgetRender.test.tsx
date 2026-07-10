@@ -7,7 +7,7 @@ import CardioWidget from '../../src/components/widgets/CardioWidget'
 import SessionsWeekWidget from '../../src/components/widgets/SessionsWeekWidget'
 import WeeklyVolumeWidget from '../../src/components/widgets/WeeklyVolumeWidget'
 import WidgetZone from '../../src/components/widgets/WidgetZone'
-import { __resetWidgetsForTest, STORAGE_KEY } from '../../src/components/widgets/useWidgets'
+import { __resetWidgetsForTest, STORAGE_KEY, MIGRATION_KEY } from '../../src/components/widgets/useWidgets'
 import { usePlanStore } from '../../src/store/planStore'
 import { useCardioStore } from '../../src/store/cardioStore'
 
@@ -36,7 +36,10 @@ describe('widget render smoke tests', () => {
     await act(async () => {}) // flush WeeklyVolumeWidget's async library fetch
   })
 
-  it('renders WidgetZone with all four widgets enabled by default', async () => {
+  it('renders WidgetZone with the enabled widgets', async () => {
+    localStorage.setItem(MIGRATION_KEY, '1')
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(['water', 'weekly-volume']))
+    __resetWidgetsForTest()
     render(<MemoryRouter><WidgetZone /></MemoryRouter>)
     expect(screen.getByText('My Widgets')).toBeTruthy()
     expect(screen.getByText('Rearrange')).toBeTruthy()
@@ -47,6 +50,7 @@ describe('widget render smoke tests', () => {
   })
 
   it('shows the empty state when no widgets are enabled', () => {
+    localStorage.setItem(MIGRATION_KEY, '1')
     localStorage.setItem(STORAGE_KEY, JSON.stringify([]))
     __resetWidgetsForTest()
     render(<MemoryRouter><WidgetZone /></MemoryRouter>)

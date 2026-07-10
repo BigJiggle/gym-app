@@ -8,7 +8,7 @@ import SupplementWidget from '../../src/components/widgets/SupplementWidget'
 import ConditionWidget from '../../src/components/widgets/ConditionWidget'
 import WidgetZone from '../../src/components/widgets/WidgetZone'
 import AddWidgets from '../../src/pages/AddWidgets/index'
-import { __resetWidgetsForTest, STORAGE_KEY } from '../../src/components/widgets/useWidgets'
+import { __resetWidgetsForTest, STORAGE_KEY, MIGRATION_KEY } from '../../src/components/widgets/useWidgets'
 import { posingStore, sleepStore, conditionStore, supplementListStore, supplementLogStore } from '../../src/components/widgets/competitionLogs'
 import { useUserStore } from '../../src/store/userStore'
 import { usePlanStore } from '../../src/store/planStore'
@@ -52,6 +52,7 @@ describe('competition widgets', () => {
   })
 
   it('WidgetZone hides competition widgets when no show is selected', () => {
+    localStorage.setItem(MIGRATION_KEY, '1')
     localStorage.setItem(STORAGE_KEY, JSON.stringify(['posing', 'sleep']))
     __resetWidgetsForTest()
     setShow(false)
@@ -63,6 +64,7 @@ describe('competition widgets', () => {
   })
 
   it('WidgetZone shows competition widgets once a show exists', () => {
+    localStorage.setItem(MIGRATION_KEY, '1')
     localStorage.setItem(STORAGE_KEY, JSON.stringify(['posing', 'sleep']))
     __resetWidgetsForTest()
     setShow(true)

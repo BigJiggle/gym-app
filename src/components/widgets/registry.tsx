@@ -8,6 +8,11 @@ import PosingWidget from './PosingWidget'
 import SupplementWidget from './SupplementWidget'
 import SleepWidget from './SleepWidget'
 import ConditionWidget from './ConditionWidget'
+import QuickStatsWidget from './QuickStatsWidget'
+import TodaysMacrosWidget from './TodaysMacrosWidget'
+import NextMealWidget from './NextMealWidget'
+import DailyWeighInWidget from './DailyWeighInWidget'
+import PeakWeekWidget from './PeakWeekWidget'
 
 export interface WidgetDef {
   id: WidgetId
@@ -20,6 +25,11 @@ export interface WidgetDef {
 }
 
 export const WIDGETS: WidgetDef[] = [
+  { id: 'quick-stats', title: 'Quick Stats', description: 'Weight, daily calories, show countdown / phase, and training days at a glance.', Component: QuickStatsWidget },
+  { id: 'todays-macros', title: "Today's Macros", description: 'Calories and macros consumed vs target for today.', Component: TodaysMacrosWidget },
+  { id: 'next-meal', title: 'Next Meal', description: 'Your next un-eaten meal with a countdown and quick mark-eaten.', Component: NextMealWidget },
+  { id: 'daily-weigh-in', title: 'Daily Weigh-In', description: 'Log fasted morning weight with a smoothed 7-day average and trend.', Component: DailyWeighInWidget },
+  { id: 'peak-week', title: 'Peak Week Protocol', description: 'Daily water/sodium/training/nutrition guidance in the final week before a show.', competitionOnly: true, Component: PeakWeekWidget },
   { id: 'water', title: 'Water Intake', description: 'Track daily hydration against your target with quick-add buttons.', Component: WaterWidget },
   { id: 'cardio', title: 'Cardio', description: 'Log today\'s cardio and see weekly sessions and minutes.', Component: CardioWidget },
   { id: 'sessions-week', title: 'Sessions This Week', description: 'Completed vs scheduled training sessions for the current week.', Component: SessionsWeekWidget },
