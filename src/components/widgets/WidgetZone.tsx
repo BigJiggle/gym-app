@@ -95,7 +95,7 @@ export default function WidgetZone() {
             return (
               <div
                 key={id}
-                className={`relative rounded-xl transition-all ${isSource ? 'opacity-40' : ''} ${dropCue}`}
+                className={`relative rounded-xl transition-all empty:hidden ${isSource ? 'opacity-40' : ''} ${dropCue}`}
                 onPointerDown={editing ? undefined : startLongPress}
                 onPointerUp={cancelLongPress}
                 onPointerLeave={cancelLongPress}

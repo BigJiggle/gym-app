@@ -8,6 +8,10 @@ interface WidgetFrameProps {
 }
 
 export default function WidgetFrame({ editing, onDelete, dragHandleProps, children }: WidgetFrameProps) {
+  // Outside edit mode, render the widget content directly (no wrapper div) so a
+  // widget that returns null produces a truly-empty grid cell that WidgetZone can
+  // collapse via `empty:hidden` — no blank gaps for inapplicable widgets.
+  if (!editing) return <>{children}</>
   return (
     <div className={`relative ${editing ? 'ring-2 ring-brand-600/50 rounded-xl' : ''}`}>
       {editing && (
