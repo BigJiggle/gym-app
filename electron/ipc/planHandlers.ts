@@ -1,7 +1,7 @@
 import { IpcMain } from 'electron'
 import { getDb, namedParams } from '../database/db'
 import { generateTrainingPlan, getExerciseLibraryForUI, determinePhase } from '../services/trainingEngine'
-import { generateNutritionPlan, buildMealsPublic, calcBMR, getPhaseAwareDeficit, ACTIVITY_MULTIPLIERS, clampWeightKg } from '../services/nutritionEngine'
+import { generateNutritionPlan, buildMealsPublic, calcBMR, getPhaseAwareDeficit, ACTIVITY_MULTIPLIERS, clampWeightKg, clampMealCount } from '../services/nutritionEngine'
 import { generateDietWithClaude, generateWorkoutWithClaude, refineDietPlan, refineWorkoutWithClaude, processAIRequest, refineWorkoutForSafety } from '../services/claudeService'
 import { regenerateDietForGoal } from './showHandlers'
 import { clearOrphanedMealCompletions } from './mealCompletionHandlers'
@@ -726,7 +726,10 @@ Ensure every exercise respects the constraints above while maintaining phase-app
           continue
         }
         const NUMERIC_BOUNDS: Record<string, [number, number]> = {
-          meal_count: [3, 6],
+          // Meals: 1–20 to match onboarding / Settings / the engine. A tighter
+          // 3–6 cap here silently overrode a user's explicit "give me 8 meals".
+          meal_count: [1, 20],
+          snack_count: [0, 20],
           training_frequency: [2, 6],
         }
         if (k in NUMERIC_BOUNDS && typeof v === 'number') {
@@ -864,7 +867,7 @@ Ensure every exercise respects the constraints above while maintaining phase-app
           currentDiet.protein_g as number,
           currentDiet.carbs_g as number,
           currentDiet.fat_g as number,
-          Math.max(3, Math.min(6, (updatedUser.meal_count as number) ?? 4)),
+          clampMealCount(updatedUser.meal_count as number),
           (updatedUser.dietary_preference as string) ?? 'omnivore',
           (() => { try { return JSON.parse((updatedUser.food_exclusions as string) ?? '[]') } catch { return [] } })(),
           (() => { try { return JSON.parse((updatedUser.food_preferences as string) ?? '[]') } catch { return [] } })(),

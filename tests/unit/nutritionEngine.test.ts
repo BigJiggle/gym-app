@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { generateNutritionPlan, clampWeightKg } from '../../electron/services/nutritionEngine'
+import { generateNutritionPlan, clampWeightKg, clampMealCount, buildMealsPublic } from '../../electron/services/nutritionEngine'
 
 const BASE_INPUT = {
   weight_kg: 80,
@@ -139,6 +139,45 @@ describe('clampWeightKg', () => {
 
   it('honors a custom fallback', () => {
     expect(clampWeightKg(0, 65)).toBe(65)
+  })
+})
+
+// ── Main-meal count clamp: 1–20, shared by generation and AI regeneration ─────
+// Regression for the bug where plan:applyAIRequest capped meal_count at 3–6.
+// A user with 8 meals (set via Settings, which allows 1–20) had their diet
+// silently collapsed to 6 meals whenever the AI assistant regenerated it, and an
+// explicit "give me 8 meals a day" request was silently stored as 6.
+describe('clampMealCount', () => {
+  it('passes through counts within the supported 1–20 range', () => {
+    expect(clampMealCount(1)).toBe(1)
+    expect(clampMealCount(4)).toBe(4)
+    // These are the values the old 3–6 cap wrongly reduced to 6.
+    expect(clampMealCount(8)).toBe(8)
+    expect(clampMealCount(12)).toBe(12)
+    expect(clampMealCount(20)).toBe(20)
+  })
+
+  it('clamps out-of-range counts to the 1–20 bounds', () => {
+    expect(clampMealCount(0)).toBe(1)
+    expect(clampMealCount(-3)).toBe(1)
+    expect(clampMealCount(25)).toBe(20)
+  })
+
+  it('rounds fractional counts and falls back to 4 for non-finite input', () => {
+    expect(clampMealCount(5.4)).toBe(5)
+    expect(clampMealCount(NaN)).toBe(4)
+    expect(clampMealCount(undefined)).toBe(4)
+    expect(clampMealCount(null)).toBe(4)
+  })
+
+  it('the engine honors the full range the clamp allows (8 main meals)', () => {
+    // Proves the clamp is the only thing that ever limited meal count — the
+    // engine itself builds all 8 main meals with finite macros.
+    const plan = generateNutritionPlan({ ...BASE_INPUT, meal_count: 8 })
+    expect(plan.meals).toHaveLength(8)
+    expect(plan.meals.every((m) => Number.isFinite(m.calories) && m.calories > 0)).toBe(true)
+    // buildMealsPublic (the exact path the AI-request handler uses) also honors 8.
+    expect(buildMealsPublic(2400, 184, 200, 72, clampMealCount(8), 'omnivore')).toHaveLength(8)
   })
 })
 

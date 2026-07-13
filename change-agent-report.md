@@ -1,5 +1,67 @@
 # Change Agent Report
 
+## Run: 2026-07-13 (BUG FIX — AI diet regen silently caps meals at 6)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 done, last
+2026-07-07). So per the mission this run is a **bug hunt**, not a backlog item.
+
+### STEP 1 — Regression guard (clean pull of master)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (220 tests, 26 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.)
+
+### STEP 2 — Area audited: (a) nutrition engine + Diet flows
+Traced `electron/services/nutritionEngine.ts`, `electron/ipc/planHandlers.ts`,
+`electron/ipc/checkinHandlers.ts`, `electron/ipc/mealCompletionHandlers.ts`,
+`electron/services/checkinEngine.ts`, and the Diet-flow front-end
+(`src/pages/Diet/*`, `GroceryList`, `recipeSteps`, `refeed`). The engines and
+check-in handlers are well-guarded. Found one **real, reachable** defect in the
+AI-request diet-regeneration path (a SCOPE item: DB↔UI desync + out-of-range
+clamp).
+
+### Bug found — AI diet regeneration silently caps main meals at 6 (was 1–20)
+- **Files:** `electron/ipc/planHandlers.ts:729` (`NUMERIC_BOUNDS.meal_count`) and
+  `electron/ipc/planHandlers.ts:867` (the `buildMealsPublic` call in the
+  `plan:applyAIRequest` `regenerateDiet` path).
+- **Root cause:** both sites clamped `meal_count` to `[3, 6]`, but onboarding
+  (`Step4Nutrition.tsx`, `MEAL_MIN=1 / MEAL_MAX=20`), Settings
+  (`Settings/index.tsx:448`, 1–20), and the engine (`generateNutritionPlan`,
+  clamps 1–20) all support **1–20 main meals**. Consequences, both reachable with
+  a Claude API key configured:
+  1. A user who set 8 meals in Settings, then used the AI assistant for *any*
+     tweak that triggers `regenerateDiet` (e.g. "make my meals higher protein"),
+     had their plan silently rebuilt with only **6** meals — a DB↔UI desync
+     against the stored `users.meal_count = 8`.
+  2. An explicit "give me 8 meals a day" request was clamped and stored as 6.
+  The engine itself builds all 8 (verified: `generateNutritionPlan({meal_count:8})`
+  → 8 finite-macro meals; `buildMealsPublic(...,8,...)` → 8), so the clamp was the
+  sole limiter.
+- **Fix:** extracted a shared `clampMealCount(n)` helper into
+  `nutritionEngine.ts` (1–20, rounds, falls back to 4 for non-finite input) and
+  used it in both `generateNutritionPlan` (behavior-preserving — it already did
+  the same inline) and the `plan:applyAIRequest` regenerate path. Widened
+  `NUMERIC_BOUNDS.meal_count` to `[1, 20]` and added `snack_count: [0, 20]` so
+  AI-suggested setting changes match the manual ranges. `training_frequency`
+  bound unchanged.
+
+### Tests added
+- `tests/unit/nutritionEngine.test.ts` — new `clampMealCount` block (4 tests):
+  in-range pass-through incl. 8/12/20 (the values the old 3–6 cap wrongly reduced
+  to 6), out-of-range clamping (0→1, 25→20), fractional rounding + non-finite
+  fallback to 4, and an end-to-end check that the engine + `buildMealsPublic`
+  honor 8 main meals. Confirmed the new tests FAIL against the old `[3,6]` clamp
+  (3 failures) and PASS after the fix.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (224 tests, +4 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-07-10 (BUG FIX — imperial height shows 5'12")
 
 ### STEP 0 — Backlog

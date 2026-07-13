@@ -820,6 +820,15 @@ export function clampWeightKg(weightKg: number | undefined | null, fallback = 70
   return Number.isFinite(weightKg) && (weightKg as number) >= 30 ? (weightKg as number) : fallback
 }
 
+// Supported main-meal range (1–20) shared by onboarding, Settings, and the
+// engine. Every path that turns a meal_count into a plan must clamp identically —
+// a mismatched clamp (e.g. the AI-request handler's old 3–6 cap) silently drops a
+// user's configured meals when their diet is regenerated. A non-finite value
+// (missing/NaN field) falls back to 4 before clamping.
+export function clampMealCount(n: number | undefined | null): number {
+  return Number.isFinite(n) ? Math.max(1, Math.min(20, Math.round(n as number))) : 4
+}
+
 export function generateNutritionPlan(input: NutritionInput): NutritionPlan {
   const safeWeightKg = clampWeightKg(input.weight_kg)
   input = { ...input, weight_kg: safeWeightKg }
@@ -845,15 +854,14 @@ export function generateNutritionPlan(input: NutritionInput): NutritionPlan {
 
   // A non-finite meal_count (e.g. NaN) survives Math.max/Math.min unchanged — NaN
   // propagating into the meal-template builder and .slice(0, NaN) yields zero main
-  // meals. Fall back to 4 before clamping so the result is always finite. Meals are
-  // supported from 1 to 20.
-  const safeMealCount = Number.isFinite(input.meal_count) ? input.meal_count : 4
+  // meals. clampMealCount falls back to 4 before clamping so the result is always
+  // a finite 1–20 main-meal count.
   const meals = buildMeals(
     calories,
     protein_g,
     carbs_g,
     fat_g,
-    Math.max(1, Math.min(20, Math.round(safeMealCount))),
+    clampMealCount(input.meal_count),
     input.dietary_preference,
     input.food_exclusions,
     input.food_preferences,
