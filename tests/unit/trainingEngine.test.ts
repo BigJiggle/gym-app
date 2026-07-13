@@ -93,4 +93,31 @@ describe('trainingEngine', () => {
     const plan = generateTrainingPlan({ ...BASE_INPUT, training_frequency: 8 })
     expect(plan.sessions.length).toBeLessThanOrEqual(6)
   })
+
+  // Regression: Arnold split at high frequency (5–6 days) builds "variant B"
+  // sessions by dropping the first exercise of each muscle group. With a low
+  // exercises_per_session (3–4, both reachable — Settings allows 3–12), each
+  // muscle group only has a single exercise, so the drop emptied the whole
+  // "Shoulders & Arms (B)" session — a real workout day with zero exercises.
+  it('Arnold split never produces an empty session at low exercises_per_session', () => {
+    for (const freq of [5, 6]) {
+      for (const exPer of [3, 4, 5, 6]) {
+        const plan = generateTrainingPlan({
+          ...BASE_INPUT,
+          split_preference: 'arnold',
+          training_frequency: freq,
+          exercises_per_session: exPer,
+        })
+        for (const session of plan.sessions) {
+          expect(
+            session.exercises.length,
+            `arnold freq=${freq} exPer=${exPer} — "${session.session_name}" was empty`
+          ).toBeGreaterThan(0)
+          for (const ex of session.exercises) {
+            expect(ex.name).toBeTruthy()
+          }
+        }
+      }
+    }
+  })
 })

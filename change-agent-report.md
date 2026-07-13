@@ -1,5 +1,72 @@
 # Change Agent Report
 
+## Run: 2026-07-13b (BUG FIX — Arnold split builds an EMPTY workout day)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 done, last
+2026-07-07). So this run is a **bug hunt**, not a backlog item.
+
+### STEP 1 — Regression guard (clean pull of master)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (224 tests, 26 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.)
+
+### STEP 2 — Area audited: (b) training engine + workout/session flows
+Rotated off the prior two runs' areas (nutrition/Diet, shows/date). Traced
+`electron/services/trainingEngine.ts` (all six split builders), the training IPC
+paths (`workoutHandlers.ts`, `planHandlers.ts` incl. the `plan:applyAIRequest`
+regenerate path), and the front-end workout flows (`WorkoutSession.tsx`,
+`WorkoutLogEditor.tsx`, `SessionEditor.tsx`, `WorkoutStats.tsx`, and the
+`TodaysSession`/`TrainingVolume`/`SessionsWeek` widgets). The UI logging paths
+and the check-in/PR/volume math are well-guarded. Empirically probed
+`generateTrainingPlan` over a full matrix (6 splits × 3 equipment tiers × freq
+2–6 × 4 goals × exercises_per_session {1,2,3,4,5,6,8,12} × sets {–,1,4}) for
+crashes / NaN / empty sessions — surfaced one **real, reachable** defect.
+
+### Bug found — Arnold split emits a completely empty "Shoulders & Arms (B)" session
+- **File:** `electron/services/trainingEngine.ts` — `buildArnoldSplit`, the
+  variant-B cycle entries (was lines 394–395).
+- **Root cause:** the "(B)" variant sessions were built by dropping the first
+  exercise of each muscle group with `.slice(1)` to vary the ordering vs the "A"
+  session. "Shoulders & Arms (B)" is `[...shoulderA.slice(1), ...biA.slice(1),
+  ...triA.slice(1)]`. The per-group counts come from `armThird =
+  Math.max(1, Math.round(exercises_per_session / 3))`, so a low
+  `exercises_per_session` collapses each group to a **single** exercise;
+  `slice(1)` on a 1-element array yields `[]`, and all three groups empty at
+  once → a real training day (day 5 of an Arnold split) with **zero exercises**.
+- **Reachability:** fully reachable through the UI — Settings allows
+  `exercises_per_session` 3–12 (`Settings/index.tsx:429`), `training_frequency`
+  2–6, and `split_preference: 'arnold'`. `armThird === 1` for
+  `exercises_per_session ∈ {1,2,3,4}`, so any Arnold user training 5–6 days/week
+  with 3 or 4 exercises/session got an empty "Shoulders & Arms (B)" day (nothing
+  to do, and 0-set contribution to weekly volume). "Chest & Back (B)" used the
+  same pattern and, while never fully empty, silently dropped `backA[0]`
+  permanently (variant B had one fewer exercise than A).
+- **Fix:** added a small `rotateOne<T>(arr)` helper (moves the first element to
+  the end; returns the array unchanged when length ≤ 1) and used it for both the
+  "Chest & Back (B)" and "Shoulders & Arms (B)" cycle entries instead of the
+  `.slice(1)` drops. Rotation preserves length, so B still differs in ordering
+  from A (variety intent kept) but can never empty a group that has ≥1 exercise,
+  and no longer discards an exercise. Legs & Core (B) already rotates via slices
+  and never empties — left untouched (minimal change).
+
+### Tests added
+- `tests/unit/trainingEngine.test.ts` — new regression test: for Arnold split at
+  `training_frequency` 5 and 6 × `exercises_per_session` {3,4,5,6}, asserts every
+  session has ≥1 exercise and every exercise has a name. Confirmed it **FAILS**
+  against the old code (`arnold freq=5 exPer=3 — "Shoulders & Arms (B)" was
+  empty: expected 0 to be greater than 0`) and PASSES after the fix. Also
+  re-ran the full engine probe post-fix: **0 empty sessions** across the matrix.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (225 tests, +1 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-07-13 (BUG FIX — AI diet regen silently caps meals at 6)
 
 ### STEP 0 — Backlog

@@ -375,6 +375,15 @@ function buildUpperLowerSessions(
   }))
 }
 
+// Rotate an exercise list by one (first element moves to the end) to build a
+// "variant B" ordering that differs from variant A. Unlike a `.slice(1)`, this
+// preserves length, so it never empties a session when a muscle group only has
+// one available exercise (e.g. a low exercises_per_session collapses each
+// group to a single lift — which previously left "Shoulders & Arms (B)" empty).
+function rotateOne<T>(arr: T[]): T[] {
+  return arr.length <= 1 ? arr : [...arr.slice(1), arr[0]]
+}
+
 function buildArnoldSplit(freq: number, equipment: EquipmentTier, phase: string, exp: number, exPerSession?: number, userDefault?: number, userMax?: number): TrainingSession[] {
   const days = DAY_SCHEDULES[freq] ?? [1,2,3,4,5,6].slice(0, freq)
   // Arnold splits two muscle groups per session; scale each half by exPerSession/2
@@ -391,8 +400,8 @@ function buildArnoldSplit(freq: number, equipment: EquipmentTier, phase: string,
     { name: 'Chest & Back', ex: [...chestA, ...backA] },
     { name: 'Shoulders & Arms', ex: [...shoulderA, ...biA, ...triA] },
     { name: 'Legs & Core', ex: legExercises },
-    { name: 'Chest & Back (B)', ex: [...chestA.slice(1), ...backA.slice(1), chestA[0]] },
-    { name: 'Shoulders & Arms (B)', ex: [...shoulderA.slice(1), ...biA.slice(1), ...triA.slice(1)] },
+    { name: 'Chest & Back (B)', ex: [...rotateOne(chestA), ...rotateOne(backA)] },
+    { name: 'Shoulders & Arms (B)', ex: [...rotateOne(shoulderA), ...rotateOne(biA), ...rotateOne(triA)] },
     { name: 'Legs & Core (B)', ex: [...legExercises.slice(2), ...legExercises.slice(0, 2)] },
   ]
 
