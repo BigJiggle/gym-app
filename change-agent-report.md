@@ -1,5 +1,73 @@
 # Change Agent Report
 
+## Run: 2026-07-14 (BUG FIX — biweekly check-ins show phantom "missed" slots)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 done, last
+2026-07-07). So this run is a **bug hunt**, not a backlog item.
+
+### STEP 1 — Regression guard (clean pull of master)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (225 tests, 26 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.)
+
+### STEP 2 — Area audited: (c) check-in + Progress + adaptive nutrition
+Rotated off the prior runs' areas (b training, a nutrition, f shows/date). Traced
+`checkinEngine.ts` (well-guarded weight-trend math; verified via its 21 existing
+tests), `checkinHandlers.ts` (submit / submitMissed / update / history — dup-date
+guards, week-number shifting, and the adaptive diet-plan recalc all sound), the
+`Progress/index.tsx` and `CheckIn/index.tsx` flows, the check-in widgets, and the
+check-in **schedule** helpers (`electron/services/checkinSchedule.ts` +
+`src/utils/checkinSchedule.ts`). The schedule helper surfaced one **real,
+reachable** defect.
+
+### Bug found — biweekly (day-based) check-ins report phantom "missed" slots
+- **Files:** `electron/services/checkinSchedule.ts` and
+  `src/utils/checkinSchedule.ts` — `computeMissedSlots` (and its `addMissedFrom`
+  helper). The live UI path is the `src/utils` copy via
+  `src/pages/CheckIn/index.tsx:444`.
+- **Root cause:** `computeMissedSlots` never received the biweekly flag and used a
+  check-in's stored `interval_days` column as its cadence. But biweekly is a
+  **'day'-mode sub-option** — the `interval_days` input only appears in *interval*
+  mode, so day-mode rows keep `interval_days` at its `7` default regardless of
+  biweekly. A biweekly athlete's real ~14-day gaps were therefore judged against a
+  7-day cadence: `countMissedBetween` computes `floor(14/7) − 1 = 1` phantom
+  missed slot in the *middle* of every genuine 14-day gap, and the
+  post-last-check-in scan then cascaded more (a 3-check-in Monday history produced
+  **7 phantom "Missed — Expected …" slots**, reproduced empirically). Each phantom
+  slot renders a "fill in a missed check-in" panel that, if used, inserts a bogus
+  extra check-in and shifts week numbers.
+- **Reachability:** fully reachable — Settings → Check-In Schedule → day mode →
+  "Every other <day>" sets `checkin_biweekly='true'`; `getNextCheckinDate` already
+  honours the 14-day biweekly cadence, so real check-ins land ~14 days apart and
+  trip the mismatch on every period.
+- **Fix:** added an optional `biweekly` parameter to `computeMissedSlots` and a
+  small `effectiveInterval()` helper. Day-mode cadence is now derived from the
+  schedule itself (`biweekly ? 14 : 7`) rather than the meaningless `interval_days`
+  column; interval mode still uses the per-row stored interval (falling back to the
+  current setting for legacy rows) exactly as before. `addMissedFrom` now steps
+  day-mode slots by that effective interval (was hard-coded `+7`) then re-aligns to
+  the check-in day, so generated biweekly dates are correct too. The `CheckIn`
+  caller now passes `settings.checkin_biweekly === 'true'`. After the fix the same
+  history yields **0** phantom slots and only genuinely-skipped biweekly periods
+  are reported; the weekly and interval paths are unchanged.
+
+### Tests added
+- `tests/unit/checkinSchedule.test.ts` — new `computeMissedSlots — biweekly
+  (day-based) cadence` block (3 tests): on-time biweekly 14-day check-ins produce
+  **0** missed; weekly day mode still flags a genuine 14-day skip (1); a genuinely
+  skipped 28-day biweekly gap is flagged as 1. The two "biweekly" tests **FAIL**
+  against the old code and PASS after the fix.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (228 tests, +3 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-07-13b (BUG FIX — Arnold split builds an EMPTY workout day)
 
 ### STEP 0 — Backlog

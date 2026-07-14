@@ -284,6 +284,42 @@ describe('computeMissedSlots — per-period interval (interval switch)', () => {
   })
 })
 
+describe('computeMissedSlots — biweekly (day-based) cadence', () => {
+  it('does NOT flag phantom missed slots for on-time biweekly (14-day) check-ins', () => {
+    // Biweekly is a 'day' sub-mode: the interval_days column stays at its 7 default
+    // (the interval input only shows in 'interval' mode). Consecutive biweekly
+    // check-ins are ~14 days apart and must NOT be treated as a skipped weekly slot.
+    const h = makeHistory([
+      { daysAgo: 28, interval_days: 7, schedule_type: 'day' },
+      { daysAgo: 14, interval_days: 7, schedule_type: 'day' },
+      { daysAgo: 1,  interval_days: 7, schedule_type: 'day' },
+    ])
+    // biweekly flag = true → effective day cadence is 14, so no gap is "missed".
+    const missed = computeMissedSlots(h, 'day', 1, 7, true)
+    expect(missed).toHaveLength(0)
+  })
+
+  it('weekly (non-biweekly) day mode still flags a genuine 14-day skip', () => {
+    const h = makeHistory([
+      { daysAgo: 21, interval_days: 7, schedule_type: 'day' },
+      { daysAgo: 7,  interval_days: 7, schedule_type: 'day' },
+    ])
+    // Gap = 14 days on a weekly cadence → exactly 1 missed slot.
+    const missed = computeMissedSlots(h, 'day', 1, 7, false)
+    expect(missed).toHaveLength(1)
+  })
+
+  it('biweekly: detects a genuinely skipped 28-day gap as one missed slot', () => {
+    const h = makeHistory([
+      { daysAgo: 28, interval_days: 7, schedule_type: 'day' },
+      { daysAgo: 0,  interval_days: 7, schedule_type: 'day' },
+    ])
+    // Gap = 28 days on a 14-day cadence → floor(28/14)-1 = 1 missed.
+    const missed = computeMissedSlots(h, 'day', 1, 7, true)
+    expect(missed).toHaveLength(1)
+  })
+})
+
 describe('computeMissedSlots — post-last-checkin detection', () => {
   it('detects missed slots after the last check-in up to today', () => {
     // Checked in 14 days ago, interval=7 → 1 missed (day 7 expected, still open today)

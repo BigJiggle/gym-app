@@ -138,14 +138,30 @@ function addMissedFrom(
     if (schedType === 'interval') {
       d.setDate(d.getDate() + interval)
     } else {
-      d.setDate(d.getDate() + 7)
-      // re-align to the correct day-of-week
+      // Day mode steps by the effective cadence (7 weekly, 14 biweekly) then
+      // re-aligns to the correct day-of-week.
+      d.setDate(d.getDate() + interval)
       let guard = 0
       while (d.getDay() !== checkinDay && guard++ < 7) d.setDate(d.getDate() + 1)
     }
     probe = d.toLocaleDateString('en-CA')
     into.push({ expected_date: probe, expected_label: missedLabel(probe, schedType, interval) })
   }
+}
+
+// Effective interval (in days) for a check-in's cadence. Day-based cadence is
+// defined by day-of-week / biweekly — NOT by the interval_days column, which
+// stays at its default in day mode (the interval input only appears in interval
+// mode). Using interval_days there made biweekly (14-day) users see a phantom
+// "missed" slot in the middle of every real 14-day gap.
+function effectiveInterval(
+  schedType: 'day' | 'interval',
+  storedIntervalDays: number | undefined,
+  currentIntervalDays: number,
+  biweekly: boolean
+): number {
+  if (schedType === 'day') return biweekly ? 14 : 7
+  return storedIntervalDays ?? currentIntervalDays
 }
 
 /**
@@ -167,7 +183,8 @@ export function computeMissedSlots(
   history: Pick<CheckIn, 'check_in_date' | 'week_number' | 'schedule_type' | 'interval_days'>[],
   currentScheduleType: 'day' | 'interval',
   checkinDay: number,
-  currentIntervalDays: number
+  currentIntervalDays: number,
+  biweekly = false
 ): MissedSlot[] {
   if (history.length === 0) return []
 
@@ -181,10 +198,12 @@ export function computeMissedSlots(
     const a = sorted[i]
     const b = sorted[i + 1]
 
-    // Use the interval that was active when check-in A was submitted.
-    // Falls back to current settings for legacy rows without stored interval.
-    const interval  = (a.interval_days  ?? currentIntervalDays)
+    // Use the cadence that was active when check-in A was submitted. Day-based
+    // schedules derive their interval from day-of-week/biweekly (7 or 14), not
+    // the interval_days column; interval mode falls back to current settings for
+    // legacy rows without a stored interval.
     const schedType = (a.schedule_type  ?? currentScheduleType) as 'day' | 'interval'
+    const interval  = effectiveInterval(schedType, a.interval_days, currentIntervalDays, biweekly)
 
     const missedCount = countMissedBetween(a.check_in_date, b.check_in_date, interval)
     if (missedCount > 0) {
@@ -193,12 +212,12 @@ export function computeMissedSlots(
   }
 
   // ── Gap from last check-in to today ──────────────────────────────────────
-  // Uses the last check-in's stored interval so that an interval change is
-  // respected: if the user switched to 2-day intervals, a 2-day skip shows up.
+  // Uses the last check-in's cadence so that a schedule change is respected: if
+  // the user switched to 2-day intervals, a 2-day skip shows up.
   const last = sorted[sorted.length - 1]
   const today = new Date().toLocaleDateString('en-CA')
-  const lastInterval  = (last.interval_days  ?? currentIntervalDays)
   const lastSchedType = (last.schedule_type  ?? currentScheduleType) as 'day' | 'interval'
+  const lastInterval  = effectiveInterval(lastSchedType, last.interval_days, currentIntervalDays, biweekly)
 
   const missedFromLast = countMissedBetween(last.check_in_date, today, lastInterval)
   if (missedFromLast > 0) {

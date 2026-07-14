@@ -57,7 +57,9 @@ function addMissedFrom(
     if (schedType === 'interval') {
       d.setDate(d.getDate() + interval)
     } else {
-      d.setDate(d.getDate() + 7)
+      // Day mode steps by the effective cadence (7 weekly, 14 biweekly) then
+      // re-aligns to the correct day-of-week.
+      d.setDate(d.getDate() + interval)
       let guard = 0
       while (d.getDay() !== checkinDay && guard++ < 7) d.setDate(d.getDate() + 1)
     }
@@ -66,11 +68,27 @@ function addMissedFrom(
   }
 }
 
+// Effective interval (in days) for a check-in's cadence. Day-based cadence is
+// defined by day-of-week / biweekly — NOT by the interval_days column, which
+// stays at its default in day mode (the interval input only appears in interval
+// mode). Using interval_days there made biweekly (14-day) users see a phantom
+// "missed" slot in the middle of every real 14-day gap.
+function effectiveInterval(
+  schedType: 'day' | 'interval',
+  storedIntervalDays: number | undefined,
+  currentIntervalDays: number,
+  biweekly: boolean
+): number {
+  if (schedType === 'day') return biweekly ? 14 : 7
+  return storedIntervalDays ?? currentIntervalDays
+}
+
 export function computeMissedSlots(
   history: Pick<CheckIn, 'check_in_date' | 'week_number' | 'schedule_type' | 'interval_days'>[],
   currentScheduleType: 'day' | 'interval',
   checkinDay: number,
-  currentIntervalDays: number
+  currentIntervalDays: number,
+  biweekly = false
 ): MissedSlot[] {
   if (history.length === 0) return []
 
@@ -82,8 +100,8 @@ export function computeMissedSlots(
   for (let i = 0; i < sorted.length - 1; i++) {
     const a = sorted[i]
     const b = sorted[i + 1]
-    const interval  = (a.interval_days  ?? currentIntervalDays)
     const schedType = (a.schedule_type  ?? currentScheduleType) as 'day' | 'interval'
+    const interval  = effectiveInterval(schedType, a.interval_days, currentIntervalDays, biweekly)
     const missedCount = countMissedBetween(a.check_in_date, b.check_in_date, interval)
     if (missedCount > 0) {
       addMissedFrom(missed, a.check_in_date, missedCount, interval, schedType, checkinDay)
@@ -92,8 +110,8 @@ export function computeMissedSlots(
 
   const last = sorted[sorted.length - 1]
   const today = new Date().toLocaleDateString('en-CA')
-  const lastInterval  = (last.interval_days  ?? currentIntervalDays)
   const lastSchedType = (last.schedule_type  ?? currentScheduleType) as 'day' | 'interval'
+  const lastInterval  = effectiveInterval(lastSchedType, last.interval_days, currentIntervalDays, biweekly)
   const missedFromLast = countMissedBetween(last.check_in_date, today, lastInterval)
   if (missedFromLast > 0) {
     addMissedFrom(missed, last.check_in_date, missedFromLast, lastInterval, lastSchedType, checkinDay)

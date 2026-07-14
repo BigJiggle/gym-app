@@ -441,7 +441,8 @@ export default function CheckIn() {
   const scheduleType = (settings.checkin_schedule_type ?? 'day') as 'day' | 'interval'
   const intervalDays = parseInt(settings.checkin_interval_days ?? '7', 10)
   const checkinDayNum = parseInt(settings.checkin_day ?? '1', 10)
-  const missedSlots = computeMissedSlots(checkinHistory, scheduleType, checkinDayNum, intervalDays)
+  const biweekly = (settings.checkin_biweekly ?? 'false') === 'true'
+  const missedSlots = computeMissedSlots(checkinHistory, scheduleType, checkinDayNum, intervalDays, biweekly)
 
   // Callback shared by MissedSlotPanel — refreshes history after a missed fill
   async function onMissedFilled() {
