@@ -1,28 +1,6 @@
 import { IpcMain } from 'electron'
 import { getDb, namedParams } from '../database/db'
-
-// meal_count/snack_count are stored unclamped otherwise — a plan generated from a
-// clamped value still reads the raw stored value next time (e.g. AI profile payloads,
-// `user.meal_count ?? 4` fallbacks), and an out-of-range count (NaN, 0, 50) can
-// reach the meal-template builder downstream. Meals are clamped to 1–20, snacks 0–20.
-function clampMealCount(value: unknown): number | undefined {
-  if (value === undefined) return undefined
-  const n = Math.round(Number(value))
-  return Number.isFinite(n) ? Math.max(1, Math.min(20, n)) : 4
-}
-function clampSnackCount(value: unknown): number | undefined {
-  if (value === undefined) return undefined
-  const n = Math.round(Number(value))
-  return Number.isFinite(n) ? Math.max(0, Math.min(20, n)) : 0
-}
-// body_fat_pct has no DB constraint and flows straight into trend charts —
-// clamp to a physiologically plausible range instead of storing -5 or 150 as-is.
-function clampBodyFatPct(value: unknown): number | null | undefined {
-  if (value === undefined) return undefined
-  if (value === null) return null
-  const n = Number(value)
-  return Number.isFinite(n) ? Math.max(3, Math.min(60, n)) : null
-}
+import { clampMealCount, clampSnackCount, clampBodyFatPct, sanitizeUserUpdate } from './userSanitize'
 
 export function registerUserHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('user:create', (_event, data) => {
@@ -72,33 +50,17 @@ export function registerUserHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle('user:update', (_event, data) => {
     const db = getDb()
-    // Serialize all JSON array and boolean fields before binding — node-sqlite3-wasm
-    // rejects raw arrays and booleans; they must be strings/integers.
-    const serialized: Record<string, unknown> = {
-      ...data,
-      competition_history: data.competition_history !== undefined
-        ? JSON.stringify(data.competition_history) : undefined,
-      dietary_restrictions: data.dietary_restrictions !== undefined
-        ? JSON.stringify(data.dietary_restrictions) : undefined,
-      food_preferences: data.food_preferences !== undefined
-        ? JSON.stringify(data.food_preferences) : undefined,
-      food_exclusions: data.food_exclusions !== undefined
-        ? JSON.stringify(data.food_exclusions) : undefined,
-      is_natural: data.is_natural !== undefined ? (data.is_natural ? 1 : 0) : undefined,
-      include_snacks: data.include_snacks !== undefined ? (data.include_snacks ? 1 : 0) : undefined,
-      meal_count: clampMealCount(data.meal_count),
-      snack_count: clampSnackCount(data.snack_count),
-      body_fat_pct: clampBodyFatPct(data.body_fat_pct),
-    }
-    // Drop undefined entries so they don't appear as UPDATE fields
-    const cleanData = Object.fromEntries(
-      Object.entries(serialized).filter(([, v]) => v !== undefined)
-    )
+    // Serialize JSON/boolean fields and drop unchanged/non-finite values (see
+    // sanitizeUserUpdate) so a cleared numeric input can't NULL a required column.
+    const cleanData = sanitizeUserUpdate(data)
     const fields = Object.keys(cleanData)
       .filter((k) => k !== 'id')
       .map((k) => `${k} = @${k}`)
       .join(', ')
-    db.prepare(`UPDATE users SET ${fields}, updated_at = datetime('now') WHERE id = @id`)
+    // If every updatable field was dropped, only bump updated_at (an empty SET
+    // list would be invalid SQL).
+    const setClause = fields ? `${fields}, updated_at = datetime('now')` : `updated_at = datetime('now')`
+    db.prepare(`UPDATE users SET ${setClause} WHERE id = @id`)
       .run(namedParams(cleanData))
     const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(data.id) as Record<string, unknown>
     return parseUser(updated)

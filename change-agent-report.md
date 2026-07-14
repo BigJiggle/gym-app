@@ -1,5 +1,68 @@
 # Change Agent Report
 
+## Run: 2026-07-14b (BUG FIX — cleared numeric profile field NULLs a required column)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 done). So
+this run is a **bug hunt**, not a backlog item.
+
+### STEP 1 — Regression guard (clean pull of master)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (228 tests, 26 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.)
+
+### STEP 2 — Area audited: (d) onboarding + Settings + reset + data lifecycle
+Rotated off the prior runs' areas (c check-in, b training, a nutrition, f
+shows/date). Traced the reset/data-lifecycle path (`user:resetAll`,
+`resetLocalData`/`mergeWeighIns` — well-guarded, weigh-in preservation sound),
+the Settings appearance/schedule/AI/shows sections, the Onboarding wizard +
+`useOnboarding` + `Step1Personal` unit conversions, and the `user:create` /
+`user:update` IPC handlers. The profile **edit** path surfaced a real, reachable
+defect.
+
+### Bug found — clearing a numeric field in Settings → Save writes NULL into a required column
+- **Files:** `electron/ipc/userHandlers.ts` (`user:update`) and the number inputs
+  in `src/pages/Settings/index.tsx` (Age/Height/Weight/Days/Exercises/Sets — e.g.
+  line 338 `age: parseInt(e.target.value)`).
+- **Root cause:** the Settings edit-form number inputs call
+  `parseInt`/`parseFloat` directly in `onChange`. Clearing a field makes
+  `e.target.value === ''`, so `parseInt('')` → **NaN**, stored into `editForm`.
+  `handleSaveProfile` does no validation, so `updateUser({...editForm})` sends the
+  NaN through `user:update`. The handler's clean step only dropped `undefined`
+  entries — a NaN survived, and **node-sqlite3-wasm binds `NaN`/`±Infinity` as
+  `NULL`** (verified empirically). So `age`/`height_cm`/`weight_kg`/
+  `training_frequency`/`exercises_per_session`/`sets_per_exercise` get silently
+  blanked to NULL.
+- **Impact:** a NULL `weight_kg`/`height_cm` then reaches `displayWeight`/
+  `displayHeight` (`null.toFixed(1)` → **TypeError** → the Settings Profile card /
+  Dashboard crash), and NULL age/weight propagate as `NaN` through the nutrition
+  engine's BMR/TDEE math — a genuine DB↔UI corruption, not a cosmetic issue.
+- **Fix:** extracted the update payload's serialize/clean logic into a pure,
+  testable module `electron/ipc/userSanitize.ts` (`sanitizeUserUpdate` + the three
+  existing clamps). The clean step now drops **non-finite numbers** (NaN/±Infinity)
+  in addition to `undefined`, so a cleared required field becomes a no-op for that
+  column (the stored value is kept) instead of nulling it. `user:update` also now
+  guards the all-fields-dropped case (empty `SET` list would be invalid SQL) by
+  bumping only `updated_at`. `user:create` reuses the same extracted clamps
+  (unchanged behavior). Body-fat's nullable clear path is preserved (an explicit
+  `null` still goes through).
+
+### Tests added
+- `tests/unit/userSanitize.test.ts` (5 tests): a cleared (NaN) weight is dropped
+  while `age`/`id` survive; NaN/±Infinity dropped for every required numeric field;
+  valid finite numbers kept; `undefined` dropped but explicit `null` body-fat kept;
+  arrays serialized and meal/snack counts clamped. The first two **FAIL** against
+  the old undefined-only filter and PASS after the fix.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (233 tests, +5 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-07-14 (BUG FIX — biweekly check-ins show phantom "missed" slots)
 
 ### STEP 0 — Backlog
