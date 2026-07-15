@@ -311,6 +311,23 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
     const existing = db.prepare('SELECT * FROM weekly_checkins WHERE id=?').get(checkinId) as Record<string, unknown> | undefined
     if (!existing) throw new Error('Check-in not found')
 
+    // Guard the "one weigh-in per calendar day" invariant that submit/submitMissed
+    // enforce. Moving a check-in's date onto a day that already has a DIFFERENT
+    // check-in would create duplicate same-day rows — two points on the weight-trend
+    // chart for one day and an ambiguous "previous"/week_number lookup.
+    if (data.check_in_date != null) {
+      const newDate = data.check_in_date as string
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
+        throw new Error('check_in_date must be YYYY-MM-DD')
+      }
+      if (newDate !== existing.check_in_date) {
+        const clash = db
+          .prepare('SELECT id FROM weekly_checkins WHERE user_id=? AND check_in_date=? AND id<>? LIMIT 1')
+          .get([existing.user_id as number, newDate, checkinId]) as { id: number } | undefined
+        if (clash) throw new Error(`DUPLICATE_CHECKIN:${newDate}`)
+      }
+    }
+
     const user = db.prepare('SELECT * FROM users WHERE id=?').get(existing.user_id as number) as Record<string, unknown>
     const dietPlan = db.prepare('SELECT calories_target FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1').get(existing.user_id as number) as { calories_target: number } | undefined
 

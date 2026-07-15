@@ -1,5 +1,68 @@
 # Change Agent Report
 
+## Run: 2026-07-15b (BUG FIX — editing a check-in's date onto an occupied day creates a duplicate same-day check-in)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 done).
+So this run is a **bug hunt**, not a backlog item.
+
+### STEP 1 — Regression guard (clean pull of master)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (236 tests, 28 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1` — electron's postinstall binary
+403s from the sandbox proxy; not needed to typecheck/test/build.)
+
+### STEP 2 — Area audited: (f) shows/competition + date/week logic + unit conversion
+Rotated off the previous run's area (e). Traced the show/countdown/week paths:
+`showHandlers.ts` (add/update/delete/cancel/setPrimary + `computeWeeksOut`),
+`planHandlers.ts` `plan:startupRefresh` (weeks_out → phase transition),
+`utils/dates.ts` (`getShowCountdown`/`parseLocalDate`/`localDateStr`),
+`data/competitionPrep.ts` (`buildPrepTimeline`/`getWeekGuidance`), the prep/peak
+widgets, `utils/units.ts` + water/weight unit conversions, and the check-in
+date/week logic (`checkinHandlers.ts` submit/submitMissed/update).
+
+### The bug
+`checkin:update` (electron/ipc/checkinHandlers.ts) let the user change a
+check-in's `check_in_date` with **no duplicate-date guard**. The Check-In edit
+form (`src/pages/CheckIn/index.tsx`) exposes an editable date field, so a user
+editing their latest check-in could set its date to a day that already has a
+different check-in. Result: **two `weekly_checkins` rows share one
+`check_in_date`** — exactly the invariant `checkin:submit` and
+`checkin:submitMissed` both explicitly reject ("one weigh-in per calendar day").
+Duplicate same-day rows put two points on the weight-trend chart for one day and
+make the `previous` / `week_number` lookups (which order by date) ambiguous.
+
+### Root cause + fix (file:line)
+- **electron/ipc/checkinHandlers.ts:311** (`checkin:update`): after loading the
+  existing row, if `data.check_in_date` is provided, validate its `YYYY-MM-DD`
+  format (the seam previously trusted it) and — when it differs from the current
+  date — reject with `DUPLICATE_CHECKIN:<date>` if another row
+  (`id<>checkinId`) for the same user already occupies that date. Mirrors the
+  submit/submitMissed guards.
+- **src/pages/CheckIn/index.tsx** (`saveEdit` catch): translate the
+  `DUPLICATE_CHECKIN` error into a friendly "Another check-in already exists on
+  that date. Pick a different date." message, matching the submit flow's handling
+  (which previously showed the raw error string in the edit modal).
+
+### Tests added
+`tests/unit/checkinUpdateDuplicate.test.ts` (2) — exercises the REAL handler
+against an in-memory `node-sqlite3-wasm` DB (full schema + migrations applied;
+`../database/db` mocked to supply `getDb`/`namedParams` without loading Electron):
+1. moving a check-in onto an occupied date throws `DUPLICATE_CHECKIN` and creates
+   no duplicate row (1 row per day preserved),
+2. moving a check-in to a genuinely free date still succeeds.
+Confirmed the first test FAILS on the pre-fix handler (duplicate row created, no
+throw) and passes after.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (238 tests, +2 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-07-15 (BUG FIX — data reset leaves stale in-memory stores → deleted data resurrects)
 
 ### STEP 0 — Backlog

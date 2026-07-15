@@ -538,7 +538,12 @@ export default function CheckIn() {
         }
         setTimeout(() => setEditOpen(false), 1000)
       } catch (e) {
-        setEditError(String(e).replace(/Error invoking remote method '[^']+': /, '').trim())
+        const msg = String(e)
+        if (msg.includes('DUPLICATE_CHECKIN')) {
+          setEditError('Another check-in already exists on that date. Pick a different date.')
+        } else {
+          setEditError(msg.replace(/Error invoking remote method '[^']+': /, '').trim())
+        }
       } finally {
         setEditSaving(false)
       }
