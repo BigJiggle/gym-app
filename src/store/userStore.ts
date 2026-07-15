@@ -118,5 +118,16 @@ export const useUserStore = create<UserStore>((set, get) => ({
       /* localStorage unavailable — DB reset already succeeded */
     }
     set({ user: null, shows: [] })
+    // Hard-reload so EVERY in-memory store re-initializes from the now-cleared
+    // DB/localStorage: planStore (plans + workout/meal history), cardioStore, and
+    // the competition-log / widget-layout localStorage caches are module/zustand
+    // singletons that the soft `set` above does NOT clear. Without this reload
+    // they keep holding the just-deleted data, which both re-appears on the
+    // dashboard after onboarding and — worse — gets re-persisted (permanently
+    // resurrecting deleted data) the next time the user logs a set/meal/cardio.
+    // Matches this action's own "…& Restart Onboarding" contract.
+    if (typeof window !== 'undefined' && typeof window.location?.reload === 'function') {
+      window.location.reload()
+    }
   },
 }))

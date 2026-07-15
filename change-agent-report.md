@@ -1,5 +1,75 @@
 # Change Agent Report
 
+## Run: 2026-07-15 (BUG FIX — data reset leaves stale in-memory stores → deleted data resurrects)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 done). So
+this run is a **bug hunt**, not a backlog item.
+
+### STEP 1 — Regression guard (clean pull of master)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (233 tests, 27 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.)
+
+### STEP 2 — Area audited: (e) widgets (dashboard + Training/Nutrition tabs) + localStorage stores
+Rotated off the prior runs' areas (d onboarding/Settings/reset, c check-in, b
+training, a nutrition, f shows/date). Traced the widget store factories
+(`createWidgetStore`, `createLocalStore`, `useWidgets`) — all well-guarded
+(unknown-id drop, de-dupe, stable snapshots, NaN-guarded water log); the
+drag-reorder index alignment in `WidgetZone`/`TabWidgetZone` (real stored indices
+preserved past hidden competition widgets — correct); and every competition /
+logging widget (posing/sleep/condition/supplement/cardio — all input-validated).
+The one **real, reachable** defect surfaced where these localStorage-backed
+stores meet the **data-reset lifecycle**.
+
+### Bug found — "Reset All Data" leaves every in-memory store holding the just-deleted data
+- **File:** `src/store/userStore.ts` (`resetAllData`, ~line 111).
+- **Root cause:** the reset wipes the DB (main process `user:resetAll`) and
+  app-local localStorage (`resetLocalData`), then does only a **soft**
+  `set({ user: null, shows: [] })` to re-route to onboarding. There is **no reload
+  anywhere in the app** (verified — zero `location.reload` call sites). But the
+  data stores are module/zustand **singletons** that the soft `set` never
+  touches: `planStore` (plans + `workoutHistory` + `mealCompletions`),
+  `cardioStore.cardioLog`, and the `createLocalStore` caches for
+  posing/sleep/condition/supplement logs + the widget-layout caches all keep the
+  pre-reset data in memory.
+- **Impact (two ways, both reachable via Settings → Reset All Data):**
+  1. **Storage↔UI desync** — once the user finishes the restarted onboarding and
+     lands on the dashboard, the widgets read from these stale singletons and
+     re-display cardio/plan/scorecard data the reset was supposed to delete.
+  2. **Permanent resurrection** — the next time the user logs anything, the store
+     writes `[...staleCached, new]` back to localStorage
+     (`cardioStore.addEntry` → `persist([...s.cardioLog, entry])`;
+     `posingStore.set([...posingLog, entry])`; etc.), so the "deleted" rows are
+     re-persisted and survive even a later genuine reload. A destructive,
+     user-initiated action silently fails to be destructive.
+- **Fix:** after the DB + localStorage wipe succeed and the store user/shows are
+  cleared, **hard-reload** the renderer
+  (`window.location.reload()`, guarded for non-DOM/`typeof` safety) so every
+  in-memory store re-initializes from the now-cleared DB/localStorage. This is the
+  only reliable way to clear *all* the singletons at once (there are many across
+  zustand + module scope) and it matches this action's own stated contract —
+  the button reads **"Reset All Data & Restart Onboarding."** Preserved weigh-ins
+  and water intake are written to localStorage *before* the reload, so nothing the
+  reset is meant to keep is lost.
+
+### Tests added
+- `tests/unit/resetAllData.test.ts` (3 tests, jsdom): mocks `window.api`, seeds
+  removable (`cardio_log`/`posing_log`/`dashboard_widgets`) + preserved
+  (`daily_weight_log`) keys, and spies `window.location.reload`. Asserts (1) the
+  reset triggers exactly one reload — **FAILS against the old soft-reset code,
+  PASSES after the fix**; (2) non-preserved keys are wiped while the weigh-in log
+  survives with the check-in weight folded in; (3) in-store user/shows are cleared.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (236 tests, +3 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-07-14b (BUG FIX — cleared numeric profile field NULLs a required column)
 
 ### STEP 0 — Backlog
