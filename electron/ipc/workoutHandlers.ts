@@ -82,7 +82,12 @@ export function registerWorkoutHandlers(ipcMain: IpcMain): void {
     const allowed = ['reps_actual', 'weight_kg', 'rir_actual', 'notes', 'skipped']
     const updates = Object.entries(data).filter(([k]) => allowed.includes(k))
     if (!updates.length) return null
-    const values = updates.map(([k, v]) => k === 'skipped' ? (v ? 1 : 0) : v as string | number | null)
+    // The renderer sends every editable field on each blur, using `undefined`
+    // for an emptied field (e.g. a set with no RIR, or a cleared weight).
+    // node-sqlite3-wasm throws on an `undefined` binding, so coerce it to NULL —
+    // an emptied field means "clear this column", which is exactly NULL.
+    const values = updates.map(([k, v]) =>
+      k === 'skipped' ? (v ? 1 : 0) : (v === undefined ? null : v as string | number | null))
     const sql = `UPDATE exercise_logs SET ${updates.map(([k]) => `${k}=?`).join(', ')} WHERE id=?`
     db.prepare(sql).run([...values, setId])
     return db.prepare('SELECT * FROM exercise_logs WHERE id=?').get([setId])

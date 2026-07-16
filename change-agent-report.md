@@ -1,5 +1,74 @@
 # Change Agent Report
 
+## Run: 2026-07-16b (BUG FIX — editing a logged set silently fails (DB↔UI desync) when a field is empty: `undefined` binding crashes the DB)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 done).
+So this run is a **bug hunt**, not a backlog item.
+
+### STEP 1 — Regression guard (clean pull of master)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (239 tests, 29 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1` — electron's postinstall binary
+403s from the sandbox proxy; not needed to typecheck/test/build.)
+
+### STEP 2 — Area audited: (b) training engine + workout/session flows
+Rotated off the previous run's area (a). Traced the whole training path:
+`trainingEngine.ts` (all six split builders + `getExercises`/`getSets`/`getRepRange`
++ NaN/freq clamps), `workoutHandlers.ts` (start/logSet/complete/skip/active/history/
+sessionSummary/**updateSet**/deleteSet/saveSetsBatch/cancelWorkout), the plan IPC
+(`plan:updateSession`, training regen/refine, set-cap plumbing), and the whole
+Training UI (`WorkoutSession`, `WorkoutLogEditor`, `SessionEditor`, `WorkoutStats`,
+`Training/index.tsx` — PR/tonnage/adherence/streak/muscle-volume math). Empirically
+probed the engine across **6 splits × 3 equipment tiers × freq 2–6 × exPerSession
+{1,2,3,4,6,8,12,20} × setsPerExercise {none,1–5} × exp {0,1,3,10}** for empty
+sessions, duplicate exercises within a session, wrong session counts, and
+non-finite/`<1` set counts → **zero** issues (the engine core is solid; prior runs
+already hardened the empty-session cases).
+
+### The bug
+Editing a **completed workout log** and changing the weight/reps of a set that has
+an **empty RIR** — or **clearing** a weight/reps field on any logged set — silently
+failed to save. The `WorkoutLogEditor` auto-save (fires on every field blur) sends
+`{ weight_kg, reps_actual, rir_actual }` computed from the row, using **`undefined`**
+for any empty field (`row.rir !== '' ? parseInt(row.rir) : undefined`, and cleared
+weight → `undefined`). That `undefined` survives Electron IPC (V8 structured clone
+keeps the key with an `undefined` value — verified), reaches `workout:updateSet`,
+and gets bound straight into the SQL `UPDATE`. `node-sqlite3-wasm` **throws**
+`Unsupported type for binding: "undefined"`. The renderer's `.catch` only
+`console.error`s it, so the user sees the new value in the UI while the DB keeps the
+old one — a real, common **DB↔UI desync** (RIR is optional, so "edit the weight of a
+set that never recorded RIR" is an everyday action).
+
+### Root cause + fix (file:line)
+`electron/ipc/workoutHandlers.ts` `workout:updateSet` (~line 80): it mapped each
+whitelisted field's value straight to a binding (`v as string | number | null`),
+with no handling for `undefined`. `workout:logSet` and `workout:saveSetsBatch`
+already normalise with `?? null`; only `updateSet` didn't.
+**Fix:** coerce `undefined → null` in the value map
+(`v === undefined ? null : v as string | number | null`). An emptied field means
+"clear this column", which is exactly `NULL` — so a cleared weight now persists as
+`NULL` and a weight edit on a no-RIR set succeeds without touching RIR. Guarded at
+the backend seam so *any* caller sending `undefined` is safe. Minimal change; no
+other consumer affected (`skipped` still coerces to 0/1 first).
+
+### Tests added
+`tests/unit/workoutUpdateSet.test.ts` — runs the REAL handler against an in-memory
+`node-sqlite3-wasm` DB (same pattern as `checkinUpdateDuplicate.test.ts`): (1) a
+weight edit on a set with `rir_actual: undefined` persists the weight and leaves RIR
+`NULL`; (2) `weight_kg: undefined` clears the weight to `NULL` while keeping RIR.
+Both **FAIL pre-fix** with `Unsupported type for binding: "undefined"` and pass
+after.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (241 tests, +2 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-07-16 (BUG FIX — "Dairy-free" restriction violated: cottage cheese & ricotta still appear in the meal plan)
 
 ### STEP 0 — Backlog
