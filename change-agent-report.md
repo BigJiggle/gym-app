@@ -1,5 +1,76 @@
 # Change Agent Report
 
+## Run: 2026-07-16 (BUG FIX — "Dairy-free" restriction violated: cottage cheese & ricotta still appear in the meal plan)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 done).
+So this run is a **bug hunt**, not a backlog item.
+
+### STEP 1 — Regression guard (clean pull of master)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (238 tests, 29 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1` — electron's postinstall binary
+403s from the sandbox proxy; not needed to typecheck/test/build.)
+
+### STEP 2 — Area audited: (a) nutrition engine + Diet flows
+Rotated off the previous run's area (f). Deeply traced the nutrition path:
+`nutritionEngine.ts` (`generateNutritionPlan`/`buildMeals`/`getMealTemplates`/
+`getFood`/`getCultureFood`/cook-time + prep-style passes/clamps),
+`foodDatabase.ts` (`EXCLUSION_ALIASES`/`FOOD_SUBSTITUTES`/`FOOD_CATEGORY`),
+`planHandlers.ts` (generate/recalc/startupRefresh/applyAIRequest/swap/reorder),
+`checkinHandlers.ts` + `checkinEngine.ts` (adaptive macros), and the Diet UI
+(`Diet/index.tsx` refeed + swap + timeline, `WeeklyMealView`, `GroceryList`,
+`recipeSteps`). Empirically probed the engine with extreme inputs (1/20 meals,
+0/20 snacks, NaN counts, huge/tiny weights) — all macro sums stayed finite,
+non-negative, and on-target. Then probed every dietary restriction × preference ×
+meal/snack count for foods that slip past the restriction.
+
+### The bug
+Selecting the **"Dairy-free"** restriction still produced meal plans containing
+**Cottage Cheese** (Afternoon/Evening snacks, and vegetarian Mid-Morning/Lunch)
+and **Ricotta** (vegetarian Dinner). A user who explicitly said "no dairy" was
+served dairy — a real, reachable food-selection / restriction-violation bug.
+
+### Root cause + fix (file:line)
+`getFood()` (nutritionEngine.ts) substitutes an excluded food by iterating its
+`FOOD_SUBSTITUTES[id]` chain and returning the first sub whose id is **not**
+excluded; if the whole chain is excluded it falls back to the original (still
+excluded) food. The chains for two dairy proteins contained **only other dairy
+foods**:
+- `cottage_cheese` → `[greek_yogurt, ricotta]` (both dairy)
+- `ricotta` → `[cottage_cheese, greek_yogurt]` (both dairy)
+
+So for a dairy-free user every candidate was excluded and `getFood` fell back to
+the excluded original. (`greek_yogurt` escaped because its chain already includes
+the non-dairy `soy_milk`.)
+
+**Fix — `electron/services/foodDatabase.ts:154` and `:271`:** append two trailing
+non-dairy protein fallbacks (`tofu`, then `pea_protein`) to both chains, after the
+existing dairy options. `getFood` now reaches `tofu` (or `pea_protein` if soy is
+also excluded) and never returns the excluded dairy item. The substitute display
+strings are documentation-only (getFood uses `titleCase(subId)` + a
+calorie-derived portion via `FOOD_CALORIES_PER_100G`, both of which `tofu`/
+`pea_protein` have), so no other consumer is affected. Macros are unchanged (the
+sub is same-role protein and portions derive from meal calories, not the food).
+
+### Tests added
+`tests/unit/nutritionEngine.test.ts` — new "dietary restrictions are respected"
+block: for a `Dairy-free` user across omnivore/vegetarian/vegan × meal counts
+3–6 (with snacks), asserts no meal food contains cottage cheese / ricotta /
+greek yogurt / kefir / labneh. Confirmed it FAILS on the pre-fix chains
+(`cottage cheese (90g)` present) and passes after. A broader ad-hoc probe
+(all 13 restriction labels × 3 prefs × meal 1–6 × snacks 0/3) reports
+**zero** restriction violations post-fix.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (239 tests, +1 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-07-15b (BUG FIX — editing a check-in's date onto an occupied day creates a duplicate same-day check-in)
 
 ### STEP 0 — Backlog

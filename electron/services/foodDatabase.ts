@@ -151,7 +151,10 @@ export const FOOD_SUBSTITUTES: Record<string, FoodSubstituteTuple[]> = {
 
   // DAIRY PROTEIN
   greek_yogurt:       [['cottage_cheese','Cottage Cheese (200g)'],['soy_milk','Soy Yogurt (200g)'],['kefir','Kefir (200g)']],
-  cottage_cheese:     [['greek_yogurt','Greek Yogurt (200g)'],['ricotta','Ricotta (125g)']],
+  // Non-dairy fallbacks (tofu, pea_protein) MUST come after the dairy options so a
+  // dairy-free user still gets a valid protein — without them the whole chain was
+  // dairy and getFood fell back to the excluded cottage_cheese itself.
+  cottage_cheese:     [['greek_yogurt','Greek Yogurt (200g)'],['ricotta','Ricotta (125g)'],['tofu','Firm Tofu (150g)'],['pea_protein','Pea Protein (35g)']],
   kefir:              [['greek_yogurt','Greek Yogurt (200g)'],['soy_milk','Soy Milk (250ml)']],
 
   // SUPPLEMENTS
@@ -268,7 +271,8 @@ export const FOOD_SUBSTITUTES: Record<string, FoodSubstituteTuple[]> = {
   // CHEESE
   mozzarella:         [['cottage_cheese','Cottage Cheese (60g)'],['ricotta','Ricotta (60g)'],['nutritional_yeast','Nutritional Yeast (20g)']],
   cheddar:            [['nutritional_yeast','Nutritional Yeast (20g)'],['parmesan','Parmesan (30g)'],['goat_cheese','Goat Cheese (40g)']],
-  ricotta:            [['cottage_cheese','Cottage Cheese (125g)'],['greek_yogurt','Greek Yogurt (125g)']],
+  // Trailing non-dairy fallbacks so a dairy-free user isn't left with the excluded ricotta.
+  ricotta:            [['cottage_cheese','Cottage Cheese (125g)'],['greek_yogurt','Greek Yogurt (125g)'],['tofu','Firm Tofu (150g)'],['pea_protein','Pea Protein (35g)']],
   parmesan:           [['nutritional_yeast','Nutritional Yeast (20g)'],['cheddar','Cheddar (30g)']],
   feta:               [['goat_cheese','Goat Cheese (40g)'],['cottage_cheese','Cottage Cheese (60g)']],
   swiss_cheese:       [['cheddar','Cheddar (40g)'],['mozzarella','Mozzarella (60g)']],

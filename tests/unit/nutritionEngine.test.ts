@@ -410,4 +410,30 @@ describe('nutritionEngine — meal prep style affects food selection', () => {
       expect(def.meals[i].foods).toEqual(daily.meals[i].foods)
     }
   })
+
+  describe('dietary restrictions are respected in generated meals', () => {
+    // A dairy-free user must never see a dairy food. cottage_cheese and ricotta
+    // used to slip through because their substitute chains contained only other
+    // dairy foods, so getFood fell back to the excluded original.
+    const DAIRY_TERMS = ['cottage cheese', 'ricotta', 'greek yogurt', 'kefir', 'labneh']
+
+    it('Dairy-free excludes cottage cheese / ricotta across prefs and meal counts', () => {
+      for (const dietary_preference of ['omnivore', 'vegetarian', 'vegan']) {
+        for (const meal_count of [3, 4, 5, 6]) {
+          const p = generateNutritionPlan({
+            ...BASE_INPUT,
+            dietary_preference,
+            meal_count,
+            snack_count: 3,
+            dietary_restrictions: ['Dairy-free'],
+          } as any)
+          const foods = p.meals.flatMap((m) => m.foods.map((f) => f.toLowerCase()))
+          for (const term of DAIRY_TERMS) {
+            const hit = foods.find((f) => f.includes(term))
+            expect(hit, `${dietary_preference}/${meal_count}m should not contain "${term}" (got "${hit}")`).toBeUndefined()
+          }
+        }
+      }
+    })
+  })
 })
