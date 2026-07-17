@@ -1,5 +1,73 @@
 # Change Agent Report
 
+## Run: 2026-07-17b (BUG FIX — corrupted/hand-edited localStorage crashes every competition widget: createLocalStore never validates parsed shape)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 done).
+So this run is a **bug hunt**, not a backlog item.
+
+### STEP 1 — Regression guard (clean pull of master)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (243 tests, 31 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1` — electron's postinstall binary
+403s from the sandbox proxy; not needed to typecheck/test/build.)
+
+### STEP 2 — Area audited: (e) widgets + localStorage stores  (with (f) shows/date/week swept alongside)
+Rotated off the recent runs' areas (c check-in, b training, a nutrition, d onboarding).
+Traced the localStorage-backed stores and their consumers:
+`localStore.ts` (`createLocalStore`), `competitionLogs.ts` (the 5 competition
+stores), `createWidgetStore.ts`, `useWidgets.ts`, `tabWidgets.ts`, `useWaterLog.ts`,
+and every competition widget (`Posing/Sleep/Supplement/Condition`,
+`DailyWeighIn`) plus the show/date widgets (`PeakWeek/PrepPace/PrepGuidance/
+QuickStats`) and the show/date backend (`showHandlers.ts`, `plan:startupRefresh`,
+`utils/dates.ts`, `competitionPrep.ts`). `createWidgetStore`, `useWidgets`,
+`tabWidgets`, `useWaterLog`, and `DailyWeighInWidget` all correctly guard their
+parsed values (`Array.isArray` / `isNaN` fallbacks) — clean.
+
+### The bug
+`createLocalStore.read()` returned `JSON.parse(raw)` **cast to `T` with no shape
+check**. Malformed JSON is caught by the `try/catch` → fallback, but *valid* JSON of
+the **wrong shape** (`null`, `{}`, `5`, `"x"`, `true`) parses successfully, never
+throws, and was handed straight to consumers. Every one of the five competition
+stores (`posingStore`, `sleepStore`, `conditionStore`, `supplementListStore`,
+`supplementLogStore`) declares its value as an array and immediately calls
+`.filter`/`.find`/`.reduce` on it. So a single hand-edited / corrupted localStorage
+key crashes the whole widget (and its dashboard render tree):
+
+Concrete repro (deterministic, time-independent): `localStorage['posing_log'] =
+'null'` → `PosingWidget` mounts → `posingLog.filter(...)` throws
+`TypeError: Cannot read properties of null (reading 'filter')`. Same for
+`sleep_log='{}'`, `supplement_log='5'`, `supplement_list='"x"'`,
+`condition_log='true'`. Explicitly in-scope ("corrupted or hand-edited
+localStorage"). The two sibling stores (`createWidgetStore.ts:38`,
+`useWidgets.ts:42`) already guard with `if (!Array.isArray(parsed)) return default`
+— `createLocalStore` was the lone omission, despite its own comment advertising
+corruption-resistance.
+
+### Root cause + fix (file:line)
+`src/components/widgets/localStore.ts` `read()` (~line 12): parse the raw value,
+then — mirroring the sibling stores — fall back when the top-level shape doesn't
+match `fallback()`: `if (parsed == null || Array.isArray(parsed) !==
+Array.isArray(fb)) return fb`. This rejects `null` and array/non-array mismatches
+(the crash cases) while preserving valid stored arrays. Minimal, generic (works for
+any `createLocalStore<T>` whether `T` is an array or object), no consumer changes.
+
+### Tests added
+`tests/unit/localStoreCorrupted.test.tsx` (jsdom): (1) `createLocalStore<number[]>`
+returns an array for each of `null`/`{}`/`5`/`"hello"`/`true`; (2) a valid stored
+array is preserved unchanged; (3) `Posing/Sleep/Supplement/Condition` widgets all
+render without throwing when their logs are corrupted to non-arrays. Tests (1)&(3)
+**FAIL pre-fix** (store returns `null`; PosingWidget throws on `.filter`).
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (246 tests, +3 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-07-17 (BUG FIX — editing a check-in's date desyncs week_number from date order → wrong "Current Weight" & zig-zag weight chart)
 
 ### STEP 0 — Backlog

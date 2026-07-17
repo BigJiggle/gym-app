@@ -13,7 +13,15 @@ export function createLocalStore<T>(key: string, fallback: () => T) {
     try {
       const raw = localStorage.getItem(key)
       if (raw == null) return fallback()
-      return JSON.parse(raw) as T
+      const parsed = JSON.parse(raw)
+      const fb = fallback()
+      // Valid JSON of the WRONG shape (hand-edited / corrupted storage) — e.g.
+      // `null`, `{}`, `5`, `"x"` where an array is expected — slips past JSON.parse
+      // without throwing, so the catch never fires. Returning it blindly would crash
+      // consumers calling .map/.filter/.find on it. Fall back when the top-level
+      // shape doesn't match the fallback (mirrors createWidgetStore/useWidgets).
+      if (parsed == null || Array.isArray(parsed) !== Array.isArray(fb)) return fb
+      return parsed as T
     } catch {
       return fallback()
     }
