@@ -1,5 +1,79 @@
 # Change Agent Report
 
+## Run: 2026-07-17 (BUG FIX — editing a check-in's date desyncs week_number from date order → wrong "Current Weight" & zig-zag weight chart)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 done).
+So this run is a **bug hunt**, not a backlog item.
+
+### STEP 1 — Regression guard (clean pull of master)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (241 tests, 30 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1` — electron's postinstall binary
+403s from the sandbox proxy; not needed to typecheck/test/build.)
+
+### STEP 2 — Area audited: (c) check-in + Progress + adaptive nutrition
+Rotated off the previous runs' areas (b, a). Traced the full check-in path:
+`checkinEngine.ts` (`weightTrend`/`weightTrendPct` smoothing, `calculateAdjustments`
+cut/recomp branches, recovery/stress/adherence notes), all four IPC handlers in
+`checkinHandlers.ts` (submit / submitMissed / update / next-allowed / history /
+latest), the adaptive-nutrition recalc block (calorie delta → protein/fat/carbs +
+per-meal scaling), `progressHandlers.ts`, and the whole Progress + CheckIn UI
+(`Progress/index.tsx` weekly-rate/projection/body-comp/consistency math,
+`CheckIn/index.tsx` submit/edit/missed-slot flows, `WeightChart`,
+`CheckinFeedbackWidget`, `RecentCheckinsWidget`). Verified the DB CHECK
+constraints (adherence 0–100, wellness 1–5) fence off the wellness/adherence
+edit paths, and that submit's cascade reload keeps the diet plan in sync.
+
+### The bug
+Editing an existing check-in's **date** (the "Edit Last Check-In" panel on the
+locked screen, or `checkin:update` generally) moved the row's `check_in_date` but
+never touched its `week_number`. So a date edit that reorders the check-in relative
+to the others left `week_number` stuck at its **old chronological rank** — breaking
+the invariant that `submit` and `submitMissed` both maintain (week_number ==
+chronological rank). Reachable normally: the edit panel targets the most-recent
+check-in and its date input is capped at today, so correcting a mistyped date to one
+that lands *before* an earlier check-in is an everyday action.
+
+Concrete repro (checkins 07-01→wk1, 07-08→wk2, 07-15→wk3; user fixes the 07-15 row's
+date to 07-02): afterward `week_number` reads 1→07-01, 2→07-08, **3→07-02**. Because
+`progress:entries` returns rows `ORDER BY week_number ASC`, the weight chart plots
+07-01 → 07-08 → 07-02 (a line that jumps backward in time), and the Progress page's
+`latest = progressEntries[last]` (highest week_number) now points at the **07-02,
+84 kg** row while the real most-recent weigh-in is **07-08, 85 kg** — so
+"Current Weight", "Total Change", and the first→latest measurement deltas all show
+values from the wrong (older) check-in. A real **DB↔UI desync / off-by-one
+week_number**.
+
+### Root cause + fix (file:line)
+`electron/ipc/checkinHandlers.ts` `checkin:update` (~line 359–390): the UPDATE
+whitelists `check_in_date` but not `week_number`, and there was no renumber pass —
+unlike `submitMissed`, which shifts `week_number` to keep chronological order.
+**Fix:** capture a `dateChanged` flag in the existing date-validation block, and
+after the UPDATE, when the date actually changed, renumber **all** of the user's
+check-ins by `(check_in_date ASC, id ASC)` — reassigning a dense `1..N`
+`week_number` sequence in JS (portable; no window-function dependency). Restores
+`week_number == chronological rank` so every week_number-ordered consumer
+(`progress:entries`, the chart, the first/latest stats) reads correctly. No-op when
+the date is unchanged (weight/measurement-only edits leave ordering intact).
+
+### Tests added
+`tests/unit/checkinUpdateRenumber.test.ts` — runs the REAL handler against an
+in-memory `node-sqlite3-wasm` DB (same pattern as `checkinUpdateDuplicate.test.ts`):
+(1) moving the 07-15 check-in's date to 07-02 renumbers to 07-01→1 / 07-02→2 /
+07-08→3 so ordering by week_number equals ordering by date, with a dense 1..3
+sequence; (2) a weight-only edit (no date change) leaves all week_numbers and their
+order untouched. Test (1) **FAILS pre-fix** (row keeps week_number 3 at date 07-02).
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (243 tests, +2 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-07-16b (BUG FIX — editing a logged set silently fails (DB↔UI desync) when a field is empty: `undefined` binding crashes the DB)
 
 ### STEP 0 — Backlog

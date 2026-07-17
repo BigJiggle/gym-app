@@ -315,12 +315,14 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
     // enforce. Moving a check-in's date onto a day that already has a DIFFERENT
     // check-in would create duplicate same-day rows — two points on the weight-trend
     // chart for one day and an ambiguous "previous"/week_number lookup.
+    let dateChanged = false
     if (data.check_in_date != null) {
       const newDate = data.check_in_date as string
       if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
         throw new Error('check_in_date must be YYYY-MM-DD')
       }
       if (newDate !== existing.check_in_date) {
+        dateChanged = true
         const clash = db
           .prepare('SELECT id FROM weekly_checkins WHERE user_id=? AND check_in_date=? AND id<>? LIMIT 1')
           .get([existing.user_id as number, newDate, checkinId]) as { id: number } | undefined
@@ -369,6 +371,23 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
     if (!updates.length) throw new Error('No valid fields to update')
     const sql = `UPDATE weekly_checkins SET ${updates.map(([k]) => `${k}=?`).join(', ')}, adjustments=? WHERE id=?`
     db.prepare(sql).run([...updates.map(([, v]) => v as string | number | null), JSON.stringify(adjustments), checkinId])
+
+    // Editing a check-in's date can move it out of chronological order relative to
+    // the other check-ins, but week_number is not part of the UPDATE — so the row
+    // keeps its old rank. That desyncs week_number from date order, which
+    // progress:entries (ORDER BY week_number) and the Progress page's
+    // "Current Weight"/first→latest math all rely on. submit/submitMissed keep
+    // week_number == chronological rank; a date edit must too. Renumber the user's
+    // check-ins by (date, id) whenever the date actually changed.
+    if (dateChanged) {
+      const ordered = db
+        .prepare('SELECT id FROM weekly_checkins WHERE user_id=? ORDER BY check_in_date ASC, id ASC')
+        .all([existing.user_id as number]) as { id: number }[]
+      ordered.forEach((row, i) => {
+        db.prepare('UPDATE weekly_checkins SET week_number=? WHERE id=?').run([i + 1, row.id])
+      })
+    }
+
     const saved = db.prepare('SELECT * FROM weekly_checkins WHERE id=?').get(checkinId) as Record<string, unknown>
     return { ...saved, adjustments: JSON.parse(saved.adjustments as string) }
   })
