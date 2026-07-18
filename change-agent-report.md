@@ -1,5 +1,81 @@
 # Change Agent Report
 
+## Run: 2026-07-18b (BUG FIX — sets_per_exercise=0 (or negative) builds exercises with ZERO sets / un-loggable, uncompletable workout)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 done).
+So this run is a **bug hunt**, not a backlog item.
+
+### STEP 1 — Regression guard (clean rebased pull of master)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (247 tests, 32 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1` — electron's postinstall binary
+403s from the sandbox proxy; not needed to typecheck/test/build.)
+
+### STEP 2 — Area audited: (d) onboarding + Settings + reset + data lifecycle
+Rotated toward the least-recently-covered area (last (d) run was 2026-07-14b).
+Swept the onboarding flow (`useOnboarding`, index validation, Step1 personal/unit
+inputs, Step3 training, Step4 nutrition), the Settings edit-profile form, the
+user create/update/reset IPC seams (`userHandlers`, `userSanitize`), the settings
+store, `resetData`/`resetAllData` lifecycle, and `computeMissedSlots` — all found
+well-guarded (cleared numeric inputs drop via `sanitizeUserUpdate`, meal/snack/
+body-fat clamped, reset preserves weigh-ins/water and hard-reloads to purge stale
+stores). Then traced the Settings **Edit Profile → engine** seam for the sibling
+of last run's fix and found `sets_per_exercise` still unguarded.
+
+### The bug
+Settings → Edit Profile → "Sets/Exercise" is `<input type="number" min={2}
+max={8}>` (`Settings/index.tsx:431`). HTML `min` does **not** block a hand-typed
+value, and `handleSaveProfile` saves `editForm` with no clamp. `sanitizeUserUpdate`
+clamps `meal_count`/`snack_count`/`body_fat_pct` but has **no** branch for
+`sets_per_exercise`, and `0` is finite — so it persists as `0` (negatives too).
+
+Every plan-generation call reads it via `user.sets_per_exercise ?? 4`
+(`planHandlers.ts:28/56/281/381/769`), but `??` does **not** catch `0`. Inside
+`generateTrainingPlan` the value became `userDefault` and flowed to
+`getSets` (`trainingEngine.ts:244`) verbatim: for an isolation exercise
+`sets = userDefault` (`0` → **0 sets**); for a compound `sets = userDefault + 1`
+(`0` → 1). A negative value produced **negative** sets on every exercise.
+
+Reproduced deterministically with the real engine (`split=auto`,
+`sets_per_exercise=0`): **18 of 30** exercises (all isolations) built with `sets: 0`
+(e.g. `Cable Fly`, `sets: 0`); with `-3`, **all 30** exercises got negative sets.
+
+In `WorkoutSession.buildInitialStates` (`WorkoutSession.tsx:210,213`)
+`count = typeof ex.sets === 'number' ? ex.sets : 1` and
+`Array.from({ length: count })` — for `count <= 0` this yields an **empty** set
+list (`ToLength` clamps negatives to 0), so the exercise has no rows to log,
+`allSetsDone` (`:55`, `state.sets.length > 0`) is permanently false, and the card
+reads "0 sets × … reps": an un-loggable, uncompletable exercise.
+
+### Root cause + fix (file:line)
+Root cause: `??`/passthrough guards only `null`/`undefined`, not `0`/negative, and
+no seam clamps `sets_per_exercise`. Fixed at the single engine seam every builder
+flows through — `generateTrainingPlan` (`electron/services/trainingEngine.ts:522`),
+mirroring the `exercises_per_session` guard added directly above it last run:
+normalize a non-finite/non-positive `sets_per_exercise` to `undefined` so
+`getSets` applies its own experience-based default (exactly as when the field was
+never set); positive values (incl. 1, which `getSets` handles) are preserved. The
+independent `userMax`/`max_sets_per_exercise` cap is left untouched. This fixes
+all six splits at once and makes the empty-set WorkoutSession path unreachable via
+this route.
+
+### Tests added
+`tests/unit/trainingEngine.test.ts` — "never produces an exercise with <= 0 sets
+for a non-positive / non-finite sets_per_exercise": across `auto/ppl/upper_lower/
+arnold/bro/full_body` and `sets_per_exercise ∈ {0, -3, NaN}`, asserts every
+exercise has ≥1 set. **FAILS pre-fix** (`auto sets=0` → `Cable Fly` 0 sets),
+passes after.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (248 tests, +1 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-07-18 (BUG FIX — exercises_per_session=0 builds a training plan with an EMPTY Legs day / dead uncompletable workout)
 
 ### STEP 0 — Backlog

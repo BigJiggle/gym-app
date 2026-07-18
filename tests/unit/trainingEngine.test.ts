@@ -148,4 +148,34 @@ describe('trainingEngine', () => {
       }
     }
   })
+
+  // Regression: a non-positive / non-finite sets_per_exercise (0, negative, NaN)
+  // must NOT yield exercises with <= 0 sets. Same hole as exercises_per_session:
+  // a hand-typed 0 slips past the Settings input's min={2} (HTML min doesn't block
+  // typed values) and is finite, so it persists unclamped. getSets() honored it
+  // verbatim — isolations got `userDefault` sets (0 → zero) and compounds
+  // `userDefault + 1` — so WorkoutSession built exercises with an EMPTY set list
+  // (Array.from({length: <= 0}) → []): un-loggable, uncompletable exercises shown
+  // as "0 sets × … reps". Every exercise must have >= 1 set for any bad value.
+  it('never produces an exercise with <= 0 sets for a non-positive / non-finite sets_per_exercise', () => {
+    const splits = ['auto', 'ppl', 'upper_lower', 'arnold', 'bro', 'full_body']
+    for (const split of splits) {
+      for (const bad of [0, -3, NaN] as number[]) {
+        const plan = generateTrainingPlan({
+          ...BASE_INPUT,
+          split_preference: split,
+          training_frequency: 6,
+          sets_per_exercise: bad,
+        })
+        for (const session of plan.sessions) {
+          for (const ex of session.exercises) {
+            expect(
+              ex.sets,
+              `${split} sets=${bad} — "${ex.name}" in "${session.session_name}" had ${ex.sets} sets`
+            ).toBeGreaterThanOrEqual(1)
+          }
+        }
+      }
+    }
+  })
 })

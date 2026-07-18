@@ -519,7 +519,20 @@ export function generateTrainingPlan(input: TrainingInput): TrainingPlan {
   const exPerSession = Number.isFinite(rawExPerSession) && rawExPerSession > 0
     ? Math.round(rawExPerSession)
     : undefined
-  const userDefault = input.sets_per_exercise
+  // Guard against a non-positive / non-finite sets-per-exercise — the same hole
+  // as exercises_per_session above, on the sibling field. A hand-typed 0 (or
+  // negative) slips past the Settings input's min={2} (HTML min never blocks a
+  // typed value) and is finite, so it persists unclamped and reaches here via
+  // `user.sets_per_exercise ?? 4` (`??` ignores 0). getSets() then honors it
+  // verbatim: isolations get `userDefault` sets (0 → zero) and compounds
+  // `userDefault + 1`, so WorkoutSession builds those exercises with an EMPTY set
+  // list (Array.from({length: <= 0}) → []) — un-loggable, uncompletable, shown as
+  // "0 sets × … reps". Fall back to undefined for any bad value so getSets applies
+  // its own experience-based default. Positive values (incl. 1) are preserved.
+  const rawSetsPerEx = Number(input.sets_per_exercise)
+  const userDefault = Number.isFinite(rawSetsPerEx) && rawSetsPerEx > 0
+    ? Math.round(rawSetsPerEx)
+    : undefined
   const userMax = input.max_sets_per_exercise
 
   let sessions: TrainingSession[]
