@@ -506,7 +506,19 @@ export function generateTrainingPlan(input: TrainingInput): TrainingPlan {
   const phase = determinePhase(input.weeks_out, input.goal)
   const weeksTotal = input.weeks_out ? Math.min(input.weeks_out, 16) : 12
   const pref = input.split_preference ?? 'auto'
-  const exPerSession = input.exercises_per_session
+  // Guard against a non-positive / non-finite exercises-per-session. A hand-typed
+  // 0 slips past the Settings input's min={3} (HTML min never blocks typed values)
+  // and is finite, so it persists unclamped. The builders read it via
+  // `exPerSession ?? default`, but `??` ignores 0 — so `getExercises(..., 0)`
+  // returns [] and the Legs day (which excludes the core fallback) is saved empty,
+  // yielding a dead, uncompletable workout. Fall back to undefined for any bad
+  // value so each builder applies its own sensible default, exactly as when the
+  // field was never set. Positive values (incl. 1–2) are left to the builders,
+  // which already floor them.
+  const rawExPerSession = Number(input.exercises_per_session)
+  const exPerSession = Number.isFinite(rawExPerSession) && rawExPerSession > 0
+    ? Math.round(rawExPerSession)
+    : undefined
   const userDefault = input.sets_per_exercise
   const userMax = input.max_sets_per_exercise
 

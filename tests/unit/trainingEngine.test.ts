@@ -120,4 +120,32 @@ describe('trainingEngine', () => {
       }
     }
   })
+
+  // Regression: a non-positive / non-finite exercises_per_session (0, negative,
+  // or NaN) must NOT collapse a session to zero exercises. A hand-typed 0 slips
+  // past the Settings input's min={3} (HTML min doesn't block typed values) and
+  // is finite, so it persists unclamped. In the builders it flowed through
+  // `exPerSession ?? default` — but `??` ignores 0, so `getExercises(..., 0)`
+  // returned [] and (for PPL/Arnold legs, which exclude the core fallback) the
+  // Legs day was saved empty: a dead, uncompletable workout (0/0 → NaN% bar).
+  // Every split must fall back to its own sensible default for a bad value.
+  it('never produces an empty session for a non-positive / non-finite exercises_per_session', () => {
+    const splits = ['auto', 'ppl', 'upper_lower', 'arnold', 'bro', 'full_body']
+    for (const split of splits) {
+      for (const bad of [0, -3, NaN] as number[]) {
+        const plan = generateTrainingPlan({
+          ...BASE_INPUT,
+          split_preference: split,
+          training_frequency: 6,
+          exercises_per_session: bad,
+        })
+        for (const session of plan.sessions) {
+          expect(
+            session.exercises.length,
+            `${split} exPer=${bad} — "${session.session_name}" was empty`
+          ).toBeGreaterThan(0)
+        }
+      }
+    }
+  })
 })

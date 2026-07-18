@@ -1,5 +1,79 @@
 # Change Agent Report
 
+## Run: 2026-07-18 (BUG FIX — exercises_per_session=0 builds a training plan with an EMPTY Legs day / dead uncompletable workout)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 done).
+So this run is a **bug hunt**, not a backlog item.
+
+### STEP 1 — Regression guard (clean rebased pull of master)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (246 tests, 32 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1` — electron's postinstall binary
+403s from the sandbox proxy; not needed to typecheck/test/build.)
+
+### STEP 2 — Area audited: (b) training engine + workout/session flows
+Rotated for coverage. Manually swept (d) onboarding/Settings/reset/data-lifecycle,
+(c) check-in + Progress + adaptive nutrition, the schedule engine, and the full
+backend IPC layer (userHandlers/userSanitize/settingsHandlers/showHandlers/
+planHandlers/checkinHandlers/workoutHandlers/mealCompletionHandlers/progressHandlers),
+DB schema/migrations, and the nutrition engine's meal-building/portion math — all
+found clean and well-guarded. Then traced the **training-engine split builders**
+against out-of-range `exercises_per_session`.
+
+### The bug
+Settings → Edit Profile → "Exercises per session" is an `<input type="number"
+min={3} max={12}>` (`Settings/index.tsx:429`). HTML `min` does **not** block a
+hand-typed value, and `handleSaveProfile` saves `editForm` with no `checkValidity()`
+/ no clamp. `sanitizeUserUpdate` clamps `meal_count`/`snack_count` but has **no**
+branch for `exercises_per_session`, and `0` is finite — so it persists as `0`.
+
+In every split builder the count flows through `exPerSession ?? default`, but `??`
+does **not** catch `0`:
+- `buildPPLSessions` (`trainingEngine.ts:286`): `exCount = exPerSession ?? (legs?6:5)`
+  → `0` → `getExercises(cat, eq, 0)` returns `[]`. The **Legs** day alone excludes
+  the 2 core-fallback exercises (`s.cat === 'legs' ? [] : coreEntries`, line 303),
+  so the Legs session is saved with `exercises: '[]'`; Push/Pull days collapse to
+  only `Cable Crunch, Plank`.
+- Same `?? `-past-0 hole in upper/lower legs (`:330`), Arnold legs (`:397`),
+  and bro (`:417`).
+
+The rule-based path in `plan:generateTraining` inserts all sessions unfiltered
+(only the Claude path drops empty sessions), so the empty Legs day is persisted.
+Starting it hits `WorkoutSession.tsx:534` `(doneCount / session.exercises.length)
+* 100` = `0/0*100` = **NaN** → `style width:"NaN%"`, header reads "0/0 exercises",
+and `canComplete` is permanently false — a dead, uncompletable workout.
+
+Reproduced deterministically with the real engine (`split=auto`, `exercises_per_session=0`):
+Legs day → **0 exercises**.
+
+### Root cause + fix (file:line)
+Root cause: `??` guards only `null`/`undefined`, not `0` (nor negative/NaN), and no
+seam clamps `exercises_per_session`. Fixed at the single engine seam every builder
+flows through — `generateTrainingPlan` (`electron/services/trainingEngine.ts:509`),
+mirroring the existing `training_frequency` clamp two lines above: normalize a
+non-finite/non-positive value to `undefined` so each builder applies its own
+default (exactly as when the field was never set); positive values (incl. 1–2,
+which the builders already floor) are preserved. This fixes PPL/auto, upper/lower,
+Arnold, and bro at once and makes the `WorkoutSession` NaN% path unreachable via
+this route.
+
+### Tests added
+`tests/unit/trainingEngine.test.ts` — "never produces an empty session for a
+non-positive / non-finite exercises_per_session": across `auto/ppl/upper_lower/
+arnold/bro/full_body` and `exercises_per_session ∈ {0, -3, NaN}`, asserts every
+session has ≥1 exercise. **FAILS pre-fix** (`auto exPer=0` → Legs empty), passes
+after.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (247 tests, +1 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-07-17b (BUG FIX — corrupted/hand-edited localStorage crashes every competition widget: createLocalStore never validates parsed shape)
 
 ### STEP 0 — Backlog
