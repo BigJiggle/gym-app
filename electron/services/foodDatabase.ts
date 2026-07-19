@@ -106,7 +106,12 @@ export const FOOD_SUBSTITUTES: Record<string, FoodSubstituteTuple[]> = {
   hot_dog:            [['chicken_breast','Chicken Breast (100g)'],['lean_ground_turkey','Ground Turkey (100g)']],
 
   // FISH
-  salmon:             [['tilapia','Tilapia (180g)'],['tuna_steak','Tuna Steak (180g)'],['halibut','Halibut (180g)']],
+  // Trailing non-fish fallbacks (chicken, then plant) MUST come after the fish
+  // options so a "No fish" user still gets a valid protein — salmon is the omnivore
+  // Dinner default and its fish-only chain (tilapia/tuna_steak/halibut are all in
+  // the `fish` exclusion alias) otherwise left getFood falling back to the excluded
+  // salmon itself. Same class as the dairy-free cottage_cheese/ricotta fix.
+  salmon:             [['tilapia','Tilapia (180g)'],['tuna_steak','Tuna Steak (180g)'],['halibut','Halibut (180g)'],['chicken_breast','Chicken Breast (180g)'],['tofu','Firm Tofu (200g)']],
   tuna_can:           [['chicken_breast','Chicken Breast (150g)'],['turkey_breast','Turkey Breast (150g)'],['cod','Cod (140g)']],
   tuna_steak:         [['salmon','Salmon (180g)'],['halibut','Halibut (180g)'],['mahi_mahi','Mahi Mahi (180g)']],
   tilapia:            [['cod','Cod Fillet (150g)'],['sea_bass','Sea Bass (150g)'],['chicken_breast','Chicken Breast (150g)']],

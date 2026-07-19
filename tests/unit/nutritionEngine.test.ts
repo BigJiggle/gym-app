@@ -435,5 +435,30 @@ describe('nutritionEngine — meal prep style affects food selection', () => {
         }
       }
     })
+
+    // A "No fish" user must never see a fish food. salmon (the omnivore Dinner
+    // default) used to slip through because its entire FOOD_SUBSTITUTES chain
+    // (tilapia, tuna_steak, halibut) is itself in the `fish` exclusion alias, so
+    // getFood exhausted the chain and fell back to the excluded salmon itself.
+    const FISH_TERMS = ['salmon', 'tilapia', 'tuna', 'halibut', 'cod', 'mackerel', 'sardine', 'trout', 'sea bass', 'mahi']
+
+    it('No fish excludes salmon and other fish across prefs and meal counts', () => {
+      for (const dietary_preference of ['omnivore', 'vegetarian', 'vegan']) {
+        for (const meal_count of [3, 4, 5, 6]) {
+          const p = generateNutritionPlan({
+            ...BASE_INPUT,
+            dietary_preference,
+            meal_count,
+            snack_count: 2,
+            dietary_restrictions: ['No fish'],
+          } as any)
+          const foods = p.meals.flatMap((m) => m.foods.map((f) => f.toLowerCase()))
+          for (const term of FISH_TERMS) {
+            const hit = foods.find((f) => f.includes(term))
+            expect(hit, `${dietary_preference}/${meal_count}m should not contain "${term}" (got "${hit}")`).toBeUndefined()
+          }
+        }
+      }
+    })
   })
 })

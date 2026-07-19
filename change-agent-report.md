@@ -1,5 +1,91 @@
 # Change Agent Report
 
+## Run: 2026-07-19b (BUG FIX — "No fish" restriction still serves Salmon: salmon's substitute chain is entirely inside the `fish` exclusion alias)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 done).
+So this run is a **bug hunt**, not a backlog item.
+
+### STEP 1 — Regression guard (clean rebased pull of master)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (252 tests, 33 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1` — electron's postinstall binary
+403s from the sandbox proxy; not needed to typecheck/test/build.)
+
+### STEP 2 — Area audited: (a) nutrition engine + Diet flows
+Rotated away from last run's (f). Swept the nutrition engine (`nutritionEngine.ts`
+meal building / macro math / portion calc / `getFood` substitution), the food
+database (`foodDatabase.ts` EXCLUSION_ALIASES / FOOD_SUBSTITUTES / FOOD_CATEGORY),
+every diet IPC seam (`planHandlers.ts` generateDiet / recalculateMacros / swapMeal /
+reorderMeals / applyAIRequest diet regen; `checkinHandlers.ts` per-meal macro
+scaling), and the Diet UI (`Diet/index.tsx`, `refeed.ts`, `GroceryList.tsx`,
+`WeeklyMealView.tsx`, `recipeSteps.ts`, `mealAccordion.ts`, `planStore.ts`).
+
+Most of the area is hardened by prior runs (clampWeightKg, clampMealCount,
+non-finite snack_count guard, dairy-free substitute chains, snack-calorie cap,
+preference-vs-snack context). The live remaining defect was another **substitute
+chain trapped inside its own exclusion alias** — exactly the class the dairy-free
+fix (2026-07-16) addressed, but for fish.
+
+### The bug
+A user who sets the **"No fish"** dietary restriction was still served **Salmon
+Fillet** in Dinner (the omnivore Dinner default, `nutritionEngine.ts:704`).
+
+Root cause: `RESTRICTION_TO_ALIAS_KEYS['no fish'] = ['fish']`, and
+`EXCLUSION_ALIASES['fish']` contains salmon, tilapia, tuna_steak, halibut, cod, …
+`FOOD_SUBSTITUTES['salmon']` was `[tilapia, tuna_steak, halibut]` — **all three are
+themselves in the `fish` alias**. So `getFood('salmon', ['fish'])`
+(`nutritionEngine.ts:284-320`) found salmon excluded, iterated every substitute
+(each also excluded), exhausted the chain, and hit `return fallback` at
+`nutritionEngine.ts:319` — which is salmon itself. The user's plate displays the
+exact food they excluded (a correctness/safety defect: serving a restricted food).
+
+Deterministic repro (fake-clock-free, pure): omnivore, 3–6 meals,
+`dietary_restrictions: ['No fish']` → Dinner foods include `"Salmon Fillet (145g)"`.
+(Excluding `salmon` directly via the food picker was NOT affected — only `salmon`
+is excluded then, so the first substitute `tilapia` is valid; the defect is specific
+to the alias-level `fish` exclusion where the whole chain collapses.)
+
+### Root cause + fix (file:line)
+`electron/services/foodDatabase.ts:109` — appended two **non-fish** fallbacks to
+`FOOD_SUBSTITUTES['salmon']` after the fish options: `chicken_breast` (omnivore) and
+`tofu` (plant), mirroring the dairy fix's trailing tofu/pea_protein. Now
+`getFood('salmon', ['fish'])` skips the excluded fish and returns chicken_breast
+(role `protein`). This also fixes culture-Dinner paths, since `getCultureFood`'s
+excluded-culture-protein fallback flows through `getFood('salmon', …)`. salmon is
+the only all-fish-chain food reachable as a template default (per audit), so the
+single-food fix is sufficient and matches the minimal precedent (the dairy fix
+touched only the two reachable foods, cottage_cheese/ricotta).
+
+### Tests added
+`tests/unit/nutritionEngine.test.ts` — "No fish excludes salmon and other fish
+across prefs and meal counts" (omnivore/vegetarian/vegan × 3–6 meals, snack_count 2):
+asserts no meal's foods contain salmon/tilapia/tuna/halibut/cod/… . Fails before the
+fix (`"salmon fillet (145g)"` in omnivore Dinner), passes after.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (253 tests, +1 new)
+- `npx electron-vite build` → PASS
+
+### Also noted (NOT fixed this run — one fix per run)
+- **Meal reorder desyncs meal-completion indices** (`planHandlers.ts:897` — `plan:reorderMeals`
+  persists a permuted meals array but never remaps/clears `meal_completions`, which
+  are keyed by positional `meal_index`; dragging a snack after marking meals eaten
+  shows the wrong meal ticked and wrong "Today's Intake" macros). Real desync;
+  candidate for a future run.
+- **`"✕ exclude this food"` silently no-ops for labels ≠ titleCase(id)** (`Diet/index.tsx:192`
+  `handleExcludeFood` snake-cases the display label, so "Whole Eggs x3"→`whole_eggs_x3`
+  never matches id `eggs`; shakes/rice-cakes/culture foods likewise). Real; future run.
+- **AI plan with `calories_target: 0`** → division at `planHandlers.ts:523` /
+  `checkinHandlers.ts:148` yields Infinity→null macros. Low-confidence (needs a
+  degenerate Claude response; rule engine clamps ≥1200). Future run: add a
+  `clampCalories` denominator guard.
+
+---
+
 ## Run: 2026-07-19 (BUG FIX — generated plan phase disagrees with the displayed weeks-out: plan weeks_out used Date.now() instead of local midnight)
 
 ### STEP 0 — Backlog
