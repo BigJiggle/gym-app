@@ -3,6 +3,7 @@ import { getDb } from '../database/db'
 import { generateTrainingPlan } from '../services/trainingEngine'
 import { generateNutritionPlan } from '../services/nutritionEngine'
 import { generateWorkoutWithClaude, refineWorkoutForSafety } from '../services/claudeService'
+import { weeksUntilShow } from '../services/showDates'
 import { clearOrphanedMealCompletions } from './mealCompletionHandlers'
 
 // Always keeps users.show_date pointing to the nearest upcoming show.
@@ -28,10 +29,11 @@ function syncPrimaryToNearest(db: ReturnType<typeof getDb>, userId: number): voi
 }
 
 // Computes weeks_out from a show_date string. Returns undefined if no date.
+// Delegates to the shared local-midnight helper so the generated plan's weeks-out
+// matches the UI countdown (see weeksUntilShow) instead of drifting with time of day.
 function computeWeeksOut(showDate: string | null | undefined): number | undefined {
   if (!showDate) return undefined
-  const days = Math.floor((new Date(showDate + 'T12:00:00').getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-  return Math.max(0, Math.floor(days / 7))
+  return weeksUntilShow(showDate)
 }
 
 // Immediately recalculates and saves a fresh diet plan using the current show context.

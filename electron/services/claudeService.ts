@@ -1,4 +1,5 @@
 import https from 'https'
+import { weeksUntilShow } from './showDates'
 
 async function callClaude(apiKey: string, system: string, userMsg: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -323,9 +324,7 @@ export async function processAIRequest(
 
   const today = new Date().toLocaleDateString('en-CA')
   // Compute weeks_out for phase context
-  const weeksOutForAI = u.show_date
-    ? Math.max(0, Math.floor((new Date((u.show_date as string) + 'T12:00:00').getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 7)))
-    : null
+  const weeksOutForAI = u.show_date ? weeksUntilShow(u.show_date as string) : null
   const prepPhaseForAI = weeksOutForAI !== null
     ? (weeksOutForAI > 16 ? 'hypertrophy' : weeksOutForAI > 8 ? 'strength' : weeksOutForAI > 3 ? 'peak' : 'deload/peak week')
     : 'off-season'

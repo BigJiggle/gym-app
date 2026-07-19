@@ -1,5 +1,83 @@
 # Change Agent Report
 
+## Run: 2026-07-19 (BUG FIX — generated plan phase disagrees with the displayed weeks-out: plan weeks_out used Date.now() instead of local midnight)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 done).
+So this run is a **bug hunt**, not a backlog item.
+
+### STEP 1 — Regression guard (clean rebased pull of master)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (248 tests, 32 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1` — electron's postinstall binary
+403s from the sandbox proxy; not needed to typecheck/test/build.)
+
+### STEP 2 — Area audited: (f) shows/competition + date/week logic + unit conversion
+Rotated toward the least-recently-covered area (last (f) run was 2026-07-15b).
+Swept the show lifecycle (`showHandlers`: add/update/delete/cancel/setPrimary,
+`syncPrimaryToNearest`, `computeWeeksOut`, `regenerateDietForGoal`,
+`transitionTrainingToOffSeason`), the date/week utilities (`utils/dates.ts`
+`getShowCountdown`/`localDateStr`/`parseLocalDate`; `competitionPrep.ts`
+`buildPrepTimeline`/`getWeekGuidance`; `PEAK_WEEK_PROTOCOL`), every prep/countdown
+widget (`PeakWeek`, `PrepPace`, `PrepGuidance`, `QuickStats`, `WeeklyScorecard`,
+`SessionsWeek`, `WeeklyVolume`), the check-in schedule/missed-slot logic
+(`checkinSchedule.ts`), `units.ts` (kg/lb, cm/in), and the water ml/oz path
+(`WaterWidget`). Most of the area is hardened by prior runs (imperial 5'12",
+duplicate same-day check-in, week_number renumber, phantom/biweekly missed slots).
+The live remaining defect was a **formula divergence** between how the UI shows
+weeks-out and how plan generation computes it.
+
+### The bug
+The UI countdown measures weeks-out from **local midnight** of the current day
+(`getShowCountdown` / `buildPrepTimeline` in `src`, which drive the Show Countdown
+stat, the "This Week in Prep" phase badge, and the prep timeline). Plan generation
+instead computed weeks-out from **`Date.now()`**:
+`Math.max(0, Math.floor((showNoon − Date.now()) / (day*7)))`, duplicated verbatim
+across **8 seams** — `planHandlers.ts` (training gen, diet gen ×2, refresh-all,
+startup-refresh, prefs-driven regen), `showHandlers.ts` `computeWeeksOut`
+(shows:add/update/cancel diet regen), and `claudeService.ts` (AI prompt phase
+context).
+
+`Date.now()` subtracts the part of today already elapsed, so the value can land
+**one week-bucket lower** than the midnight-based display. Near a phase boundary
+(the display's `getWeekGuidance` splits at weeksOut 1/3/6/8/12/16; `determinePhase`
+at 3/8/16), a plan generated in the afternoon/evening is built for a *different
+phase than the athlete is shown* — a DB↔UI desync in exactly the value this app is
+built around.
+
+Deterministic repro (fake clock **2026-07-19 20:00**, show **2026-09-06** = 49 days
+out): the UI shows **7 weeks out** (`getShowCountdown(...).weeks === 7`) but the old
+`Date.now()` formula yields **6** — e.g. "This Week in Prep" reads *"Strength →
+Peak Transition"* (weeksOut 7) while the regenerated diet/training was built for
+weeksOut 6 (*"Peak / Conditioning"*, and a different `getPhaseAwareDeficit` bucket).
+
+### Root cause + fix (file:line)
+Root cause: a time-of-day-dependent weeks-out formula (`Date.now()`) duplicated 8×,
+inconsistent with the app's own local-midnight date convention (`utils/dates.ts`).
+New pure helper `weeksUntilShow(showDate, now?)`
+(`electron/services/showDates.ts`) mirrors `getShowCountdown`'s local-midnight math
+(`floor((showNoon − todayMidnight) / (day*7))`, clamped ≥0). Replaced all 8 inlined
+formulas with a call to it (`planHandlers.ts` ×6, `showHandlers.ts` `computeWeeksOut`,
+`claudeService.ts`), so the generated phase can no longer drift below the displayed
+weeks-out. All-or-nothing by necessity: fixing only some seams would make onboarding,
+refresh, and show-add compute *different* weeks-out for the same show/time.
+
+### Tests added
+`tests/unit/weeksUntilShow.test.ts` (4) — with a faked evening clock, asserts the
+**old** `Date.now()` formula gave 6 (documents the bug) while `getShowCountdown`
+and `weeksUntilShow` both give 7; asserts time-of-day independence (6am == 11:30pm);
+asserts `weeksUntilShow` matches `getShowCountdown` across 8 generation times of day;
+asserts a past show clamps to 0.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (252 tests, +4 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-07-18b (BUG FIX — sets_per_exercise=0 (or negative) builds exercises with ZERO sets / un-loggable, uncompletable workout)
 
 ### STEP 0 — Backlog

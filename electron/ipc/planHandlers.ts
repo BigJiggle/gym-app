@@ -4,6 +4,7 @@ import { generateTrainingPlan, getExerciseLibraryForUI, determinePhase } from '.
 import { generateNutritionPlan, buildMealsPublic, calcBMR, getPhaseAwareDeficit, ACTIVITY_MULTIPLIERS, clampWeightKg, clampMealCount } from '../services/nutritionEngine'
 import { generateDietWithClaude, generateWorkoutWithClaude, refineDietPlan, refineWorkoutWithClaude, processAIRequest, refineWorkoutForSafety } from '../services/claudeService'
 import { regenerateDietForGoal } from './showHandlers'
+import { weeksUntilShow } from '../services/showDates'
 import { clearOrphanedMealCompletions } from './mealCompletionHandlers'
 
 export function registerPlanHandlers(ipcMain: IpcMain): void {
@@ -17,11 +18,7 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
       training_experience_years: user.training_experience_years as number,
       equipment_access: user.equipment_access as string,
       division: user.division as string | undefined,
-      weeks_out: user.show_date
-        ? Math.max(0, Math.floor(
-            (new Date((user.show_date as string) + 'T12:00:00').getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 7)
-          ))
-        : undefined,
+      weeks_out: user.show_date ? weeksUntilShow(user.show_date as string) : undefined,
       goal: user.goal as string,
       split_preference: (user.split_preference as string) ?? 'auto',
       exercises_per_session: (user.exercises_per_session as number) ?? 6,
@@ -163,9 +160,7 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
     const apiKeyRow = db.prepare("SELECT value FROM settings WHERE key='claude_api_key'").get() as { value: string } | null
     const claudeApiKey = apiKeyRow?.value?.trim() ?? ''
     if (claudeApiKey) {
-      const dietWeeksOutClaude = user.show_date
-        ? Math.max(0, Math.floor((new Date((user.show_date as string) + 'T12:00:00').getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 7)))
-        : undefined
+      const dietWeeksOutClaude = user.show_date ? weeksUntilShow(user.show_date as string) : undefined
       const userProfile = {
         weight_kg: user.weight_kg, height_cm: user.height_cm, age: user.age, sex: user.sex,
         goal: user.goal, activity_level: user.activity_level,
@@ -197,9 +192,7 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
     }
     // Fall back to rule-based engine
 
-    const dietWeeksOut = user.show_date
-      ? Math.max(0, Math.floor((new Date((user.show_date as string) + 'T12:00:00').getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 7)))
-      : undefined
+    const dietWeeksOut = user.show_date ? weeksUntilShow(user.show_date as string) : undefined
     const plan = generateNutritionPlan({
       weight_kg: user.weight_kg as number,
       height_cm: user.height_cm as number,
@@ -266,9 +259,7 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
     if (!user) throw new Error('User not found')
     // Fire both handlers by re-invoking their logic inline
     // (Handlers can't call each other via IPC; call the shared helper functions directly)
-    const weeksOut = user.show_date
-      ? Math.max(0, Math.floor((new Date((user.show_date as string) + 'T12:00:00').getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 7)))
-      : undefined
+    const weeksOut = user.show_date ? weeksUntilShow(user.show_date as string) : undefined
 
     // Re-generate training (rule-based only for reliability)
     const trainingInput = {
@@ -345,9 +336,7 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
     const showTransitioned = prevShowDate !== newShowDate
 
     // 2. Compute current weeks_out
-    const weeksOut = newShowDate
-      ? Math.max(0, Math.floor((new Date(newShowDate + 'T12:00:00').getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 7)))
-      : undefined
+    const weeksOut = newShowDate ? weeksUntilShow(newShowDate) : undefined
 
     // 3. Check training plan — regenerate only if phase boundary crossed OR show context changed
     const lastTraining = db.prepare('SELECT * FROM training_plans WHERE user_id=? ORDER BY id DESC LIMIT 1').get(userId) as Record<string, unknown> | null
@@ -754,7 +743,7 @@ Ensure every exercise respects the constraints above while maintaining phase-app
     if (result.regenerateTraining) {
       let weeksOut: number | undefined
       if (updatedUser.show_date) {
-        weeksOut = Math.max(0, Math.floor((new Date((updatedUser.show_date as string) + 'T12:00:00').getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 7)))
+        weeksOut = weeksUntilShow(updatedUser.show_date as string)
       }
       const maxSets = result.maxSetsOverride ?? undefined
       const engineInput = {
