@@ -8,7 +8,13 @@ export default function DailyWeighInWidget() {
   const { settings } = useSettingsStore()
   const todayStr = localDateStr()
   const [dailyWeightLog, setDailyWeightLog] = useState<DailyWeightEntry[]>(() => {
-    try { return JSON.parse(localStorage.getItem('daily_weight_log') ?? '[]') } catch { return [] }
+    // Guard against valid-JSON-but-wrong-shape storage (hand-edited / corrupted:
+    // `null`, `{}`, `5`, …) — it parses without throwing, so try/catch alone
+    // won't catch it, and .find()/.filter() on a non-array crashes the widget.
+    try {
+      const parsed = JSON.parse(localStorage.getItem('daily_weight_log') ?? '[]')
+      return Array.isArray(parsed) ? parsed : []
+    } catch { return [] }
   })
   const [dailyWeightInput, setDailyWeightInput] = useState('')
   const [dailyWeightEditing, setDailyWeightEditing] = useState(false)

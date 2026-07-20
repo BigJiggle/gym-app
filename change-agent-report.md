@@ -1,5 +1,72 @@
 # Change Agent Report
 
+## Run: 2026-07-20b (BUG FIX — corrupted/hand-edited `daily_weight_log` crashes the Daily Weigh-In widget: inline JSON.parse never validates the array shape)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all done).
+So this run is a **bug hunt**, not a backlog item.
+
+### STEP 1 — Regression guard (clean rebased pull of master)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (256 tests, 33 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1` — electron's postinstall binary
+403s from the sandbox proxy; not needed to typecheck/test/build.)
+
+### STEP 2 — Area audited: (e) widgets + localStorage stores
+Rotated to the least-recently-covered area (recency order c→a→f→d→b→e; last (e)
+run was 2026-07-17b). Traced the shared stores (`createWidgetStore.ts`,
+`localStore.ts`, `cardioStore.ts`) and every widget that reads/derives from
+localStorage: Cardio, Supplement, Posing, Sleep, Condition, Water, DailyWeighIn,
+WeeklyScorecard, TrainingVolume, WeeklyVolume, MuscleCoverage, PrepPace,
+PrepGuidance, QuickStats. Most of the area is hardened by prior runs:
+`createLocalStore`/`createWidgetStore` validate top-level array shape (07-17b),
+`cardioStore.loadInitial` guards `Array.isArray`, `useWaterLog` guards `isNaN`,
+`PrepGuidanceWidget` guards `Array.isArray(stored)`. One **real, reachable crash**
+remained — in a widget that rolls its own inline localStorage read instead of the
+shared store.
+
+### The bug (Daily Weigh-In widget crashes on non-array corrupted storage)
+`src/components/widgets/DailyWeighInWidget.tsx:10-12` seeded its state with:
+```js
+useState(() => { try { return JSON.parse(localStorage.getItem('daily_weight_log') ?? '[]') } catch { return [] } })
+```
+The `try/catch` only catches **malformed** JSON. Valid JSON of the WRONG shape
+(hand-edited / corrupted storage — `null`, `{}`, `5`, `"x"`, `true`) parses
+without throwing, so the catch never fires and the non-array value flows straight
+into `dailyWeightLog.find(...)` / `.filter(...)`, throwing
+`TypeError: Cannot read properties of null (reading 'find')`. Since the repo has
+**no error boundary** anywhere in `src/` (verified by grep), a single widget
+throwing during render takes down the entire dashboard tab — the exact failure
+mode run 07-17b fixed for the competition widgets, but this widget was missed
+because it reads localStorage inline rather than through `createLocalStore`.
+Reachable via `daily-weigh-in` (a registered dashboard widget, `registry.tsx:40`).
+
+### Root cause + fix (minimum change)
+- **`src/components/widgets/DailyWeighInWidget.tsx`** — the state initializer now
+  validates the parsed value with `Array.isArray(parsed) ? parsed : []`, mirroring
+  the `createLocalStore` / `PrepGuidanceWidget` shape-guard. Malformed JSON still
+  falls back via the existing `catch`. Valid arrays are unchanged.
+
+### Tests added (`tests/unit/dailyWeighInCorrupted.test.tsx`) — 2 new, +258 total
+- widget renders without throwing for each of `null` / `{}` / `5` / `"oops"` /
+  `true` seeded into `daily_weight_log` (FAILED before the fix — threw
+  `TypeError … reading 'find'` on the first case);
+- a valid stored array still renders (regression guard).
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (258 tests, +2 new)
+- `npx electron-vite build` → PASS
+
+### Deferred (out of scope this run — noted, not fixed)
+- Element-level corruption (an array containing wrong-shaped elements, e.g.
+  `[null]` or `[{}]` in `supplement_log` / `daily_weight_log`) would still throw
+  on `.date`/`.taken` access. The shared stores and this widget only validate the
+  TOP-LEVEL shape. This requires much more deliberate hand-editing than swapping
+  the container type and is a broader hardening effort; left for a dedicated pass.
+
 ## Run: 2026-07-20 (BUG FIX — adaptive calorie engine assumes a weekly cadence, so it over-corrects on biweekly / every-3-days / daily schedules)
 
 ### STEP 0 — Backlog
