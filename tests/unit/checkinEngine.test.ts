@@ -208,4 +208,54 @@ describe('checkinEngine', () => {
       expect(adj.notes.some((n) => n.includes('Weight trend'))).toBe(true)
     })
   })
+
+  // A biweekly / every-3-days schedule (both first-class Settings options) means
+  // consecutive check-ins are NOT one week apart. The %/week thresholds must be
+  // normalized by the actual elapsed time between check-in dates, not assume one
+  // week per interval — otherwise a textbook-healthy 0.8 %/wk cut reads as a
+  // "dropping too fast" 1.6 %/wk event and the engine wrongly adds calories.
+  describe('cadence-aware trend (non-weekly schedules)', () => {
+    it('single-week fallback normalizes a 14-day gap by elapsed weeks', () => {
+      // 100 kg athlete lost 1.6 kg over 14 days = 0.8 kg/wk ≈ 0.8 %/wk (on track).
+      const adj = calculateAdjustments(
+        { ...GOOD_CHECKIN, weight_kg: 98.4, check_in_date: '2026-01-15' },
+        { weight_kg: 100, week_number: 1, check_in_date: '2026-01-01' },
+        2000,
+        'cut'
+      )
+      expect(adj.calories_delta).toBe(0)
+      expect(adj.notes.some((n) => n.includes('too fast'))).toBe(false)
+      expect(adj.notes.some((n) => n.toLowerCase().includes('on track'))).toBe(true)
+    })
+
+    it('smoothed trend divides by elapsed weeks, not check-in count (biweekly)', () => {
+      // Three check-ins 14 days apart, steady 0.8 %/wk loss.
+      const adj = calculateAdjustments(
+        { ...GOOD_CHECKIN, weight_kg: 96.8, check_in_date: '2026-01-29' },
+        { weight_kg: 98.4, week_number: 2, check_in_date: '2026-01-15' },
+        2000,
+        'cut',
+        [
+          { weight_kg: 98.4, week_number: 2, check_in_date: '2026-01-15' },
+          { weight_kg: 100, week_number: 1, check_in_date: '2026-01-01' },
+        ]
+      )
+      // oldest 100 kg on 01-01, current 96.8 kg on 01-29 → 28 days = 4 weeks.
+      // (96.8-100)/4 = -0.8 kg/wk ≈ -0.8 %/wk → on track, no calorie change.
+      expect(adj.calories_delta).toBe(0)
+      expect(adj.notes.some((n) => n.includes('too fast'))).toBe(false)
+    })
+
+    it('still flags a genuinely too-fast biweekly drop', () => {
+      // 100 kg → 96 kg over 14 days = 2 kg/wk ≈ 2 %/wk → genuinely too fast.
+      const adj = calculateAdjustments(
+        { ...GOOD_CHECKIN, weight_kg: 96, check_in_date: '2026-01-15' },
+        { weight_kg: 100, week_number: 1, check_in_date: '2026-01-01' },
+        2000,
+        'cut'
+      )
+      expect(adj.calories_delta).toBe(150)
+      expect(adj.notes.some((n) => n.includes('too fast'))).toBe(true)
+    })
+  })
 })

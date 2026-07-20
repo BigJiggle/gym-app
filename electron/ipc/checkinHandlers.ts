@@ -64,17 +64,17 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
 
     const previous = db
       .prepare(
-        'SELECT weight_kg, week_number FROM weekly_checkins WHERE user_id = ? ORDER BY week_number DESC LIMIT 1'
+        'SELECT weight_kg, week_number, check_in_date FROM weekly_checkins WHERE user_id = ? ORDER BY week_number DESC LIMIT 1'
       )
-      .get(data.user_id) as { weight_kg: number; week_number: number } | undefined
+      .get(data.user_id) as { weight_kg: number; week_number: number; check_in_date: string } | undefined
 
     // Recent prior check-ins (most-recent-first) feed the smoothed weight trend so
     // adaptation reflects the multi-week direction, not one noisy weigh-in.
     const recentCheckins = db
       .prepare(
-        'SELECT weight_kg, week_number FROM weekly_checkins WHERE user_id = ? ORDER BY week_number DESC LIMIT 4'
+        'SELECT weight_kg, week_number, check_in_date FROM weekly_checkins WHERE user_id = ? ORDER BY week_number DESC LIMIT 4'
       )
-      .all(data.user_id) as { weight_kg: number; week_number: number }[]
+      .all(data.user_id) as { weight_kg: number; week_number: number; check_in_date: string }[]
 
     const dietPlan = db
       .prepare('SELECT calories_target FROM diet_plans WHERE user_id = ? ORDER BY id DESC LIMIT 1')
@@ -88,7 +88,8 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
         energy_level: data.energy_level,
         sleep_quality: data.sleep_quality,
         stress_level: data.stress_level,
-        notes: data.notes
+        notes: data.notes,
+        check_in_date: submitDate
       },
       previous ?? null,
       dietPlan?.calories_target ?? 2000,
@@ -211,16 +212,16 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
     // Find previous check-in for adjustment calculation
     const previous = db
       .prepare(
-        'SELECT weight_kg, week_number FROM weekly_checkins WHERE user_id=? AND check_in_date<? ORDER BY check_in_date DESC LIMIT 1'
+        'SELECT weight_kg, week_number, check_in_date FROM weekly_checkins WHERE user_id=? AND check_in_date<? ORDER BY check_in_date DESC LIMIT 1'
       )
-      .get([data.user_id, data.check_in_date]) as { weight_kg: number; week_number: number } | undefined
+      .get([data.user_id, data.check_in_date]) as { weight_kg: number; week_number: number; check_in_date: string } | undefined
 
     // Trend window uses the check-ins chronologically before this retroactive date.
     const recentCheckins = db
       .prepare(
-        'SELECT weight_kg, week_number FROM weekly_checkins WHERE user_id=? AND check_in_date<? ORDER BY check_in_date DESC LIMIT 4'
+        'SELECT weight_kg, week_number, check_in_date FROM weekly_checkins WHERE user_id=? AND check_in_date<? ORDER BY check_in_date DESC LIMIT 4'
       )
-      .all([data.user_id, data.check_in_date]) as { weight_kg: number; week_number: number }[]
+      .all([data.user_id, data.check_in_date]) as { weight_kg: number; week_number: number; check_in_date: string }[]
 
     const dietPlan = db
       .prepare('SELECT calories_target FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1')
@@ -235,6 +236,7 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
         sleep_quality: data.sleep_quality,
         stress_level: data.stress_level,
         notes: data.notes,
+        check_in_date: data.check_in_date,
       },
       previous ?? null,
       dietPlan?.calories_target ?? 2000,
@@ -334,13 +336,13 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
     const dietPlan = db.prepare('SELECT calories_target FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1').get(existing.user_id as number) as { calories_target: number } | undefined
 
     const previous = db.prepare(
-      'SELECT weight_kg, week_number FROM weekly_checkins WHERE user_id=? AND id<? ORDER BY id DESC LIMIT 1'
-    ).get([existing.user_id as number, checkinId]) as { weight_kg: number; week_number: number } | undefined
+      'SELECT weight_kg, week_number, check_in_date FROM weekly_checkins WHERE user_id=? AND id<? ORDER BY id DESC LIMIT 1'
+    ).get([existing.user_id as number, checkinId]) as { weight_kg: number; week_number: number; check_in_date: string } | undefined
 
     // Trend window: the check-ins recorded before the one being edited.
     const recentCheckins = db.prepare(
-      'SELECT weight_kg, week_number FROM weekly_checkins WHERE user_id=? AND id<? ORDER BY id DESC LIMIT 4'
-    ).all([existing.user_id as number, checkinId]) as { weight_kg: number; week_number: number }[]
+      'SELECT weight_kg, week_number, check_in_date FROM weekly_checkins WHERE user_id=? AND id<? ORDER BY id DESC LIMIT 4'
+    ).all([existing.user_id as number, checkinId]) as { weight_kg: number; week_number: number; check_in_date: string }[]
 
     const adjustments = calculateAdjustments(
       {
@@ -350,7 +352,8 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
         energy_level: (data.energy_level ?? existing.energy_level) as number,
         sleep_quality: (data.sleep_quality ?? existing.sleep_quality) as number,
         stress_level: (data.stress_level ?? existing.stress_level) as number,
-        notes: (data.notes ?? existing.notes) as string | undefined
+        notes: (data.notes ?? existing.notes) as string | undefined,
+        check_in_date: (data.check_in_date ?? existing.check_in_date) as string | undefined
       },
       previous ?? null,
       dietPlan?.calories_target ?? 2000,

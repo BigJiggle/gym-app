@@ -1,5 +1,88 @@
 # Change Agent Report
 
+## Run: 2026-07-20 (BUG FIX — adaptive calorie engine assumes a weekly cadence, so it over-corrects on biweekly / every-3-days / daily schedules)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 done).
+So this run is a **bug hunt**, not a backlog item.
+
+### STEP 1 — Regression guard (clean rebased pull of master)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (253 tests, 33 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1` — electron's postinstall binary
+403s from the sandbox proxy; not needed to typecheck/test/build.)
+
+### STEP 2 — Area audited: (c) check-in + Progress + adaptive nutrition
+Rotated toward the least-recently-covered area (last (c) run was 2026-07-17).
+Traced the whole path: `checkinEngine.ts`, `checkinHandlers.ts` (submit /
+submitMissed / update), `checkinSchedule.ts`, `progressHandlers.ts`, the Progress
+page, WeightChart/MeasurementsChart, the Check-In page, and the check-in stores.
+Most of the area is hardened by prior runs (clampWeightKg, duplicate-checkin
+guards, week renumbering on date edit, bodyweight-0 guards, smoothed multi-week
+trend). One **real, reachable correctness bug** remained in adaptive nutrition.
+
+### The bug (adaptive calorie engine ignores check-in cadence)
+`electron/services/checkinEngine.ts` converted a raw weight delta into a
+"% of bodyweight per **week**" figure — the number the calorie-adjustment
+thresholds (`< -1.5` too-fast, `-1.0…-0.3` on-track, `> -0.1` stall) are
+calibrated against — but it assumed **exactly one week between check-ins**:
+- single-week fallback `weightTrend` hard-coded `weeksDiff = 1` (`:28`);
+- smoothed `weightTrendPct` divided the window's change by `priors.length`
+  (the interval **count**, not elapsed weeks) (`:60`).
+
+Settings offers **Bi-Weekly (14-day)**, **Every 3 Days**, and **Daily**
+schedules (both the day-mode biweekly toggle and the interval presets —
+`src/pages/Settings/index.tsx:250-291`), and nothing in `checkinHandlers.ts`
+normalized for cadence. So a biweekly cut athlete losing a textbook-healthy
+0.8 %/wk over 14 days was read as **-1.6 %/wk** → the engine fired *"Weight
+dropping too fast — added 150 kcal"* and bumped the diet plan's calorie target
+(`checkinHandlers.ts:131`), sabotaging an on-pace athlete. Every biweekly and
+every-3-days check-in read ~2–2.3× too hot; daily read ~7× too cold. Weekly
+users were unaffected (intervals ≈ weeks), which is why it survived prior runs.
+
+### Root cause + fix (minimum change)
+The engine had no way to know the real gap — `CheckinInput`/`PreviousCheckin`
+carried no dates. Fix:
+- **`electron/services/checkinEngine.ts`** — added optional `check_in_date` to
+  `CheckinInput` and `PreviousCheckin`; added a `weeksBetweenDates()` helper
+  (local-noon parse, returns null on missing/unparseable/non-positive span);
+  `weightTrend` and `weightTrendPct` now normalize by the ACTUAL weeks between
+  the anchor date and the current weigh-in, falling back to the old assumption
+  (1 week / interval count) only when dates are absent — so existing weekly
+  behavior and all prior tests are unchanged.
+- **`electron/ipc/checkinHandlers.ts`** — `previous`/`recentCheckins` queries in
+  submit, submitMissed, and update now also `SELECT check_in_date`, and each
+  `calculateAdjustments` call passes the current weigh-in's date
+  (`submitDate` / `data.check_in_date` / edited-or-existing date).
+
+Now the biweekly 0.8 %/wk case computes `(−1.6 kg)/2 wk = −0.8 %/wk` → "on track,"
+no calorie change; a genuine −2 %/wk biweekly drop still correctly flags too-fast.
+
+### Tests added (`tests/unit/checkinEngine.test.ts`) — 3 new, +256 total
+- single-week fallback normalizes a 14-day gap → on-track, no calorie add;
+- smoothed trend divides by elapsed weeks not check-in count (biweekly) → on-track;
+- a genuinely too-fast biweekly drop (−2 %/wk) still fires the too-fast +150.
+All three FAILED before the fix (returned +150 "too fast") and pass after.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (256 tests, +3 new)
+- `npx electron-vite build` → PASS
+
+### Deferred (out of scope this run)
+- `checkin:update` recomputes the coach `adjustments` note but does not re-apply
+  macros to `diet_plans` (only `checkin:submit` adapts nutrition) — a possible
+  DB↔UI desync when a last weigh-in is edited, but arguably intentional.
+- `WeightChart` projected dashed line renders as a single dot (only the Show-Day
+  datum is non-null, so `connectNulls` has nothing to join) — cosmetic, and the
+  chart is a visual concern (out of the debugging scope).
+- Latent: `computeMissedSlots` would divide by zero / loop on `interval_days=0`,
+  but that value isn't reachable through the UI (Settings only offers 1/3/7/14).
+
+---
+
 ## Run: 2026-07-19b (BUG FIX — "No fish" restriction still serves Salmon: salmon's substitute chain is entirely inside the `fish` exclusion alias)
 
 ### STEP 0 — Backlog
