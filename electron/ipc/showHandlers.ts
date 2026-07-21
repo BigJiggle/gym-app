@@ -3,15 +3,22 @@ import { getDb } from '../database/db'
 import { generateTrainingPlan } from '../services/trainingEngine'
 import { generateNutritionPlan } from '../services/nutritionEngine'
 import { generateWorkoutWithClaude, refineWorkoutForSafety } from '../services/claudeService'
-import { weeksUntilShow } from '../services/showDates'
+import { weeksUntilShow, localToday } from '../services/showDates'
 import { clearOrphanedMealCompletions } from './mealCompletionHandlers'
 
 // Always keeps users.show_date pointing to the nearest upcoming show.
 // Called after every add / delete / update so the state is always consistent.
-function syncPrimaryToNearest(db: ReturnType<typeof getDb>, userId: number): void {
+// `today` (YYYY-MM-DD, local) is injectable for deterministic tests; production
+// uses the local date so this agrees with the rest of the app rather than
+// SQLite's UTC `date('now')` (see localToday).
+export function syncPrimaryToNearest(
+  db: ReturnType<typeof getDb>,
+  userId: number,
+  today: string = localToday(),
+): void {
   const next = db.prepare(
-    "SELECT * FROM shows WHERE user_id=? AND show_date >= date('now') ORDER BY show_date ASC LIMIT 1"
-  ).get([userId]) as Record<string, unknown> | null
+    "SELECT * FROM shows WHERE user_id=? AND show_date >= ? ORDER BY show_date ASC LIMIT 1"
+  ).get([userId, today]) as Record<string, unknown> | null
 
   db.prepare('UPDATE shows SET is_primary=0 WHERE user_id=?').run([userId])
 

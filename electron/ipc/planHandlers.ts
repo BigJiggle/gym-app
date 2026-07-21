@@ -4,7 +4,7 @@ import { generateTrainingPlan, getExerciseLibraryForUI, determinePhase } from '.
 import { generateNutritionPlan, buildMealsPublic, calcBMR, getPhaseAwareDeficit, ACTIVITY_MULTIPLIERS, clampWeightKg, clampMealCount } from '../services/nutritionEngine'
 import { generateDietWithClaude, generateWorkoutWithClaude, refineDietPlan, refineWorkoutWithClaude, processAIRequest, refineWorkoutForSafety } from '../services/claudeService'
 import { regenerateDietForGoal } from './showHandlers'
-import { weeksUntilShow } from '../services/showDates'
+import { weeksUntilShow, localToday } from '../services/showDates'
 import { clearOrphanedMealCompletions } from './mealCompletionHandlers'
 
 export function registerPlanHandlers(ipcMain: IpcMain): void {
@@ -319,10 +319,14 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
 
     // 1. Sync primary show to nearest — handles show date passing automatically
     const prevShowDate = user.show_date as string | null
-    // Import syncPrimaryToNearest logic inline (can't import from showHandlers — circular)
+    // Import syncPrimaryToNearest logic inline (can't import from showHandlers — circular).
+    // Use the LOCAL date (localToday), not SQLite's UTC date('now'): on a show-day
+    // evening in a behind-UTC timezone the UTC date has already rolled forward, so
+    // `>= date('now')` would drop the athlete's own show here on startup and null
+    // show_date while the UI still counts it as active (a DB↔UI desync).
     const nextShow = db.prepare(
-      "SELECT * FROM shows WHERE user_id=? AND show_date >= date('now') ORDER BY show_date ASC LIMIT 1"
-    ).get([userId]) as Record<string, unknown> | null
+      "SELECT * FROM shows WHERE user_id=? AND show_date >= ? ORDER BY show_date ASC LIMIT 1"
+    ).get([userId, localToday()]) as Record<string, unknown> | null
     db.prepare('UPDATE shows SET is_primary=0 WHERE user_id=?').run([userId])
     if (nextShow) {
       db.prepare('UPDATE shows SET is_primary=1 WHERE id=?').run([nextShow.id as number])

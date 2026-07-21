@@ -1,5 +1,85 @@
 # Change Agent Report
 
+## Run: 2026-07-21 (later) (BUG FIX — "nearest upcoming show" selected with SQLite's UTC `date('now')` nulls `show_date` on the athlete's own show-day evening — a date-boundary DB↔UI desync, and it runs on every app launch)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all done). Bug hunt.
+
+### STEP 1 — Regression guard
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (260 tests, 34 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.)
+
+### STEP 2 — Area audited: (f) shows/competition + date/week logic (+ (e) widgets/localStorage)
+Rotated off last run's (b) training. Traced the show lifecycle (`showHandlers.ts`,
+`showDates.ts`, `planHandlers.ts` startup refresh) and the local date/week utilities
+(`dates.ts`, `checkinSchedule.ts`, `units.ts`) plus the competition widgets
+(`PeakWeekWidget`, `WeeklyScorecardWidget`, `PosingWidget`, `SleepWidget`) and their
+shared localStorage stores (`localStore.ts`, `createWidgetStore.ts`,
+`competitionLogs.ts`). The localStorage stores and widget input guards are hardened by
+prior runs. One **real, reachable** date-boundary defect remained in the show-selection
+SQL.
+
+### The bug (UTC `date('now')` vs the app's LOCAL date convention)
+`syncPrimaryToNearest` (`showHandlers.ts:13`) and the inline copy in
+`plan:startupRefresh` (`planHandlers.ts:324`) both selected the nearest upcoming show
+with:
+```
+SELECT * FROM shows WHERE user_id=? AND show_date >= date('now') ORDER BY show_date ASC LIMIT 1
+```
+`date('now')` returns the **UTC** date. Everywhere else the app uses the **LOCAL** date
+via `toLocaleDateString('en-CA')` — the countdown (`getShowCountdown`, local midnight),
+every `hasUpcoming` check in `shows:delete`/`cancelShow`/`setPrimary`, workout dates,
+meal completions — and `workoutHandlers.ts:7` explicitly documents this exact pitfall
+("not SQLite `date('now')` which is UTC and shifts overnight").
+
+**Failure (confirmed by repro):** athlete in a behind-UTC zone (e.g. US Pacific), 9 PM
+on their show day (`2026-07-21`). UTC has already rolled to `2026-07-22`, so
+`'2026-07-21' >= date('now')` = `'2026-07-21' >= '2026-07-22'` → **false**. The show
+dated today is treated as past → `UPDATE users SET show_date=NULL, division=NULL`, the
+primary flag is cleared, `PeakWeekWidget`/show-day protocol disappears, and the diet can
+regenerate to off-season — all while the local-midnight UI countdown still shows "SHOW
+DAY". **Reachability is high:** `plan:startupRefresh` runs on **every app launch**, so
+merely opening the app on show-day evening triggers it — no user action required. The
+same window hits behind-UTC evenings and ahead-of-UTC mornings for any show on/near
+today; it also created an internal inconsistency (`shows:delete` computed `hasUpcoming`
+from the LOCAL date but `syncPrimaryToNearest` from the UTC date, so the two could
+disagree in the same call).
+
+### Root cause + fix (minimum change — use the local date, matching the rest of the app)
+- **`electron/services/showDates.ts`** — added `localToday(now = new Date())`
+  (returns `now.toLocaleDateString('en-CA')`), an injectable-now helper mirroring the
+  existing `weeksUntilShow` pattern for deterministic tests.
+- **`electron/ipc/showHandlers.ts`** — `syncPrimaryToNearest` now binds a local
+  `today` (`show_date >= ?`) instead of `date('now')`; `today` is an optional injected
+  param (defaults to `localToday()`) and the function is exported for testing. This also
+  makes it consistent with the sibling `hasUpcoming` checks that were already local.
+- **`electron/ipc/planHandlers.ts`** — the `plan:startupRefresh` inline query binds
+  `localToday()` instead of `date('now')` (imported from `showDates`; the pre-existing
+  "can't import from showHandlers — circular" note doesn't apply to the services helper).
+
+No other `date('now')` remains in a show/upcoming comparison; the remaining ones are
+schema `created_at`/`updated_at`/`taken_at` timestamp defaults (correctly UTC storage).
+
+### Tests added (`tests/unit/showSyncPrimary.test.ts`) — 4 new, 264 total
+Exercises the REAL exported `syncPrimaryToNearest` against an in-memory
+node-sqlite3-wasm DB with an injected `today`:
+- **keeps a show dated TODAY (local) as primary** — the exact case UTC `date('now')`
+  dropped on show-day evening (show_date not nulled, primary + division follow it).
+- **selects the nearest UPCOMING show and skips past ones** (exactly one primary flag).
+- **nulls show_date/division and clears primary when no upcoming show remains.**
+- **a fixed instant maps to different UTC vs behind-UTC calendar dates** — documents the
+  bug class deterministically via explicit `timeZone` options.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (264 tests, +4 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-07-21 (BUG FIX — an unvalidated ≤0 set cap (`max_sets_per_exercise` / `maxSetsOverride`) zeroes out EVERY exercise → an un-loggable, uncompletable training plan)
 
 ### STEP 0 — Backlog
