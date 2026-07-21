@@ -533,7 +533,17 @@ export function generateTrainingPlan(input: TrainingInput): TrainingPlan {
   const userDefault = Number.isFinite(rawSetsPerEx) && rawSetsPerEx > 0
     ? Math.round(rawSetsPerEx)
     : undefined
-  const userMax = input.max_sets_per_exercise
+  // Guard the hard set cap — the third numeric input, same hole as the two above.
+  // getSets applies it via `Math.min(sets, userMax)` with no floor, so a cap of 0
+  // (or negative / NaN / Infinity) collapses EVERY exercise to <= 0 sets, yielding
+  // an un-loggable, uncompletable plan. The cap comes from untrusted LLM output
+  // (`maxSetsOverride`) and was passed through unvalidated. Any non-finite or
+  // non-positive value must be ignored so getSets falls back to its own default,
+  // exactly as when no cap was set. Positive values (incl. 1) are preserved.
+  const rawMaxSets = Number(input.max_sets_per_exercise)
+  const userMax = Number.isFinite(rawMaxSets) && rawMaxSets > 0
+    ? Math.round(rawMaxSets)
+    : undefined
 
   let sessions: TrainingSession[]
   let splitName: string

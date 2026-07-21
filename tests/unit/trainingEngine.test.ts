@@ -178,4 +178,51 @@ describe('trainingEngine', () => {
       }
     }
   })
+
+  // Regression: a non-positive / non-finite max_sets_per_exercise (0, negative,
+  // NaN, Infinity) must NOT zero out sets. This is the sibling hole to
+  // sets_per_exercise / exercises_per_session above, on the third numeric input.
+  // The hard cap is applied via getSets' `Math.min(sets, userMax)` with no floor,
+  // so a cap of 0 collapses EVERY exercise to 0 sets — an entirely un-loggable,
+  // uncompletable plan. The cap originates from untrusted LLM output
+  // (`maxSetsOverride`) and was passed to the engine unvalidated. A bad cap must
+  // be ignored (fall back to the phase/experience default), never honored.
+  it('never produces an exercise with <= 0 sets for a non-positive / non-finite max_sets_per_exercise', () => {
+    const splits = ['auto', 'ppl', 'upper_lower', 'arnold', 'bro', 'full_body']
+    for (const split of splits) {
+      for (const bad of [0, -2, NaN, Infinity] as number[]) {
+        const plan = generateTrainingPlan({
+          ...BASE_INPUT,
+          split_preference: split,
+          training_frequency: 6,
+          max_sets_per_exercise: bad,
+        })
+        for (const session of plan.sessions) {
+          for (const ex of session.exercises) {
+            expect(
+              ex.sets,
+              `${split} max=${bad} — "${ex.name}" in "${session.session_name}" had ${ex.sets} sets`
+            ).toBeGreaterThanOrEqual(1)
+          }
+        }
+      }
+    }
+  })
+
+  // A valid hard cap must still be enforced (guards against the fix over-reaching).
+  it('enforces a valid max_sets_per_exercise cap on every exercise', () => {
+    const plan = generateTrainingPlan({
+      ...BASE_INPUT,
+      split_preference: 'ppl',
+      training_frequency: 6,
+      sets_per_exercise: 5,
+      max_sets_per_exercise: 3,
+    })
+    for (const session of plan.sessions) {
+      for (const ex of session.exercises) {
+        expect(ex.sets).toBeLessThanOrEqual(3)
+        expect(ex.sets).toBeGreaterThanOrEqual(1)
+      }
+    }
+  })
 })

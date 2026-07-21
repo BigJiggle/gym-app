@@ -631,6 +631,17 @@ Ensure every exercise respects the constraints above while maintaining phase-app
 
     if (!result) throw new Error('AI could not process your request — Claude returned no parseable response. Check your API key or try rephrasing.')
 
+    // Sanitize the LLM-supplied hard set cap before it fans out to plan generation
+    // and the direct DB clamp below. `maxSetsOverride` is untrusted model output; a
+    // value of 0 (or negative / NaN / Infinity) would clamp every exercise to <= 0
+    // sets — an un-loggable, uncompletable plan — both through the engine's userMax
+    // and the server-side `Math.min(ex.sets, cap)` clamp that bypasses the engine.
+    // A cap must be a positive integer; anything else means "no cap".
+    if (result.maxSetsOverride !== undefined) {
+      const cap = Number(result.maxSetsOverride)
+      result.maxSetsOverride = Number.isFinite(cap) && cap > 0 ? Math.round(cap) : undefined
+    }
+
     // Actions that require no DB changes
     if (result.action === 'reject') return { action: 'reject', message: result.message }
     if (result.action === 'explain') return { action: 'explain' as any, message: result.message }

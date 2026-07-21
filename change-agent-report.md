@@ -1,5 +1,95 @@
 # Change Agent Report
 
+## Run: 2026-07-21 (BUG FIX — an unvalidated ≤0 set cap (`max_sets_per_exercise` / `maxSetsOverride`) zeroes out EVERY exercise → an un-loggable, uncompletable training plan)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all done).
+So this run is a **bug hunt**, not a backlog item.
+
+### STEP 1 — Regression guard (clean rebased pull of master)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (258 tests, 34 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1` — electron's postinstall binary
+403s from the sandbox proxy; not needed to typecheck/test/build.)
+
+### STEP 2 — Area audited: (b) training engine + workout/session flows
+Rotated to the least-recently-covered area (recency e→c→a→f→d→b; last (b) run was
+2026-07-18). Traced the full training path: `trainingEngine.ts` (all six split
+builders + `getSets`), `workoutHandlers.ts` IPC, and the workout/session UI
+(`WorkoutSession.tsx`, `WorkoutLogEditor.tsx`, `SessionEditor.tsx`, `WorkoutStats.tsx`)
+plus the training widgets. Most is hardened by prior runs: the engine already
+guards `training_frequency`, `exercises_per_session` (07-18) and
+`sets_per_exercise` (07-18b) against 0 / negative / NaN; `workout:updateSet`
+coerces `undefined`→NULL (07-16b); `SessionEditor`'s Sets input floors to 1
+(`parseInt(...) || 1`); `workout:history` guards its LIMIT. One **real, reachable**
+defect remained — the **third** numeric set input the engine never guarded.
+
+### The bug (unvalidated ≤0 set cap collapses all sets to zero)
+The hard set cap `max_sets_per_exercise` (engine) / `maxSetsOverride` (chat) is the
+sibling of the two fields fixed in 07-18 / 07-18b — but it was passed through and
+applied **completely unvalidated**, in TWO layers:
+
+1. **Engine** (`trainingEngine.ts:536`): `const userMax = input.max_sets_per_exercise`
+   — taken raw. `getSets` applies it via `sets = Math.min(sets, userMax)` with **no
+   floor** (`trainingEngine.ts:256`). A cap of `0` → `Math.min(4, 0) = 0`, so every
+   exercise gets `sets: 0`. Reproduced directly:
+   `generateTrainingPlan({ …, max_sets_per_exercise: 0 })` → **all 27 exercises had 0
+   sets**. `WorkoutSession.buildInitialStates` then builds `Array.from({length: 0})`
+   = `[]` sets per exercise → `canComplete` is false → the workout **cannot be
+   completed** (the exact failure mode of 07-18 / 07-18b, via the cap path).
+2. **Direct server-side DB clamp** (`planHandlers.ts:831-839`): independently applies
+   `Math.min(ex.sets, cap)` where `cap = result.maxSetsOverride`, again with no floor.
+   This path **bypasses the engine entirely** — so even when Claude generation
+   succeeds and returns valid 4-set sessions, a `cap` of 0 rewrites every exercise
+   to 0 sets and **persists it to the DB**.
+
+**Reachability:** the cap originates from untrusted LLM output — `processAIRequest`
+returns `maxSetsOverride` parsed from Claude's JSON (`claudeService.ts:311`,
+prompt at `:408-411`) for set-count requests. The app validates its *sibling*
+numeric inputs everywhere (`NUMERIC_BOUNDS` clamps meal/snack/frequency at
+`planHandlers.ts:717-726`; the engine guards the other two set fields) — but this
+one LLM-derived cap reached `Math.min` raw. An injury-minimization phrasing
+("keep it to zero sets", "minimize everything") or any LLM slip yielding `0` /
+negative produces a dead, uncompletable plan.
+
+### Root cause + fix (minimum change — guard the cap ≤0 at both application layers)
+- **`electron/services/trainingEngine.ts`** — `generateTrainingPlan` now derives
+  `userMax` the same way as its two siblings: `Number.isFinite(rawMaxSets) &&
+  rawMaxSets > 0 ? Math.round(rawMaxSets) : undefined`. A bad cap is ignored and
+  `getSets` falls back to its phase/experience default; positive caps (incl. 1) are
+  preserved and still enforced.
+- **`electron/ipc/planHandlers.ts`** — sanitize `result.maxSetsOverride` once, right
+  after `processAIRequest` returns, before it fans out to the engine input
+  (`:759`), the refinement `hardMaxSets` (`:809`), and the direct DB clamp (`:831`).
+  Non-finite / non-positive → `undefined` ("no cap"). This closes the engine-bypass
+  path (2) that the engine guard alone can't reach.
+
+### Tests added (`tests/unit/trainingEngine.test.ts`) — 2 new, 260 total
+- **never produces an exercise with ≤0 sets for a non-positive / non-finite
+  `max_sets_per_exercise`** — across all 6 splits × `{0, -2, NaN, Infinity}`, every
+  exercise must have ≥1 set. **FAILED before the fix** (1 failed: all exercises had
+  0 sets); passes after.
+- **enforces a valid `max_sets_per_exercise` cap on every exercise** — a valid cap
+  of 3 still clamps every exercise to ≤3 (guards the fix against over-reaching).
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (260 tests, +2 new)
+- `npx electron-vite build` → PASS
+
+### Deferred (out of scope this run — noted, not fixed)
+- `showHandlers.ts:126` computes `max_sets_per_exercise: (sets_per_exercise ?? 4) + 1`
+  and passes it only to `generateWorkoutWithClaude` (Claude, not the rule engine);
+  a hand-typed negative `sets_per_exercise` persisted in the DB could make that
+  argument ≤0, but it never reaches the rule fallback there. Low-value edge, left
+  for a dedicated pass.
+- `training_experience_years` and `exercises_per_session` from chat `settingChanges`
+  are written to the users table without the `NUMERIC_BOUNDS` clamp that
+  meal/snack/frequency get; both are re-guarded downstream by the engine, so no
+  current crash, but the boundary clamp is inconsistent. Noted for a later run.
+
 ## Run: 2026-07-20b (BUG FIX — corrupted/hand-edited `daily_weight_log` crashes the Daily Weigh-In widget: inline JSON.parse never validates the array shape)
 
 ### STEP 0 — Backlog
