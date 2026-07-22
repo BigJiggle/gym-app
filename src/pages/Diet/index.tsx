@@ -11,6 +11,7 @@ import WeeklyMealView from './WeeklyMealView'
 import GroceryList from './GroceryList'
 import { isMealExpanded as resolveMealExpanded } from './mealAccordion'
 import { buildRecipeSteps } from './recipeSteps'
+import { getSwapAlternatives } from './swapAlternatives'
 import TabWidgetZone from '../../components/widgets/TabWidgetZone'
 import { NUTRITION_WIDGET_META, nutritionWidgetStore } from '../../components/widgets/tabWidgets'
 import { FOODS } from '../../data/foods'
@@ -1836,7 +1837,7 @@ export default function Diet() {
             <p className="text-xs text-gray-500 mb-4">Choose a replacement meal (~{swapTarget.meal.calories} kcal, {swapTarget.meal.protein_g}g protein). You can swap again anytime.</p>
             <div className="space-y-2 mb-4">
               {(() => {
-                const alternatives = getSwapAlternatives(swapTarget.meal, user.dietary_preference, user.food_exclusions ?? [])
+                const alternatives = getSwapAlternatives(swapTarget.meal, user.dietary_preference, user.food_exclusions ?? [], user.dietary_restrictions ?? [])
                 if (alternatives.length === 0) {
                   return (
                     <p className="text-xs text-gray-500 text-center py-4">
@@ -1890,72 +1891,4 @@ export default function Diet() {
       )}
     </div>
   )
-}
-
-// Generates alternative food combos for a given meal slot, filtered by exclusions.
-// Portions are computed dynamically from meal.calories to match the nutrition engine.
-function getSwapAlternatives(meal: Meal, dietary: string, exclusions: string[] = []): string[][] {
-  const isExcluded = (foods: string[]) =>
-    foods.some((food) =>
-      exclusions.some((ex) => food.toLowerCase().includes(ex.replace(/_/g, ' ')))
-    )
-
-  const isVegan = dietary === 'vegan'
-  const isVeg = dietary === 'vegetarian'
-  const mealName = meal.name.toLowerCase()
-  const mc = meal.calories
-
-  // Returns gram amount scaled to mealCal * fraction, rounded to nearest 5g, clamped to [min, max]
-  const pg = (calPer100g: number, fraction: number, min = 30, max = 280): number => {
-    const g = Math.round((mc * fraction / calPer100g) * 100 / 5) * 5
-    return Math.max(min, Math.min(max, g))
-  }
-
-  let candidates: string[][]
-
-  if (mealName.includes('breakfast')) {
-    candidates = isVegan
-      ? [
-          [`Tofu Scramble (${pg(76, 0.45)}g)`, `Oats (${pg(389, 0.35)}g dry)`, 'Blueberries (100g)'],
-          ['Soy Protein Shake (30g)', 'Banana (100g)', `Almond Butter (${pg(614, 0.15, 5, 30)}g)`],
-          [`Cream of Rice (${pg(380, 0.35)}g dry)`, 'Pea Protein Shake (30g)', 'Mixed Berries (100g)'],
-        ]
-      : [
-          [`Greek Yogurt (${pg(59, 0.45)}g)`, `Oats (${pg(389, 0.35)}g dry)`, 'Mixed Berries (100g)'],
-          ['Egg Whites x6', `Sweet Potato (${pg(86, 0.35)}g)`, 'Spinach (100g)'],
-          ['Whey Protein Shake (30g)', `Oats (${pg(389, 0.35)}g dry)`, 'Banana (100g)'],
-        ]
-  } else if (mealName.includes('snack')) {
-    candidates = isVegan
-      ? [
-          ['Rice Cakes x2', 'Pea Protein Shake (30g)'],
-          ['Apple (100g)', 'Almond Butter (16g)'],
-          ['Edamame (100g)'],
-        ]
-      : [
-          [`Greek Yogurt (${pg(59, 0.45, 100, 250)}g)`, 'Apple (100g)'],
-          [`Cottage Cheese (${pg(98, 0.45, 100, 250)}g)`, 'Rice Cakes x2'],
-          ['Whey Protein Shake (30g)', 'Banana (100g)'],
-        ]
-  } else if (isVegan) {
-    candidates = [
-      [`Tempeh (${pg(195, 0.45)}g)`, `Brown Rice (${pg(111, 0.35)}g cooked)`, 'Broccoli (120g)', `Walnuts (${pg(654, 0.15, 5, 30)}g)`],
-      [`Tofu (${pg(76, 0.45)}g)`, `Quinoa (${pg(120, 0.35)}g cooked)`, 'Mixed Veg (120g)', `Avocado (${pg(160, 0.15, 20, 80)}g)`],
-      ['Edamame (120g)', `Sweet Potato (${pg(86, 0.35)}g)`, 'Kale (100g)', `Almond Butter (${pg(614, 0.15, 5, 30)}g)`],
-    ]
-  } else if (isVeg) {
-    candidates = [
-      [`Cottage Cheese (${pg(98, 0.45)}g)`, `Sweet Potato (${pg(86, 0.35)}g)`, 'Green Beans (120g)', `Almonds (${pg(579, 0.15, 5, 30)}g)`],
-      [`Greek Yogurt (${pg(59, 0.45)}g)`, `Quinoa (${pg(120, 0.35)}g cooked)`, 'Spinach (100g)', `Almonds (${pg(579, 0.15, 5, 30)}g)`],
-      ['Eggs x3', `Brown Rice (${pg(111, 0.35)}g cooked)`, 'Broccoli (120g)', `Almonds (${pg(579, 0.15, 5, 30)}g)`],
-    ]
-  } else {
-    candidates = [
-      [`Turkey Breast (${pg(157, 0.45)}g)`, `White Rice (${pg(130, 0.35)}g cooked)`, 'Asparagus (150g)', `Almonds (${pg(579, 0.15, 5, 30)}g)`],
-      [`Salmon Fillet (${pg(208, 0.45)}g)`, `Sweet Potato (${pg(86, 0.35)}g)`, 'Spinach (100g)', `Almonds (${pg(579, 0.15, 5, 30)}g)`],
-      [`Lean Ground Beef (${pg(176, 0.45)}g)`, `Quinoa (${pg(120, 0.35)}g cooked)`, 'Bell Pepper (150g)', `Almonds (${pg(579, 0.15, 5, 30)}g)`],
-    ]
-  }
-
-  return candidates.filter((alt) => !isExcluded(alt))
 }

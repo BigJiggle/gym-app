@@ -1,5 +1,103 @@
 # Change Agent Report
 
+## Run: 2026-07-22 (later) (BUG FIX — the Diet "Swap Meal" sheet ignores `dietary_restrictions`, so an allergy-restricted user is offered — and can persist — restricted foods: a reachable allergen-safety leak)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 done). Bug hunt.
+
+### STEP 1 — Regression guard (clean rebased pull of master)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (266 tests, 35 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1` — electron's postinstall binary
+403s from the sandbox proxy; not needed to typecheck/test/build.)
+
+### STEP 2 — Area audited: (a) nutrition engine + Diet flows (rotated off last run's (d))
+Last run was (d) onboarding/Settings/lifecycle, so I rotated to (a) Diet/nutrition,
+sweeping first the check-in/Progress/adaptive backend (all found well-hardened by
+prior runs — `checkinHandlers`/`checkinEngine`/`checkinSchedule` guard duplicate
+same-day, early/missed slots, week-number renumber, non-finite bodyweight; `Progress`
+divisions all guarded), then fanning two read-only scouts across the nutrition/Diet
+and widgets/store surfaces. The scouts surfaced one clearly-reachable, no-AI-required
+**safety** defect (the swap-meal allergen leak, fixed below) plus a lower-priority
+cluster of untrusted-AI-meal-shape gaps (recorded under "Deferred", not fixed — one
+focused fix per run).
+
+### The bug (swap-meal alternatives never consult `dietary_restrictions`)
+On the Diet page, tapping **Swap Meal / Swap Snack** calls `getSwapAlternatives(meal,
+dietary_preference, food_exclusions)` — `dietary_restrictions` was **never passed**.
+The app stores allergy/restriction toggles ("Dairy-free", "Nut allergy", "Gluten-free",
+"No pork", "No shellfish", "Low FODMAP" — Diet/Settings/Onboarding) in
+`user.dietary_restrictions`, NOT `food_exclusions` (`togglePrefsRestriction` writes only
+`dietary_restrictions`, then regenerates the plan). So while the generated MEAL PLAN
+respects restrictions (engine `restrictionsToAliasKeys` + `EXCLUSION_ALIASES`), the
+**swap sheet is a separate client-side path that was blind to them.**
+
+Its exclusion matcher was also naive substring-only
+(`food.includes(ex.replace(/_/g,' '))`) with no alias expansion — even if a restriction
+label *were* passed, "nut allergy" is not a substring of "almonds", so it wouldn't
+match. Every non-vegan/veg **main** swap candidate carries `Almonds`; the non-vegan
+**breakfast/snack** candidates carry `Greek Yogurt` / `Cottage Cheese` / `Whey`.
+
+**Reachable via normal UI, no Claude/AI needed:**
+1. Diet → Food Preferences → toggle **"Nut allergy"** (or "Dairy-free"). Plan regenerates
+   allergen-free.
+2. Expand a meal → **Swap Meal** → the sheet **still offers almonds / dairy**.
+3. Tapping one calls `window.api.swapMeal(...)`, which **persists the restricted food**
+   into the stored plan — defeating the whole point of the allergy setting.
+
+### Root cause + fix (minimum correct change — make the swap sheet honour the same restrictions the engine already does)
+Root cause: `getSwapAlternatives` received only `food_exclusions` and matched by bare
+substring, so restriction *labels* (stored separately, and shaped as allergen *classes*,
+not food IDs) never filtered the candidates.
+
+- **`src/pages/Diet/swapAlternatives.ts`** (new) — extracted the pure `getSwapAlternatives`
+  helper out of `Diet/index.tsx` (mirrors the repo's existing `mealAccordion.ts` /
+  `recipeSteps.ts` pattern, and makes it unit-testable). It now takes a 4th
+  `restrictions: string[]` arg and expands each active restriction label into the
+  food-name fragments it forbids via a `RESTRICTION_FORBIDDEN_TERMS` map that mirrors the
+  engine's `RESTRICTION_TO_ALIAS_KEYS` + `EXCLUSION_ALIASES` (dairy → yogurt/cottage
+  cheese/whey/…, nuts → almond/walnut/…, gluten → oats/bread/…, fish/beef/eggs/soy/pork/
+  shellfish/…). Candidates are filtered against food_exclusions (unchanged substring) OR
+  the restriction terms. Labels are matched case-insensitively.
+- **`src/pages/Diet/index.tsx`** — import the extracted helper, delete the inline copy,
+  and pass `user.dietary_restrictions ?? []` at the swap call site.
+
+When every hardcoded candidate for a slot carries the allergen (e.g. a nut-allergy
+omnivore — all mains include almonds), the sheet now correctly returns an **empty** list
+and the existing "No swap options match…" guidance shows, rather than offering an
+allergen. (Diversifying the hardcoded fat source to restore swap options for that case
+would be a feature change — left out of scope; the safety fix is to never offer the
+allergen.)
+
+### Tests added
+`tests/unit/swapAlternatives.test.ts` (7 tests): Dairy-free never offers yogurt/whey/
+cottage cheese (egg-whites option still available); Nut-allergy vegan main leaves only
+the tofu/avocado combo; nut-allergy omnivore main → empty (safe) list; Gluten-free drops
+oats; specific `food_exclusions` still filter (salmon); case-insensitive label match; and
+a no-restriction regression (all 3 candidates returned). Pre-fix these fail (the ignored
+restriction arg let dairy/nuts through).
+
+### STEP 4 — Verification
+- `npx tsc --noEmit` → PASS
+- `npm test` → PASS (**273** tests, 36 files — was 266/35; +7 new)
+- `npx electron-vite build` → PASS
+
+### Deferred (real but not fixed this run — untrusted AI-meal-shape cluster)
+Scouts also flagged that AI-generated diet plans persist Claude's `meals[]` with **no
+per-meal field validation** (only the top-level `calories_target` is sanitized, added the
+prior run). If the model omits/mis-types a meal's `time` or `foods`, `NextMealWidget`
+(`meal.time.split` / `meal.foods.length`, a *default* dashboard widget) and the Diet
+page's `activeMealIndex` (`m.time.split(':')`) throw at render; an omitted per-meal
+`calories` also NaN-poisons `plan:recalculateMacros`. This is the same untrusted-model-
+output class already patched for `calories_target`/`maxSetsOverride`, and the right fix is
+to sanitize the meals array at the write seam (`planHandlers.ts` `plan:generateDiet` /
+`applyAIRequest` / `refineDietWithPrompt`). Left for a future run (one fix per run; it's
+AI-path-dependent, vs. today's fully-reachable safety leak).
+
+---
+
 ## Run: 2026-07-22 (BUG FIX — an AI-generated diet plan can be stored with `calories_target = 0`, which then divides by zero in three macro-scaling paths → Infinity ratios and NaN/blanked meal macros; the rule engine floors calories at 1200 but the AI write seam never did)
 
 ### STEP 0 — Backlog
