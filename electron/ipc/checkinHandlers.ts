@@ -2,7 +2,7 @@ import { IpcMain } from 'electron'
 import { getDb, namedParams } from '../database/db'
 import { calculateAdjustments } from '../services/checkinEngine'
 import { getNextCheckinDate, computeMissedSlots } from '../services/checkinSchedule'
-import { clampWeightKg } from '../services/nutritionEngine'
+import { clampWeightKg, MIN_CALORIE_TARGET } from '../services/nutritionEngine'
 
 export { getNextCheckinDate, computeMissedSlots }
 
@@ -146,7 +146,9 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
         // Scale meal calories by calorie ratio; recalculate protein/fat/carbs
         // within each meal using new plan-level macro ratios so per-meal values
         // stay consistent with plan totals (protein fixed by body weight, not ratio).
-        const ratio = newCalories / (dietPlan.calories_target as number)
+        // Floor the divisor so a pre-existing calories_target=0 plan can't make
+        // ratio === Infinity and scale every meal to NaN calories/macros.
+        const ratio = newCalories / Math.max(MIN_CALORIE_TARGET, Number(dietPlan.calories_target) || 0)
         const proteinCalRatio = (protein_g * 4) / newCalories
         const fatCalRatio = (fat_g * 9) / newCalories
         const existingMeals = JSON.parse(mealsJson) as Array<Record<string, unknown>>

@@ -339,6 +339,10 @@ function buildMeals(
   dietary_restrictions?: string[],
   meal_prep_style?: string
 ): Meal[] {
+  // A 0 / non-finite calorie target (e.g. a stored AI plan whose calories_target
+  // came back as 0) would make the per-meal macro ratios below (protein_g*4)/totalCal
+  // === Infinity and blow NaN into every meal. Floor it exactly like the plan builder.
+  totalCal = Math.max(MIN_CALORIE_TARGET, Number.isFinite(totalCal) ? totalCal : 0)
   // Merge specific food ID exclusions with aliases derived from restriction labels
   const restrictionAliases = restrictionsToAliasKeys(dietary_restrictions ?? [])
   const allExclusions = [...(food_exclusions ?? []), ...restrictionAliases]
@@ -818,6 +822,26 @@ export function buildMealsPublic(
 // (plan generation, check-in macro recalculation, manual macro recalculation).
 export function clampWeightKg(weightKg: number | undefined | null, fallback = 70): number {
   return Number.isFinite(weightKg) && (weightKg as number) >= 30 ? (weightKg as number) : fallback
+}
+
+// The absolute minimum daily calorie target the app will ever store or build a
+// plan from. generateNutritionPlan already clamps to this floor (Math.max(1200,…)),
+// but the AI diet path and every macro-scaling consumer that DIVIDES by a stored
+// calories_target must respect it too: a Claude response that omits calories
+// (per-meal sums to 0), returns 0/negative/non-finite, or any pre-existing 0 row
+// makes (protein_g*4)/calories === Infinity and propagates NaN into every meal.
+export const MIN_CALORIE_TARGET = 1200
+
+// Coerce an (untrusted, possibly AI-supplied) calorie target into a finite value
+// of at least MIN_CALORIE_TARGET. Falls back to the summed per-meal calories when
+// the top-level target is missing/invalid, then to the floor. Guarantees the
+// stored/consumed target is never 0, negative, or non-finite.
+export function sanitizeCalorieTarget(raw: unknown, mealsCalorieSum = 0): number {
+  const n = Math.round(Number(raw))
+  if (Number.isFinite(n) && n >= MIN_CALORIE_TARGET) return n
+  const summed = Math.round(Number(mealsCalorieSum))
+  if (Number.isFinite(summed) && summed >= MIN_CALORIE_TARGET) return summed
+  return MIN_CALORIE_TARGET
 }
 
 // Supported main-meal range (1–20) shared by onboarding, Settings, and the

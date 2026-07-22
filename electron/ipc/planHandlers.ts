@@ -1,7 +1,7 @@
 import { IpcMain } from 'electron'
 import { getDb, namedParams } from '../database/db'
 import { generateTrainingPlan, getExerciseLibraryForUI, determinePhase } from '../services/trainingEngine'
-import { generateNutritionPlan, buildMealsPublic, calcBMR, getPhaseAwareDeficit, ACTIVITY_MULTIPLIERS, clampWeightKg, clampMealCount } from '../services/nutritionEngine'
+import { generateNutritionPlan, buildMealsPublic, calcBMR, getPhaseAwareDeficit, ACTIVITY_MULTIPLIERS, clampWeightKg, clampMealCount, sanitizeCalorieTarget, MIN_CALORIE_TARGET } from '../services/nutritionEngine'
 import { generateDietWithClaude, generateWorkoutWithClaude, refineDietPlan, refineWorkoutWithClaude, processAIRequest, refineWorkoutForSafety } from '../services/claudeService'
 import { regenerateDietForGoal } from './showHandlers'
 import { weeksUntilShow, localToday } from '../services/showDates'
@@ -181,7 +181,11 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
           `INSERT INTO diet_plans (user_id, name, calories_target, protein_g, carbs_g, fat_g, meal_count, meals, phase, engine_version)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         ).run([userId, planName,
-          cr.calories_target ?? Math.round((cr.meals ?? []).reduce((s: number, m: any) => s + (m.calories ?? 0), 0)),
+          // Never persist a 0 / non-finite calorie target: the model may omit
+          // calories_target AND per-meal calories (summing to 0), which later
+          // divides by zero in the macro-recalc / check-in-scaling paths. Floor
+          // to MIN_CALORIE_TARGET exactly as the rule-based engine does.
+          sanitizeCalorieTarget(cr.calories_target, (cr.meals ?? []).reduce((s: number, m: any) => s + (Number(m.calories) || 0), 0)),
           cr.protein_g ?? 0, cr.carbs_g ?? 0, cr.fat_g ?? 0,
           (cr.meals ?? []).length, JSON.stringify(cr.meals ?? []),
           cr.phase ?? 'deficit', 3
@@ -512,7 +516,10 @@ Ensure every exercise respects the constraints above while maintaining phase-app
       .get(userId) as Record<string, unknown> | undefined
     if (!currentPlan) throw new Error('No diet plan found')
     const user = db.prepare('SELECT * FROM users WHERE id=?').get(userId) as Record<string, unknown>
-    const calories = currentPlan.calories_target as number
+    // Floor the divisor: a pre-existing plan can carry calories_target=0, which
+    // would make proteinCalRatio/fatCalRatio below Infinity and blank every meal's
+    // macros. Self-heals such a row to a valid target on recalculation.
+    const calories = Math.max(MIN_CALORIE_TARGET, Number(currentPlan.calories_target) || 0)
     // Use the most recent check-in weight when available — user.weight_kg is the
     // onboarding weight and goes stale as the athlete progresses through their cut.
     const latestCheckin = db

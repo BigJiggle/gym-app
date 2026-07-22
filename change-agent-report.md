@@ -1,5 +1,102 @@
 # Change Agent Report
 
+## Run: 2026-07-22 (BUG FIX — an AI-generated diet plan can be stored with `calories_target = 0`, which then divides by zero in three macro-scaling paths → Infinity ratios and NaN/blanked meal macros; the rule engine floors calories at 1200 but the AI write seam never did)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 done). Bug hunt.
+
+### STEP 1 — Regression guard (clean rebased pull of master)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (264 tests, 35 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1` — electron's postinstall binary
+403s from the sandbox proxy; not needed to typecheck/test/build.)
+
+### STEP 2 — Area audited: (d) onboarding + Settings + reset + data lifecycle
+Rotated to the least-recently-covered area (recent runs: f→b→e→c→a→f→**d**; last (d)
+run was 2026-07-16). Swept the onboarding flow (`useOnboarding`, index validation,
+`Step1Personal` unit conversions), the Settings edit-profile form + numeric inputs,
+`userHandlers`/`userSanitize` (create/update/reset seams), the settings store,
+`resetData`/`resetAllData` lifecycle (verified the preserved localStorage keys —
+`daily_weight_log`, `water_ml_*`, `water_target_ml` — exactly match the water/weigh-in
+stores), `localStore`/`competitionLogs` corrupted-storage guards, `checkinSchedule`,
+`DailyWeighInWidget`/`useWaterLog`/Diet-page water, and the settings/progress IPC
+handlers. **All found well-hardened by prior runs** (cleared numeric inputs drop via
+`sanitizeUserUpdate`; meal/snack/body-fat/weight clamped; water target guarded `>0`;
+corrupted-array storage guarded; reset preserves weigh-ins/water and hard-reloads).
+The one **real, reachable** defect was in the diet-plan **data lifecycle**: an
+AI-generated plan's calorie target is never floored, so a `0` can be persisted and
+later divided by.
+
+### The bug (a stored `calories_target = 0` → division by zero in three sinks)
+`generateNutritionPlan` (the rule-based engine) always clamps
+`const calories = Math.max(1200, tdee + adjustment)` (`nutritionEngine.ts:838`), so a
+rule-based plan can never carry `calories_target < 1200`. The **AI diet path does not
+reapply that floor.** In `plan:generateDiet`'s Claude branch the target is stored as:
+```
+cr.calories_target ?? Math.round((cr.meals ?? []).reduce((s, m) => s + (m.calories ?? 0), 0))   // planHandlers.ts:184
+```
+The only guard is `??` (null/undefined). If Claude returns a `meals` array (which
+passes the `claudeResult && claudeResult.meals` truthiness check — `[]`/objects are
+truthy) but **omits the top-level `calories_target` AND the per-meal `calories`**, the
+reduce sums to `0`, so `calories_target` is persisted as **0**. A raw `0` / negative /
+non-finite / string value in `cr.calories_target` also slips straight through `??`.
+Model output is untrusted (the same handler already sanitizes `maxSetsOverride` for
+exactly this reason — 2026-07-21).
+
+That stored `0` then reaches **three macro-scaling sinks that divide by it**, all
+reading `calories_target` back from the DB:
+1. **`plan:recalculateMacros`** (`planHandlers.ts:527-528`) — user clicks
+   "Recalculate Macros" on the Diet page (`Diet/index.tsx:451`):
+   `proteinCalRatio = (protein_g*4)/calories` → **Infinity** → each meal's
+   `pro/fat = Math.round(cal * Infinity / …)` → **NaN**, written back to `diet_plans`.
+2. **`checkin:submit`** (`checkinHandlers.ts:149`) — fires **automatically** on every
+   check-in when such a plan exists: `ratio = newCalories / calories_target` →
+   `1200 / 0 = Infinity` → every meal scaled to NaN calories/macros.
+3. **`plan:applyAIRequest`** (`planHandlers.ts:869` → `buildMealsPublic` →
+   `nutritionEngine.ts:364-365`) — `(protein_g*4)/totalCal` with `totalCal = 0` → NaN.
+
+**Net effect:** a dead, un-followable plan — a `0 kcal` target StatCard and meal
+macros that serialize to `null` (`JSON.stringify(NaN)` → `null`), which the Diet UI's
+`?? 0` fallbacks blank to `0`. Reproduced with the real engine: `buildMealsPublic(0,
+184, 200, 72, 4, 'omnivore')` built **4 meals every one with `protein_g: NaN`**
+(pre-fix).
+
+### Root cause + fix (minimum change — enforce the same 1200 floor the rule engine guarantees)
+Root cause: the AI write seam and the three divide-sites never enforced the calorie
+floor that `generateNutritionPlan` guarantees. Fixed by making the floor a shared,
+enforced invariant:
+- **`electron/services/nutritionEngine.ts`** — new exported `MIN_CALORIE_TARGET = 1200`
+  and pure `sanitizeCalorieTarget(raw, mealsCalorieSum)` (finite value ≥ floor; falls
+  back to the meal-calorie sum, then the floor). Inside `buildMeals` (the shared engine
+  used by `buildMealsPublic`), `totalCal` is now floored
+  `Math.max(MIN_CALORIE_TARGET, Number.isFinite(totalCal) ? totalCal : 0)` **before** the
+  macro-ratio divisions — closes sink 3 for every caller. (No behavior change for valid
+  plans: they already pass ≥1200.)
+- **`electron/ipc/planHandlers.ts`** — the AI write seam (`:184`) now uses
+  `sanitizeCalorieTarget(...)` so a 0/invalid target can **never be persisted** (the root
+  cause). `plan:recalculateMacros` (`:515`) floors its divisor with `MIN_CALORIE_TARGET`
+  (self-heals any pre-existing 0 row on the exact user action that triggers sink 1).
+- **`electron/ipc/checkinHandlers.ts`** — the check-in ratio (`:149`) floors its divisor
+  with `MIN_CALORIE_TARGET` (closes sink 2 / self-heals old rows on submit).
+
+### Tests added (`tests/unit/nutritionEngine.test.ts`) — 2 new, 266 total
+- `sanitizeCalorieTarget` returns ≥ `MIN_CALORIE_TARGET` and finite for
+  `undefined/null/0/-500/NaN/Infinity/800/(missing,2500)/(2200)` (preserves valid,
+  floors degenerate, uses meal-sum fallback).
+- **`buildMealsPublic(0, …)` produces finite (not NaN/Infinity) meal macros** —
+  reproduces the AI-request path with a corrupted 0 target. **FAILS pre-fix**
+  (`protein_g: NaN` on all 4 meals — verified by temporarily disabling the `buildMeals`
+  floor), passes after.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (266 tests, +2 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-07-21 (later) (BUG FIX — "nearest upcoming show" selected with SQLite's UTC `date('now')` nulls `show_date` on the athlete's own show-day evening — a date-boundary DB↔UI desync, and it runs on every app launch)
 
 ### STEP 0 — Backlog

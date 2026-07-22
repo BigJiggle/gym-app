@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { generateNutritionPlan, clampWeightKg, clampMealCount, buildMealsPublic } from '../../electron/services/nutritionEngine'
+import { generateNutritionPlan, clampWeightKg, clampMealCount, buildMealsPublic, sanitizeCalorieTarget, MIN_CALORIE_TARGET } from '../../electron/services/nutritionEngine'
 
 const BASE_INPUT = {
   weight_kg: 80,
@@ -458,6 +458,44 @@ describe('nutritionEngine — meal prep style affects food selection', () => {
             expect(hit, `${dietary_preference}/${meal_count}m should not contain "${term}" (got "${hit}")`).toBeUndefined()
           }
         }
+      }
+    })
+  })
+
+  // Regression: an AI diet plan can be stored with calories_target=0 (Claude omits
+  // both the top-level target and per-meal calories, so the meal-sum fallback is 0).
+  // That 0 then divides in buildMealsPublic / recalculateMacros / checkin scaling,
+  // producing Infinity ratios and NaN macros. The engine must floor a 0/non-finite
+  // calorie target to MIN_CALORIE_TARGET so no meal ever gets NaN/Infinity macros.
+  describe('calorie-target floor (0 / non-finite guard)', () => {
+    it('sanitizeCalorieTarget never returns < MIN_CALORIE_TARGET or a non-finite value', () => {
+      // Missing/degenerate top-level target with meals summing to 0 → floor.
+      expect(sanitizeCalorieTarget(undefined, 0)).toBe(MIN_CALORIE_TARGET)
+      expect(sanitizeCalorieTarget(null, 0)).toBe(MIN_CALORIE_TARGET)
+      expect(sanitizeCalorieTarget(0, 0)).toBe(MIN_CALORIE_TARGET)
+      expect(sanitizeCalorieTarget(-500, 0)).toBe(MIN_CALORIE_TARGET)
+      expect(sanitizeCalorieTarget(NaN, 0)).toBe(MIN_CALORIE_TARGET)
+      expect(sanitizeCalorieTarget(Infinity, 0)).toBe(MIN_CALORIE_TARGET)
+      // Below-floor value is raised to the floor (matches the rule engine's Math.max(1200,…)).
+      expect(sanitizeCalorieTarget(800, 0)).toBe(MIN_CALORIE_TARGET)
+      // Missing top-level target but valid summed meal calories → use the sum.
+      expect(sanitizeCalorieTarget(undefined, 2500)).toBe(2500)
+      // A valid target is preserved unchanged.
+      expect(sanitizeCalorieTarget(2200, 0)).toBe(2200)
+    })
+
+    it('buildMealsPublic with a 0 calorie target produces finite (not NaN/Infinity) meal macros', () => {
+      // BEFORE the fix: totalCal=0 → proteinCalRatio/fatCalRatio = Infinity →
+      // every meal's protein_g/fat_g became NaN. Reproduces the AI-request path
+      // (buildMealsPublic(currentDiet.calories_target, …)) with a corrupted 0 target.
+      const meals = buildMealsPublic(0, 184, 200, 72, clampMealCount(4), 'omnivore')
+      expect(meals).toHaveLength(4)
+      for (const m of meals) {
+        expect(Number.isFinite(m.protein_g), `protein_g finite (${m.protein_g})`).toBe(true)
+        expect(Number.isFinite(m.fat_g), `fat_g finite (${m.fat_g})`).toBe(true)
+        expect(Number.isFinite(m.carbs_g), `carbs_g finite (${m.carbs_g})`).toBe(true)
+        expect(Number.isFinite(m.calories), `calories finite (${m.calories})`).toBe(true)
+        expect(m.protein_g).toBeGreaterThanOrEqual(0)
       }
     })
   })
