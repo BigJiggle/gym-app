@@ -562,9 +562,19 @@ Ensure every exercise respects the constraints above while maintaining phase-app
     })
     if (!refined || !(refined as any).meals) throw new Error('Claude did not return a valid plan')
     const r = refined as any
+    // A refine can return a DIFFERENT meal count than the current plan — the LLM is
+    // only asked to keep the count, never forced to, and a user request like "give me
+    // 3 meals instead of 5" legitimately changes it. Persist meal_count alongside the
+    // meals so the stored count matches what's actually in `meals` (the Diet page reads
+    // dietPlan.meal_count to lay out the week), and purge now-orphaned meal completions
+    // — they're keyed by positional meal_index, so any today/future completion at an
+    // index >= the new count would otherwise inflate "meals eaten"/adherence and can't
+    // be rendered. Mirrors every other diet-write path (see lines ~179/220/312/482).
+    const refinedMealCount = Array.isArray(r.meals) ? r.meals.length : (currentPlan.meal_count as number)
     db.prepare(
-      'UPDATE diet_plans SET protein_g=?, carbs_g=?, fat_g=?, meals=? WHERE user_id=? AND id=(SELECT id FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1)'
-    ).run([r.protein_g ?? currentPlan.protein_g, r.carbs_g ?? currentPlan.carbs_g, r.fat_g ?? currentPlan.fat_g, JSON.stringify(r.meals), userId, userId])
+      'UPDATE diet_plans SET protein_g=?, carbs_g=?, fat_g=?, meals=?, meal_count=? WHERE user_id=? AND id=(SELECT id FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1)'
+    ).run([r.protein_g ?? currentPlan.protein_g, r.carbs_g ?? currentPlan.carbs_g, r.fat_g ?? currentPlan.fat_g, JSON.stringify(r.meals), refinedMealCount, userId, userId])
+    clearOrphanedMealCompletions(db, userId, refinedMealCount)
     const saved = db.prepare('SELECT * FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1').get(userId) as Record<string,unknown>
     return { ...saved, meals: JSON.parse(saved.meals as string) }
   })

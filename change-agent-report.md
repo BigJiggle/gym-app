@@ -1,5 +1,81 @@
 # Change Agent Report
 
+## Run: 2026-07-23 #2 (BUG FIX — the AI diet-refine path leaves stale `meal_count` + orphaned meal completions when a refine changes the meal count: a DB↔UI desync that inflates "meals eaten" / adherence and mis-lays-out the Diet week)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 done). Bug hunt.
+
+### STEP 1 — Regression guard (clean rebased pull of master)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (275 tests, 37 files) before changes
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1` — electron's postinstall binary 403s
+from the sandbox proxy; not needed to typecheck/test/build.)
+
+### STEP 2 — Areas audited: (e) widgets + localStorage stores, then (b) training/workout backend
+Last run swept (c). Rotation newest→oldest is now c, a, d, f, b, e, so **(e)** was
+least-recently-audited and swept first, then **(b)**.
+
+**(e) — audited clean.** Read every widget in `src/components/widgets/*` plus the
+localStorage stores (`localStore.ts`, `createWidgetStore.ts`, `useWidgets.ts`,
+`competitionLogs.ts`, `useWaterLog.ts`, `cardioStore.ts`, `useSidebar.ts`), the drag
+reorder in `WidgetZone`/`TabWidgetZone`, and `AddWidgets`. All corrupted/hand-edited-storage
+paths guard top-level shape, every division is guarded, and the reorder uses stored (not
+visible) indices. No reachable defect. (Noted but NOT fixed — too marginal to touch this
+run: the `Date.now() - daysFromMon*86400000` week-start math in `PosingWidget`/`CardioWidget`/
+`TrainingVolumeWidget`/`MuscleCoverageWidget`/`Training/index.tsx` diverges by a day from the
+safe `setDate` pattern used in `WeeklyScorecard`/`SessionsWeek` **only** during a DST
+fall-back hour — reproduced at America/New_York Sun 2026-11-01 23:00: ms→`2026-10-27`,
+safe→`2026-10-26`. Display-only, ~1h/yr, 5 files; deferred.)
+
+**Disproved lead:** hypothesized that `openFresh()` in `electron/database/db.ts` never sets
+`PRAGMA foreign_keys = ON` (only migration v9 does, transiently), so the reset flow's
+`DELETE FROM users` (`userHandlers.ts:79`) wouldn't cascade. **Empirically false** —
+node-sqlite3-wasm defaults `foreign_keys` to **1 (ON)**, so cascades fire. No bug.
+
+### The bug (AI diet-refine forgets the orphan cleanup every other diet-write path does)
+Meal completions are keyed by **positional `meal_index`** (`meal_completions`,
+`UNIQUE(user_id, date, meal_index)`). When a diet plan's meal count shrinks, today's/future
+completions at now-invalid indexes become orphans that the Diet page can't render but that
+still inflate "meals eaten"/adherence. Every diet-write path guards this by calling
+`clearOrphanedMealCompletions(...)` and persisting the new `meal_count` — onboarding regen
+(`planHandlers.ts:179`), macro regen (`:220`), goal-change regen (`:312`), startup refresh
+(`:482`), show add/update (`showHandlers.ts:80`).
+
+**Except** `plan:refineDietWithPrompt` (`planHandlers.ts:565-567`). It overwrote `meals` with
+the LLM-returned array — which **can** have a different count (the refine prompt only *asks*
+the model to keep the count; a user request like "give me 3 meals instead of 6" legitimately
+changes it) — while leaving `meal_count` stale and today's high-index completions in place.
+
+**Result (DB↔UI desync, reachable via the Diet-page AI refine box):** after a 6→3 refine,
+`diet_plans.meal_count` stays 6 (read by `Diet/index.tsx:1804` `<WeeklyMealView mealCount=…>`)
+and today's completions for indexes 3-5 survive, so `TodaysMacrosWidget`/`TodaysMealsWidget`
+show "6/3 meals" and adherence > 100%.
+
+### Root cause + fix (`electron/ipc/planHandlers.ts`, `plan:refineDietWithPrompt`)
+Persist `meal_count = <refined meals length>` in the UPDATE and call
+`clearOrphanedMealCompletions(db, userId, refinedMealCount)` after it — mirroring every other
+diet-write path. Minimal, and only bites when the count actually changes (same-count refines
+are untouched). `clearOrphanedMealCompletions` was already imported.
+
+### Tests added
+- **`tests/unit/refineDietOrphanCompletions.test.ts`** — exercises the REAL
+  `plan:refineDietWithPrompt` handler against an in-memory `node-sqlite3-wasm` DB with
+  `refineDietPlan` stubbed to return a shrunk (6→3) plan:
+  1. after the refine, `meal_count` is 3 (was 6), today's completions at index ≥ 3 are purged
+     (0-2 survive), and a **historical** (yesterday) index-5 completion is preserved;
+  2. a same-count (6→6) refine leaves `meal_count` and all completions untouched.
+  Test 1 FAILS before the fix (meal_count stays 6, orphans remain) and PASSES after; test 2
+  passes both ways (control).
+
+### STEP 4 — Verification
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (277 tests, 38 files; +2 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-07-23 (BUG FIX — clearing the check-in date field discards the entire edit: a null `check_in_date` slips past the format guard and fails the `NOT NULL` constraint, silently losing the user's weight/measurement changes behind a raw SQLite error)
 
 ### STEP 0 — Backlog
