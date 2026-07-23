@@ -367,7 +367,13 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
       'training_adherence', 'diet_adherence', 'energy_level', 'sleep_quality', 'stress_level', 'notes',
       'check_in_date'])
     const updates: Array<[string, unknown]> = Object.entries(data)
-      .filter(([k]) => allowed.has(k))
+      // check_in_date is TEXT NOT NULL and the chronological ordering/identity key,
+      // so it must never be written null/empty. A null slips past the date guard
+      // above (`!= null`) — e.g. the user cleared the date field, so saveEdit sent
+      // `editDate || null` → null. Dropping it here preserves the existing date and
+      // lets the rest of the edit save, instead of the whole UPDATE failing the
+      // NOT NULL constraint and silently discarding the weight/measurement changes.
+      .filter(([k, v]) => allowed.has(k) && !(k === 'check_in_date' && (v == null || v === '')))
       .map(([k, v]) => {
         if (v === undefined || v === null) return [k, null]
         if (typeof v === 'number' && isNaN(v)) return [k, null]

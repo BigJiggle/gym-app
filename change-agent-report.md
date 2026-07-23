@@ -1,5 +1,95 @@
 # Change Agent Report
 
+## Run: 2026-07-23 (BUG FIX — clearing the check-in date field discards the entire edit: a null `check_in_date` slips past the format guard and fails the `NOT NULL` constraint, silently losing the user's weight/measurement changes behind a raw SQLite error)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 done). Bug hunt.
+
+### STEP 1 — Regression guard (clean rebased pull of master)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (273 tests, 36 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1` — electron's postinstall binary
+403s from the sandbox proxy; not needed to typecheck/test/build.)
+
+### STEP 2 — Area audited: (c) check-in + Progress + adaptive nutrition (least-recently-audited; last run was (a))
+Rotation of the last six runs: a, d, f, b, e, c (newest→oldest), so (c) was the
+least-recently-swept area. Read `checkinEngine.ts`, `checkinHandlers.ts`,
+`checkinSchedule.ts`, `progressHandlers.ts`, `Progress/index.tsx`, `CheckIn/index.tsx`,
+the `WeightChart`/`MeasurementsChart` components, the check-in widgets, and the
+`planStore` check-in state, then fanned a read-only scout across the same surface.
+Confirmed clean (all hardened by prior runs): `checkinEngine` division/NaN guards,
+`checkinSchedule` next-date / missed-slot math, the adaptive recalc in `checkin:submit`
+(calorie floor, `MIN_CALORIE_TARGET` divide guard, bodyweight clamp, per-meal ratio
+scaling), and the duplicate-same-day / week-renumber invariants. One NEW reachable
+defect surfaced in the `checkin:update` edit path (fixed below).
+
+### The bug (a null `check_in_date` on edit fails NOT NULL and discards the whole edit)
+On the locked Check-In screen, **Edit Last Check-In** pre-fills a
+`<input type="date">` that is **not `required`** and has **no empty-value guard**
+(`CheckIn/index.tsx:508` only validates a *non-empty* date). Clearing the field makes
+`saveEdit` send `check_in_date: editDate || null` → **null** (`CheckIn/index.tsx:528`).
+
+In `checkin:update` the date guard is `if (data.check_in_date != null)`
+(`checkinHandlers.ts:323`), so a **null** date skips format validation and the renumber
+path entirely — but `check_in_date` is still a member of the generic `allowed` set, so
+the generic update loop emits `SET check_in_date = NULL`. The column is
+`check_in_date TEXT NOT NULL` (`schema.ts:64`), so SQLite rejects the **entire** UPDATE
+with `NOT NULL constraint failed: weekly_checkins.check_in_date`.
+
+**Verified against the real in-memory handler:** `update(id, { weight_kg: 80, check_in_date: null })`
+threw `SQLite3Error: NOT NULL constraint failed` and the row was **unchanged**
+(`weight_kg` stayed 84, not 80) — the UPDATE is atomic, so the user's weight/measurement
+edits are silently lost, and `saveEdit`'s catch surfaces the raw SQLite string.
+
+(Note: the earlier scout hypothesis that a NULL date would *persist* and inject NaN into
+the Progress trend math is **wrong** — the `NOT NULL` constraint prevents the write; the
+real defect is the rejected/lost edit + cryptic error.)
+
+**Reachable via normal UI, no AI/Claude needed:** Check-In (locked) → Edit Last Check-In
+→ change weight → clear the date field → Save → cryptic error, weight edit not saved.
+
+### Root cause + fix (guard the seam — never write a null/empty date to a NOT NULL key)
+Root cause: a `null` `check_in_date` bypasses the `!= null` format guard yet remains in
+the generic update set, so it is written to a `NOT NULL` column.
+
+- **`electron/ipc/checkinHandlers.ts`** (`checkin:update` updates builder) — drop
+  `check_in_date` from the update when its value is null/empty:
+  `.filter(([k, v]) => allowed.has(k) && !(k === 'check_in_date' && (v == null || v === '')))`.
+  A null date now means "leave the date unchanged": the existing date is preserved and
+  the rest of the edit (weight, measurements, wellness, notes) saves normally. A
+  **non-empty** malformed date still hits the existing `YYYY-MM-DD` guard and is rejected
+  with a clear message — unchanged. This is the minimum correct change and touches no
+  other column (measurements/notes legitimately accept null).
+
+### Tests added
+- **`tests/unit/checkinUpdateNullDate.test.ts`** — exercises the REAL `checkin:update`
+  handler against an in-memory `node-sqlite3-wasm` DB:
+  1. `update(id, { weight_kg: 80, check_in_date: null })` no longer throws, saves
+     `weight_kg = 80`, and preserves `check_in_date = '2026-07-15'`.
+  2. A non-empty malformed date (`'not-a-date'`) still throws `/YYYY-MM-DD/`.
+  Both FAIL before the fix (test 1 threw NOT NULL) and PASS after.
+
+### STEP 4 — Verification
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (275 tests, 37 files; +2 new)
+- `npx electron-vite build` → PASS
+
+### Deferred (recorded, not fixed — one focused fix per run)
+- **Stale store after a successful edit (DB↔UI desync).** `saveEdit`
+  (`CheckIn/index.tsx:501`) refreshes only `nextAllowed`; unlike `onMissedFilled` it never
+  calls `loadCheckinHistory`, so the store's `checkinHistory[0]`/`latestCheckin` keep
+  pre-edit values — the locked-screen "Last weigh-in", the re-opened edit form, and the
+  `CheckinFeedbackWidget`/`RecentCheckinsWidget` show stale weight/week-number until a
+  remount. Real and reachable; candidate for a future run.
+- **`checkin:update` recomputes adjustments with id-ordered (not date-ordered) history**
+  (`checkinHandlers.ts:340-347`) — with a retroactively-filled missed check-in (higher id,
+  older date), `previous`/`recentCheckins` are picked by insertion order, so the stored
+  `adjustments`/`calories_delta` compare against a non-chronological anchor. Lower severity.
+
+---
+
 ## Run: 2026-07-22 (later) (BUG FIX — the Diet "Swap Meal" sheet ignores `dietary_restrictions`, so an allergy-restricted user is offered — and can persist — restricted foods: a reachable allergen-safety leak)
 
 ### STEP 0 — Backlog
