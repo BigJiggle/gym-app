@@ -1,5 +1,69 @@
 # Change Agent Report
 
+## Run: 2026-07-24 (BUG FIX — "Set as primary show" re-points the countdown/timeline at the newly-chosen show but leaves the stored diet plan generated for the OLD show's weeks-out: the Diet page keeps serving the wrong phase + calorie deficit, a DB↔UI desync)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items**. Bug hunt.
+
+### STEP 1 — Regression guard (clean rebased pull of master)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (277 tests, 38 files) before changes
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1` — electron's postinstall binary 403s
+from the sandbox proxy; not needed to typecheck/test/build.)
+
+### STEP 2 — Area audited: (f) shows/competition + date/week logic
+Rotation: last runs touched (e)+(b) [07-23 #2], (c) [07-23], (a) [07-22 later], (d)
+[07-22], (f) [07-21 later]. **(f)** was least-recently-audited, so swept it. Read
+`showHandlers.ts`, `showDates.ts` (`weeksUntilShow`/`localToday`), `competitionPrep.ts`
+(`buildPrepTimeline`/`getWeekGuidance`/peak-week protocol), `utils/dates.ts`
+(`getShowCountdown`/`parseLocalDate`), `checkinSchedule.ts`, `PeakWeekWidget`, and the
+Settings show-management UI. Date math (local-midnight → local-noon everywhere) and the
+missed-slot / next-check-in logic are sound. Found one reachable desync.
+
+### The bug (`shows:setPrimary` is the one show-mutation path that skips the diet regen)
+When the show context changes, the diet plan must be regenerated because `weeks_out`
+drives BOTH the phase and the calorie deficit (`getPhaseAwareDeficit` →
+`generateNutritionPlan`, `nutritionEngine.ts:861`). Every show-mutation handler honors
+this: `shows:add` (`showHandlers.ts:213`), `shows:update` on a date change (`:249`), and
+`shows:cancelShow` → next show (`:288`) all call `regenerateDietForGoal(...)`.
+
+**Except `shows:setPrimary`** (old `showHandlers.ts:297-307`). Promoting a *different*
+registered show to primary set `users.show_date`/`division` to the new show — moving the
+sidebar countdown, `buildPrepTimeline`, and `PeakWeekWidget` to it — but never touched
+`diet_plans`. So the Diet page kept serving a plan generated for the OLD show's weeks-out:
+wrong phase label and wrong calorie/macro targets vs. the show the athlete is now prepping
+for. **Reachable** from Settings → the "Set as primary" button on any non-primary upcoming
+show (a multi-show athlete switching which contest to peak for — e.g. from a show 2 weeks
+out to one 20 weeks out leaves a peak-week deficit plan against an early-prep show).
+
+### Root cause + fix (`electron/ipc/showHandlers.ts`)
+Extracted the inline `shows:setPrimary` body into an exported, testable helper
+`setPrimaryShow(db, showId, userId, today = localToday())` (mirroring the existing exported
+`syncPrimaryToNearest`) and added the missing `regenerateDietForGoal(...)` call after the
+`users.show_date` update — same call and ordering the sibling handlers use. Weeks-out is
+computed via `weeksUntilShow(show_date, new Date(today+'T00:00:00'))` so it's anchored to
+the same local day as the past-show guard: deterministic for tests, and in production
+identical to the prior real-`new Date()` path. Minimal; same-primary re-selection just
+regenerates the same plan (idempotent). `regenerateDietForGoal`/`weeksUntilShow`/`localToday`
+were already imported.
+
+### Test added
+`tests/unit/showSetPrimaryDiet.test.ts` — seeds a user + two upcoming shows (~2 weeks and
+~20 weeks out at a fixed injected `today`), prepping for the near one, then promotes the far
+one and asserts the stored `diet_plans.generated_at_weeks_out` follows to 20 instead of
+staying at the near show's value. Fails pre-fix (setPrimary wrote no diet plan at all →
+`toBeDefined()` fails); passes post-fix. Uses the same in-memory `node-sqlite3-wasm` +
+`getDb` mock harness as `showSyncPrimary.test.ts`.
+
+### STEP 4 — Verification
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (**278** tests, 39 files; +1 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-07-23 #2 (BUG FIX — the AI diet-refine path leaves stale `meal_count` + orphaned meal completions when a refine changes the meal count: a DB↔UI desync that inflates "meals eaten" / adherence and mis-lays-out the Diet week)
 
 ### STEP 0 — Backlog

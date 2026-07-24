@@ -296,13 +296,39 @@ export function registerShowHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle('shows:setPrimary', (_event, showId: number, userId: number) => {
     const db = getDb()
-    const show = db.prepare('SELECT * FROM shows WHERE id=?').get([showId]) as Record<string, unknown> | null
-    if (!show) throw new Error('Show not found')
-    const today = new Date().toLocaleDateString('en-CA')
-    if ((show.show_date as string) < today) throw new Error('Cannot set a past show as primary')
-    db.prepare('UPDATE shows SET is_primary=0 WHERE user_id=?').run([userId])
-    db.prepare('UPDATE shows SET is_primary=1 WHERE id=?').run([showId])
-    db.prepare('UPDATE users SET show_date=?, division=? WHERE id=?').run([show.show_date, show.division ?? null, userId])
-    return db.prepare('SELECT * FROM shows WHERE user_id=? ORDER BY show_date ASC').all([userId])
+    return setPrimaryShow(db, showId, userId)
   })
+}
+
+// Promotes a show to primary and re-points users.show_date/division at it.
+// `today` (YYYY-MM-DD, local) is injectable for deterministic tests; production
+// uses the local date so the "past show" guard agrees with the rest of the app.
+export function setPrimaryShow(
+  db: ReturnType<typeof getDb>,
+  showId: number,
+  userId: number,
+  today: string = localToday(),
+): unknown[] {
+  const show = db.prepare('SELECT * FROM shows WHERE id=?').get([showId]) as Record<string, unknown> | null
+  if (!show) throw new Error('Show not found')
+  if ((show.show_date as string) < today) throw new Error('Cannot set a past show as primary')
+  db.prepare('UPDATE shows SET is_primary=0 WHERE user_id=?').run([userId])
+  db.prepare('UPDATE shows SET is_primary=1 WHERE id=?').run([showId])
+  db.prepare('UPDATE users SET show_date=?, division=? WHERE id=?').run([show.show_date, show.division ?? null, userId])
+
+  // Switching the primary show changes weeks-out — and therefore the diet's phase
+  // and calorie deficit. Every other show-context change (add / update-date /
+  // cancel) regenerates the diet for the new context; setPrimary must too, or the
+  // Diet page keeps showing the OLD show's phase/macros while the sidebar countdown
+  // and prep timeline show the NEW show — a DB↔UI desync.
+  const user = db.prepare('SELECT * FROM users WHERE id=?').get([userId]) as Record<string, unknown> | null
+  if (user?.show_date) {
+    // Anchor weeks-out to the same local day the past-guard used (local midnight of
+    // `today`) so the value is deterministic in tests and, in production, matches the
+    // real local date exactly as computeWeeksOut's default would.
+    const weeksOut = weeksUntilShow(user.show_date as string, new Date(today + 'T00:00:00'))
+    regenerateDietForGoal(db, userId, user.goal as string, weeksOut)
+  }
+
+  return db.prepare('SELECT * FROM shows WHERE user_id=? ORDER BY show_date ASC').all([userId])
 }
