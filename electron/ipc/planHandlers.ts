@@ -707,9 +707,18 @@ Ensure every exercise respects the constraints above while maintaining phase-app
       })
       if (!refined || !(refined as any).meals) return { action: 'explain' as any, message: result.message + ' (Could not generate specific food swaps — try being more specific, e.g. "replace chicken in dinner with salmon".)' }
       const r = refined as any
+      // A refine can return a DIFFERENT meal count than the current plan — the LLM is
+      // asked to only swap foods, never forced to keep the count, and a request routed
+      // here can legitimately change it. Persist meal_count alongside the meals so the
+      // stored count matches what's in `meals`, and purge now-orphaned meal completions
+      // (keyed by positional meal_index) so today/future completions at an index >= the
+      // new count don't inflate "meals eaten"/adherence. Mirrors plan:refineDietWithPrompt
+      // and every other diet-write path.
+      const refinedMealCount = Array.isArray(r.meals) ? r.meals.length : (currentPlan.meal_count as number)
       db.prepare(
-        'UPDATE diet_plans SET meals=? WHERE user_id=? AND id=(SELECT id FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1)'
-      ).run([JSON.stringify(r.meals), userId, userId])
+        'UPDATE diet_plans SET meals=?, meal_count=? WHERE user_id=? AND id=(SELECT id FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1)'
+      ).run([JSON.stringify(r.meals), refinedMealCount, userId, userId])
+      clearOrphanedMealCompletions(db, userId, refinedMealCount)
       const saved = db.prepare('SELECT * FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1').get(userId) as Record<string,unknown>
       const dietPlan = { ...saved, meals: JSON.parse(saved.meals as string) }
       return { action: 'update', message: result.message, trainingPlan: null, dietPlan, updatedUser: user }

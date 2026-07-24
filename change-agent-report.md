@@ -1,5 +1,64 @@
 # Change Agent Report
 
+## Run: 2026-07-24 #2 (BUG FIX — the AI-Assistant diet-refine path `plan:applyAIRequest`/`refine_diet` leaves stale `meal_count` + orphaned meal completions when a refine changes the meal count — the SIBLING of the 07-23 #2 fix, in a different handler that was missed)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all done). Bug hunt.
+
+### STEP 1 — Regression guard (clean rebased pull of master)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (278 tests, 39 files) before changes
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1` — electron's postinstall binary 403s
+from the sandbox proxy; not needed to typecheck/test/build.)
+
+### STEP 2 — Area audited: (a) nutrition engine + Diet flows
+Rotation: last run (07-24) touched (f); before that (e)+(b), (c), (a)/(d). Swept the diet
+IPC surface in `planHandlers.ts` (969 lines) plus `nutritionEngine.ts`, `checkinEngine.ts`,
+and `mealCompletionHandlers.ts`. The nutrition engine and most diet-write paths are already
+well guarded (calorie/meal-count/snack-count/weight clamps, orphan purging). Found one
+reachable desync that the previous run's fix missed.
+
+### The bug (a second AI diet-refine handler skips the orphan purge + meal_count sync)
+Meal completions are keyed by POSITIONAL `meal_index`. Every diet-write path that can change
+the meal count purges now-orphaned completions and persists the new `meal_count`:
+onboarding regen (`planHandlers.ts:220`), macro regen (`:312`), startup refresh (`:482`),
+and — as of the 07-23 #2 run — `plan:refineDietWithPrompt` (`:573-577`).
+
+**But `plan:applyAIRequest`'s `refine_diet` branch** (old `planHandlers.ts:700-716`) was left
+out. It calls the *same* `refineDietPlan` Claude food-swap as `refineDietWithPrompt`, then did
+only `UPDATE diet_plans SET meals=?` — no `meal_count`, no `clearOrphanedMealCompletions`.
+`refineDietPlan` is asked to only swap foods but is never *forced* to keep the count, so a
+request routed here that Claude classifies as `refine_diet` (e.g. "combine my 6 meals into 3
+bigger ones") can return fewer meals. When the count shrinks (6→3), the leftover today/future
+completions at index 3-5 keep counting as "meals eaten" — inflating the Diet/Progress logged
+counts and adherence above 100% ("6/3 meals logged") — and stored `meal_count` stays 6.
+**Reachable** from the AI Assistant chat, the primary entry point for `applyAIRequest`.
+
+### Root cause + fix (`electron/ipc/planHandlers.ts`)
+In the `refine_diet` branch, compute `refinedMealCount = Array.isArray(r.meals) ? r.meals.length
+: currentPlan.meal_count`, persist it alongside `meals` in the UPDATE, and call
+`clearOrphanedMealCompletions(db, userId, refinedMealCount)` — the identical guard the sibling
+handler already uses. `clearOrphanedMealCompletions` was already imported. Minimal; a same-count
+refine is idempotent (no completions match `meal_index >= count`, count unchanged).
+
+### Test added
+`tests/unit/applyAIRequestRefineDietOrphans.test.ts` — mirrors `refineDietOrphanCompletions.test.ts`
+but drives the REAL `plan:applyAIRequest` handler against an in-memory `node-sqlite3-wasm` DB
+with `processAIRequest` stubbed to return `{action:'refine_diet'}` and `refineDietPlan` stubbed
+to shrink 6→3 meals. Asserts stored `meal_count` becomes 3, today's index-3-5 completions are
+purged (0-2 survive), and yesterday's high-index completion is preserved. A second case asserts
+a same-count (6→6) refine leaves `meal_count` and all completions untouched. Fails pre-fix
+(`meal_count` stays 6, orphans remain), passes post-fix.
+
+### STEP 4 — Verification
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (**280** tests, 40 files; +2 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-07-24 (BUG FIX — "Set as primary show" re-points the countdown/timeline at the newly-chosen show but leaves the stored diet plan generated for the OLD show's weeks-out: the Diet page keeps serving the wrong phase + calorie deficit, a DB↔UI desync)
 
 ### STEP 0 — Backlog
