@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import type { TrainingSession, WorkoutLog, Exercise } from '../../types'
 import { useSettingsStore } from '../../store/settingsStore'
 import { usePlanStore } from '../../store/planStore'
+import { clampSetCount } from '../../utils/clampSetCount'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -207,7 +208,9 @@ type Phase = 'active' | 'summary'
 function buildInitialStates(session: TrainingSession, lastPerf?: Map<string, LastPerf>): Map<string, ExerciseState> {
   const map = new Map<string, ExerciseState>()
   for (const ex of session.exercises) {
-    const count = typeof ex.sets === 'number' ? ex.sets : 1
+    // Clamp: a hand-typed/stored `sets` of 999999 would build ~1M rows (OOM) and a
+    // negative would build zero rows (an uncompletable dead exercise). See clampSetCount.
+    const count = clampSetCount(ex.sets)
     const defaultReps = parseRepMidpoint(ex.reps)
     const last = lastPerf?.get(ex.name)
     const sets: SetEntry[] = Array.from({ length: count }, () => ({

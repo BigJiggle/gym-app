@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import type { WorkoutLog, ExerciseLogEntry, Exercise } from '../../types'
 import { useSettingsStore } from '../../store/settingsStore'
+import { clampSetCount } from '../../utils/clampSetCount'
 
 interface Props {
   workoutLog: WorkoutLog
@@ -44,7 +45,9 @@ function buildRows(workoutLog: WorkoutLog, sessionExercises?: Exercise[]): SetRo
     const loggedNames = new Set((workoutLog.sets ?? []).map((s) => s.exercise_name))
     for (const ex of sessionExercises) {
       if (!loggedNames.has(ex.name)) {
-        const count = typeof ex.sets === 'number' ? ex.sets : 1
+        // Clamp so a stored huge/negative `sets` can't spawn ~1M pending rows (OOM)
+        // or zero rows. See clampSetCount.
+        const count = clampSetCount(ex.sets)
         for (let i = 0; i < count; i++) {
           rows.push({
             key: `pending-${ex.name}-${i}`,

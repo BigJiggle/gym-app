@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import Button from '../../components/ui/Button'
 import type { Exercise, ExerciseLibraryItem } from '../../types'
+import { clampSetCount } from '../../utils/clampSetCount'
 
 interface Props {
   sessionId: number
@@ -142,7 +143,7 @@ export default function SessionEditor({ sessionId, sessionName, initialExercises
                         min={1}
                         max={12}
                         value={ex.sets}
-                        onChange={(e) => updateExerciseField(idx, 'sets', parseInt(e.target.value) || 1)}
+                        onChange={(e) => updateExerciseField(idx, 'sets', clampSetCount(e.target.value))}
                         className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200 text-center"
                       />
                     </div>

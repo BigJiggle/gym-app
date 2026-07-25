@@ -1,5 +1,53 @@
 # Change Agent Report
 
+## Run: 2026-07-25 (BUG FIX — a hand-typed/stored per-exercise `sets` count reaches `Array.from({length})` unclamped: a huge value (999999) builds ~1M set rows → renderer OOM/freeze, and a negative builds zero rows → a silent, uncompletable "dead" exercise)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 done). Proceeded to a bug hunt.
+
+### STEP 1 — Regression guard (clean baseline)
+On a fresh `master` pull: `npx tsc --noEmit` PASS · `npm test` PASS (280 tests, 40 files) · `npx electron-vite build` PASS. (`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.) No regressions to fix.
+
+### STEP 2 — Area audited: (b) training engine + workout/session flows
+Rotated off the recent nutrition/shows/check-in runs. Traced the training UI, IPC, and engine deeply, plus two focused hunter passes over training and progress/check-in.
+
+### The bug (root cause)
+An exercise's `sets` value flows into the two session UIs that build one set row per set:
+- `WorkoutSession.tsx` `buildInitialStates` → `Array.from({ length: count }, …)` (was `count = typeof ex.sets === 'number' ? ex.sets : 1`).
+- `WorkoutLogEditor.tsx` `buildRows` → `for (i = 0; i < count; i++)` (same unguarded read).
+
+The `SessionEditor` "Sets" input has `min={1} max={12}`, but HTML min/max never block a **typed or pasted** value; its handler was `parseInt(e.target.value) || 1`, which only catches `0`/`NaN` — never a negative or a huge number — and `plan:updateSession` persists it verbatim (no clamp). So:
+- **Huge** (e.g. `999999`): `Array.from({ length: 999999 })` allocates ~1M set objects and the render maps ~1M rows → renderer hang / out-of-memory.
+- **Negative** (e.g. `-3`): `Array.from({ length: -3 })` → `[]` (ToLength coerces negatives to 0) → an exercise with **zero** set rows that can never be marked done — a silent, uncompletable dead exercise.
+
+Fully reachable via normal UI (Edit Session → type the value → Save → Start Workout). The `trainingEngine` generator already guards its own numeric inputs (`sets_per_exercise`/`max_sets_per_exercise`, prior runs), but the **manual SessionEditor path bypasses the engine entirely** — the exact hole those guards warn about, on a sibling seam.
+
+### STEP 3 — Fix (minimum correct change)
+- New pure helper `src/utils/clampSetCount.ts` → `clampSetCount(value)` coerces + rounds and clamps to `[1, 20]`: any legit plan (≤ ~12) passes through unchanged; `0`/negative/`NaN`/nullish → `1` (still loggable); anything huge → `20` (`MAX_SET_COUNT`). 20 is far above any real prescription yet can never OOM.
+- Applied at the crash boundary so **every** source (typed, pasted, AI-generated, hand-edited DB) is safe:
+  - `WorkoutSession.tsx` `buildInitialStates` uses `clampSetCount(ex.sets)`.
+  - `WorkoutLogEditor.tsx` `buildRows` uses `clampSetCount(ex.sets)`.
+- Applied at the input boundary so bad values never persist (also fixes the "999999 sets" header text): `SessionEditor.tsx` Sets `onChange` now uses `clampSetCount(e.target.value)` (replacing `parseInt(...) || 1`).
+
+### Tests added
+`tests/unit/clampSetCount.test.ts` (5 tests): legit values pass through; 0/negatives → 1 (no dead exercise); huge/`>20` → 20 (no OOM); string coercion + rounding (SessionEditor sends `e.target.value`); empty/non-numeric/nullish → 1.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (285 tests, +5 new; 41 files)
+- `npx electron-vite build` → PASS
+
+### Deferred (found this run, NOT fixed — one focused fix per run)
+Recorded for future runs (ranked); each is real and reachable but lower severity than an OOM crash:
+- **[training] PR summary compares to last session, not all-time.** `WorkoutSession.tsx handleComplete` (~L390-403) detects "New Personal Records" against `lastPerformance` (most-recent session) instead of the already-computed `allTimePR`, so a lift below your true PR but above last session is falsely announced as a PR. `TodaysSessionWidget`/`WorkoutStats` do this correctly.
+- **[progress] Sub-week span extrapolation ~7×.** `Progress/index.tsx computeWeeklyRate` (~L15-27), `PrepPaceWidget.tsx` (~L24-30), `CheckIn/index.tsx` (~L754-763) only guard `weeksDiff <= 0`, no minimum-span floor — a daily-cadence athlete's two 1-day-apart weigh-ins turn +0.5 kg into ~+3.5 kg/wk and flip the status badge / show-projection. (The check-in *engine* normalizes correctly; these display sites don't.)
+- **[progress] "Weeks Tracked" counts check-ins, not weeks.** `Progress/index.tsx` (~L135) `weeksCompleted = checkinHistory.length` — reads "20 weeks" after 20 daily weigh-ins; `elapsedWeeks` is already computed right above.
+- **[widget] PeakWeekWidget shows "SHOW DAY!" for a past show.** `utils/dates.ts getShowCountdown` clamps `totalDays` to `Math.max(0, …)`, so `PeakWeekWidget.tsx` (self-hides only for `<0`/`>7`) renders the red peak-week indicator indefinitely for a past show until the next launch's `startupRefresh` repoints `show_date`.
+- **[chart] Projected trajectory renders a lone dot.** `charts/WeightChart.tsx` (~L53-64,111-131) — the `projected` series has one non-null point, so the dashed "Projected to show" line never draws; the last actual point needs to also carry its weight as the `projected` value.
+- **[low] `parseRepMidpoint("12-")` → NaN.** SessionEditor Reps is free text; a trailing-dash value yields a `NaN` default rep → `NaN` volume if logged unedited. (`WorkoutSession.tsx:14-18`.)
+
+---
+
 ## Run: 2026-07-24 #2 (BUG FIX — the AI-Assistant diet-refine path `plan:applyAIRequest`/`refine_diet` leaves stale `meal_count` + orphaned meal completions when a refine changes the meal count — the SIBLING of the 07-23 #2 fix, in a different handler that was missed)
 
 ### STEP 0 — Backlog
