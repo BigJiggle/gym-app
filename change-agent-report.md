@@ -1,5 +1,46 @@
 # Change Agent Report
 
+## Run: 2026-07-25 #2 (BUG FIX — the weekly weight-rate is extrapolated from a sub-week window at 3 display sites, so a daily-cadence athlete's routine water swing becomes a ~7× per-week rate that flips the on-track badge and blows up the show-day weight projection)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 done). Proceeded to a bug hunt.
+
+### STEP 1 — Regression guard (clean baseline)
+On a fresh rebased `master` pull: `npx tsc --noEmit` PASS · `npm test` PASS (285 tests, 41 files) · `npx electron-vite build` PASS. (`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.) No regressions to fix.
+
+### STEP 2 — Area audited: (c) check-in + Progress + adaptive nutrition
+Rotated off last run's (b) training. Traced the weight-rate / show-projection paths through Progress, the Prep Pace widget, and the post-check-in projection, cross-checked against the check-in engine's own rate normalization.
+
+### The bug (root cause)
+Three UI sites compute a per-week weight rate the same way — take the recent check-in window, then `rate = (newest.weight_kg − oldest.weight_kg) / weeksDiff` guarded only by `weeksDiff <= 0`:
+- `src/pages/Progress/index.tsx` — `computeWeeklyRate` (was L15-27, window = 4 most-recent). Feeds the status badge and the **show-day projection** `currentWeightKg + weeklyRateKg * weeksToShow` (L150-151).
+- `src/components/widgets/PrepPaceWidget.tsx` (was L24-30, window = 4). Feeds the Prep-Pace status pill and its show-day projection (L79).
+- `src/pages/CheckIn/index.tsx` (was L754-760, window = 5). Feeds the "Show Day Projection" shown immediately after weighing in (L763).
+
+For a **daily-cadence** athlete the recent 4–5 check-ins span only 3–4 days (`weeksDiff` ≈ 0.4–0.6), so dividing by a fraction of a week extrapolates: a routine ~1 kg water/glycogen swing over 4 days → `1 / (3/7) ≈ +2.33 kg/wk`, and projected across e.g. 10 weeks-to-show that swings the estimated show-day weight by ~23 kg and flips the on-track / too-fast badge from pure noise. The **check-in engine** already normalizes correctly (divides by the actual date gap, folds a multi-check-in window), and the same file's **Measurement Changes** card already floors at `weeksBetween >= 1` (Progress L410) — the weight rate was the sole inconsistent site with no minimum-span floor.
+
+### STEP 3 — Fix (minimum correct change, root-caused via one shared util)
+- New pure helper `src/utils/weeklyRate.ts` → `computeWeeklyWeightRate(checkins, minWindow=4)`. It starts at the `minWindow` most-recent entries (unchanged behavior for weekly users — the 4th check-in already spans ~3 weeks), then keeps reaching further back **only if that window is under one week**, so a daily user still gets a genuine ≥1-week rate once they have a week of history. Returns `null` when total usable span is `< 1` week (or `< 2` finite entries) — callers already treat `null` as their "collecting data" state, so no garbage rate or projection is shown. Also skips non-finite weights/dates to stop NaN reaching the projection.
+- Wired all three sites to the shared util (deleting the duplicated inline math), so the fix is applied once at the root: Progress `computeWeeklyWeightRate(checkinHistory)`, PrepPaceWidget `computeWeeklyWeightRate(checkinHistory, 4)` (returns null → widget hides, matching the old `weeksDiff <= 0` path), CheckIn `computeWeeklyWeightRate(checkinHistory, 5)`. Removed the now-unused `CheckIn` type import in Progress.
+
+### Tests added
+`tests/unit/weeklyRate.test.ts` (7 tests): <2 entries → null; weekly-cadence slope unchanged; 2 weekly check-ins; **sub-week daily window → null (the bug)**; 8 daily check-ins spanning a full week → real −1 kg/wk (window extends past the min count); all-same-day (`weeksDiff = 0`) → null; non-finite weight anchor skipped without NaN.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (292 tests, +7 new; 42 files)
+- `npx electron-vite build` → PASS
+
+### Deferred (carried forward from prior run; the sub-week extrapolation item above is now FIXED)
+Still open, ranked; each real and reachable but lower severity:
+- **[training] PR summary compares to last session, not all-time** — `WorkoutSession.tsx handleComplete` uses `lastPerformance` not `allTimePR`, so a lift below true PR but above last session is falsely announced as a PR.
+- **[progress] "Weeks Tracked" counts check-ins, not weeks** — `Progress/index.tsx` `weeksCompleted = checkinHistory.length`; `elapsedWeeks` is already computed right above.
+- **[widget] PeakWeekWidget shows "SHOW DAY!" for a past show** — `getShowCountdown` clamps `totalDays` to `Math.max(0, …)`, so a past show renders the peak-week indicator indefinitely.
+- **[chart] Projected trajectory renders a lone dot** — `charts/WeightChart.tsx` projected series has one non-null point so the dashed line never draws.
+- **[low] `parseRepMidpoint("12-")` → NaN** — SessionEditor Reps free text; a trailing-dash yields a NaN default rep → NaN volume if logged unedited.
+
+---
+
 ## Run: 2026-07-25 (BUG FIX — a hand-typed/stored per-exercise `sets` count reaches `Array.from({length})` unclamped: a huge value (999999) builds ~1M set rows → renderer OOM/freeze, and a negative builds zero rows → a silent, uncompletable "dead" exercise)
 
 ### STEP 0 — Backlog

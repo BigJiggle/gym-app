@@ -10,6 +10,7 @@ import type { CheckIn } from '../../types'
 import { localDateStr } from '../../utils/dates'
 import { computeMissedSlots } from '../../utils/checkinSchedule'
 import { ratingBgClass, ratingTextClass, type RatingDirection } from '../../utils/ratingColor'
+import { computeWeeklyWeightRate } from '../../utils/weeklyRate'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -751,13 +752,9 @@ export default function CheckIn() {
         {/* Show Day Projection — visible immediately after weighing in so athlete
             knows at a glance whether their cut/bulk pace will hit their target */}
         {checkinHistory.length >= 2 && user.show_date && (() => {
-          const recent = checkinHistory.slice(0, 5)
-          const newest = recent[0]
-          const oldest = recent[recent.length - 1]
-          const daysDiff = (new Date(newest.check_in_date).getTime() - new Date(oldest.check_in_date).getTime()) / (1000 * 60 * 60 * 24)
-          const weeksDiff = daysDiff / 7
-          if (weeksDiff <= 0) return null
-          const weeklyRateKg = (newest.weight_kg - oldest.weight_kg) / weeksDiff
+          const newest = checkinHistory[0]
+          const weeklyRateKg = computeWeeklyWeightRate(checkinHistory, 5)
+          if (weeklyRateKg === null) return null
           const weeksToShow = (new Date(user.show_date + 'T12:00:00').getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 7)
           if (weeksToShow <= 0) return null
           const projectedKg = newest.weight_kg + weeklyRateKg * weeksToShow

@@ -9,22 +9,9 @@ import { StatCard } from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import { displayWeight, displayLength, weightLabel, lengthLabel } from '../../utils/units'
 import { ratingTextClass } from '../../utils/ratingColor'
+import { computeWeeklyWeightRate } from '../../utils/weeklyRate'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LineChart, Line, CartesianGrid, Legend } from 'recharts'
-import type { CheckIn, ProgressPhoto } from '../../types'
-
-function computeWeeklyRate(checkins: CheckIn[]): number | null {
-  // Need at least 2 entries; checkins are newest-first
-  const recentCheckins = checkins.slice(0, 4)
-  if (recentCheckins.length < 2) return null
-  const newest = recentCheckins[0]
-  const oldest = recentCheckins[recentCheckins.length - 1]
-  const daysDiff =
-    (new Date(newest.check_in_date).getTime() - new Date(oldest.check_in_date).getTime()) /
-    (1000 * 60 * 60 * 24)
-  const weeksDiff = daysDiff / 7
-  if (weeksDiff <= 0) return null
-  return (newest.weight_kg - oldest.weight_kg) / weeksDiff
-}
+import type { ProgressPhoto } from '../../types'
 
 function computeEstimatedBF(weightKg: number, waistCm: number, sex: 'male' | 'female' | 'other'): number {
   const weightLbs = weightKg * 2.20462
@@ -143,7 +130,7 @@ export default function Progress() {
     : null
 
   // Trend computation
-  const weeklyRateKg = computeWeeklyRate(checkinHistory)
+  const weeklyRateKg = computeWeeklyWeightRate(checkinHistory)
   const weeksToShow = user.show_date ? weeksUntil(user.show_date) : null
   const currentWeightKg = checkinHistory[0]?.weight_kg ?? user.weight_kg
   const projectedWeightKg =

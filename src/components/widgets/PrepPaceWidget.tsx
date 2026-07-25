@@ -3,6 +3,7 @@ import { useUserStore } from '../../store/userStore'
 import { usePlanStore } from '../../store/planStore'
 import { useSettingsStore } from '../../store/settingsStore'
 import { localDateStr } from '../../utils/dates'
+import { computeWeeklyWeightRate } from '../../utils/weeklyRate'
 
 export default function PrepPaceWidget() {
   const { user, shows } = useUserStore()
@@ -21,13 +22,8 @@ export default function PrepPaceWidget() {
 
   const isImperial = settings.units === 'imperial'
   const wUnit = isImperial ? 'lbs' : 'kg'
-  const recent = checkinHistory.slice(0, 4)
-  const newest = recent[0]
-  const oldest = recent[recent.length - 1]
-  const daysDiff = (new Date(newest.check_in_date).getTime() - new Date(oldest.check_in_date).getTime()) / (1000 * 60 * 60 * 24)
-  const weeksDiff = daysDiff / 7
-  if (weeksDiff <= 0) return null
-  const weeklyRateKg = (newest.weight_kg - oldest.weight_kg) / weeksDiff
+  const weeklyRateKg = computeWeeklyWeightRate(checkinHistory, 4)
+  if (weeklyRateKg === null) return null
   const weeklyRateDisplay = isImperial ? Math.round(weeklyRateKg * 2.20462 * 10) / 10 : Math.round(weeklyRateKg * 10) / 10
   const currentWeightKg = checkinHistory[0].weight_kg
   const pctPerWeek = currentWeightKg > 0 ? Math.abs(weeklyRateKg) / currentWeightKg : 0
