@@ -10,6 +10,7 @@ import Button from '../../components/ui/Button'
 import { displayWeight, displayLength, weightLabel, lengthLabel } from '../../utils/units'
 import { ratingTextClass } from '../../utils/ratingColor'
 import { computeWeeklyWeightRate } from '../../utils/weeklyRate'
+import { computeWeeksTracked } from '../../utils/weeksTracked'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LineChart, Line, CartesianGrid, Legend } from 'recharts'
 import type { ProgressPhoto } from '../../types'
 
@@ -120,6 +121,10 @@ export default function Progress() {
   const latest = progressEntries[progressEntries.length - 1]
   const totalChange = progressEntries.length >= 2 ? (latest.weight_kg - first.weight_kg).toFixed(1) : null
   const weeksCompleted = checkinHistory.length
+  // "Weeks Tracked" is the real first→last calendar span in whole weeks, not the
+  // check-in count — a daily-cadence athlete logs many check-ins per week, so the
+  // row count would overstate how long they've been tracking.
+  const weeksTracked = computeWeeksTracked(checkinHistory)
   // Actual elapsed weeks between oldest and newest check-in (more accurate than check-in count)
   const elapsedWeeks = checkinHistory.length >= 2
     ? Math.round(
@@ -216,7 +221,7 @@ export default function Progress() {
         })()}
         <StatCard
           label="Weeks Tracked"
-          value={weeksCompleted}
+          value={weeksTracked}
           unit="weeks"
           color="blue"
         />

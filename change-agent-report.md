@@ -1,5 +1,38 @@
 # Change Agent Report
 
+## Run: 2026-07-26 #2 (BUG FIX — Progress's "Weeks Tracked" stat shows the number of check-ins, not the elapsed calendar span, so a more-than-weekly athlete sees a wildly inflated week count)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (the two `- [ ]` grep hits are the format-legend lines in the header, not queue items). Proceeded to a bug hunt.
+
+### STEP 1 — Regression guard (clean baseline)
+On a fresh rebased `master` pull: `npx tsc --noEmit` PASS · `npm test` PASS (297 tests, 43 files) · `npx electron-vite build` PASS. (`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.) No regressions to fix.
+
+### STEP 2 — Area audited: (c) Progress — the deferred "Weeks Tracked" desync
+Rotated off last run's (b) training. Read the deferred carry-forward list and traced the Progress stat cards + show-date lifecycle (area f). Confirmed the top deferred **progress** item is real, reachable, and always-on; the deferred `PeakWeekWidget` "SHOW DAY!" item is real but only reachable in a narrow window (app left open across the day after a show — `plan:startupRefresh`/`syncPrimaryToNearest` null out a past `show_date` on the next launch, so it self-heals on relaunch), so I fixed the higher-reachability one this run.
+
+### The bug (root cause)
+`src/pages/Progress/index.tsx` (L122/219): the **"Weeks Tracked"** StatCard renders `value={weeksCompleted}` where `weeksCompleted = checkinHistory.length` — the raw check-in row count, labeled and unit-suffixed as "weeks". `checkin:history` returns one row per check-in, and check-ins can be logged more than once per week (daily-cadence athletes, plus duplicate-ish same-week entries), so the count overstates the real tracking span: 22 daily weigh-ins over 3 weeks read as **"22 weeks tracked"**. A value shown to the user that does not match reality (DB↔UI desync). The correct span (`elapsedWeeks`, the actual first→last gap) was already computed right below and used for the neighboring "over X weeks" delta, but the headline stat still used the row count.
+
+### STEP 3 — Fix (minimum correct change, extracted to a pure testable helper)
+- New pure `src/utils/weeksTracked.ts` → `computeWeeksTracked(checkins)`: measures the real first→last calendar span in whole weeks (order-independent via min/max, rounds to nearest week, skips non-finite dates, returns 0 for <2 usable entries). Mirrors the existing `new Date(check_in_date).getTime()` parse used by `weeklyRate.ts`.
+- `Progress/index.tsx` now computes `const weeksTracked = computeWeeksTracked(checkinHistory)` and the "Weeks Tracked" card uses `value={weeksTracked}`. `weeksCompleted` is retained only for the "N check-ins" delta fallback (where it is correctly labeled as a count), so nothing else changes.
+
+### Tests added
+`tests/unit/weeksTracked.test.ts` (7 tests): **22 daily check-ins over 3 weeks → 3, not 22 (the bug)**; 6 weekly check-ins → 5 weeks; exactly one week apart → 1; <2 entries → 0; sub-half-week span → 0; order-independent; non-finite date skipped without NaN.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (304 tests, +7 new; 44 files)
+- `npx electron-vite build` → PASS
+
+### Deferred (carried forward; each real and reachable but lower severity — the "Weeks Tracked" item above is now FIXED)
+- **[widget] PeakWeekWidget shows "SHOW DAY!" for a past show** — `utils/dates.ts getShowCountdown` clamps `totalDays` to `Math.max(0, …)`, so a past show renders the red peak-week indicator (with "SHOW DAY!") whenever the app is left open past the show day (self-heals on next launch via `startupRefresh`). Fix needs care: 6 callers rely on the `>= 0` clamp, so distinguish past-vs-today without changing the shared contract (e.g. a widget-local past check or a separate signed helper).
+- **[chart] Projected trajectory renders a lone dot** — `charts/WeightChart.tsx` projected series has one non-null point so the dashed line never draws.
+- **[low] `parseRepMidpoint("12-")` → NaN** — SessionEditor Reps free text; a trailing-dash yields a NaN default rep → NaN volume if logged unedited (`WorkoutSession.tsx:15-19`).
+
+---
+
 ## Run: 2026-07-26 (BUG FIX — the "🏆 New Personal Records" summary after a workout compares each lift to the LAST session, not the all-time PR, so any weight above last time but below the true PR is falsely announced as a new record)
 
 ### STEP 0 — Backlog
