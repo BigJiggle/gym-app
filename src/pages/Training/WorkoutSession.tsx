@@ -3,6 +3,7 @@ import type { TrainingSession, WorkoutLog, Exercise } from '../../types'
 import { useSettingsStore } from '../../store/settingsStore'
 import { usePlanStore } from '../../store/planStore'
 import { clampSetCount } from '../../utils/clampSetCount'
+import { detectNewPRs } from '../../utils/detectNewPRs'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -389,21 +390,10 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
     , 0)
     setSummaryStats({ sets: doneSets, exercises: doneExercises, volume: Math.round(volume) })
 
-    // Detect new personal records — only when there's previous session data to compare against
-    if (lastPerformance.size > 0) {
-      const prs: { exerciseName: string; weight: number; reps: number }[] = []
-      for (const [exerciseName, exState] of currentStates) {
-        if (exState.allSkipped) continue
-        const doneSetsForEx = exState.sets.filter((s) => s.done && s.weight > 0)
-        if (doneSetsForEx.length === 0) continue
-        const bestWeight = Math.max(...doneSetsForEx.map((s) => s.weight))
-        const bestReps = doneSetsForEx.find((s) => s.weight === bestWeight)?.reps ?? 0
-        const prev = lastPerformance.get(exerciseName)
-        if (prev && bestWeight > prev.weight) {
-          prs.push({ exerciseName, weight: bestWeight, reps: bestReps })
-        }
-      }
-      setNewPRs(prs)
+    // Detect new personal records against the athlete's ALL-TIME best (not merely
+    // last session) so a lift above last time but below the true PR isn't misannounced.
+    if (allTimePR.size > 0) {
+      setNewPRs(detectNewPRs(currentStates, allTimePR))
     }
 
     setSaving(true)
@@ -457,7 +447,7 @@ export default function WorkoutSession({ session, workoutLog, onComplete, onClos
     } finally {
       setSaving(false)
     }
-  }, [workoutLog.id, exerciseStates, session.exercises, isImperial, sessionNotes, lastPerformance])
+  }, [workoutLog.id, exerciseStates, session.exercises, isImperial, sessionNotes, allTimePR])
 
   // ── end early = cancel entirely, no history entry ─────────────────────────
 

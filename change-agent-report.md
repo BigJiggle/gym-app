@@ -1,5 +1,39 @@
 # Change Agent Report
 
+## Run: 2026-07-26 (BUG FIX — the "🏆 New Personal Records" summary after a workout compares each lift to the LAST session, not the all-time PR, so any weight above last time but below the true PR is falsely announced as a new record)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 done). Proceeded to a bug hunt.
+
+### STEP 1 — Regression guard (clean baseline)
+On a fresh rebased `master` pull: `npx tsc --noEmit` PASS · `npm test` PASS (292 tests, 42 files) · `npx electron-vite build` PASS. (`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.) No regressions to fix.
+
+### STEP 2 — Area audited: (b/e) training session flow — the deferred top-of-queue PR bug
+Rotated off last run's (c) check-in. Swept the widget/localStorage store layer (`localStore`, `competitionLogs`, Sleep/Supplement/Scorecard widgets — all well-guarded: length-checked averages, NaN/range-validated inputs, shape-checked JSON) and traced the workout-session completion path, which is where the top-of-queue deferred bug lives (`WorkoutSession.tsx` PR detection). Confirmed real and reachable on **every** workout completion.
+
+### The bug (root cause)
+`src/pages/Training/WorkoutSession.tsx` computes TWO per-exercise lookups at mount: `lastPerformance` (heaviest set from the most-recent completed log of THIS session, used to prefill inputs + show a "last time" hint) and `allTimePR` (heaviest set across ALL completed history, displayed per-exercise as the true PR baseline). But `handleComplete`'s "New Personal Records" detection (was L392-407) gated on `lastPerformance.size > 0` and compared each lift's `bestWeight > lastPerformance.get(name).weight` — i.e. against **last session**, not the all-time best. So an athlete whose all-time bench PR is 100 kg, who did 90 kg last week and 95 kg today, gets 95 kg falsely announced as a "🏆 New Personal Record" even though it's 5 kg below their true PR. `allTimePR` was already computed (and shown) right there but never used for the announcement.
+
+### STEP 3 — Fix (minimum correct change, extracted to a pure testable helper)
+- New pure `src/utils/detectNewPRs.ts` → `detectNewPRs(currentStates, priorPRs)`: emits a PR only when a prior all-time best exists for that exercise AND the session's best done, weighted set STRICTLY beats it. Ignores skipped exercises, undone sets, and bodyweight (weight 0) sets; reports the reps of the heaviest done set. First-time exercises (no prior record) never announce a PR.
+- `WorkoutSession.tsx` now calls `detectNewPRs(currentStates, allTimePR)` gated on `allTimePR.size > 0` (replacing the inline `lastPerformance` loop), and the `handleComplete` dependency array swaps `lastPerformance → allTimePR`. `lastPerformance` is still used for input prefill + the "last time" hint, so nothing else changes.
+
+### Tests added
+`tests/unit/detectNewPRs.test.ts` (5 tests): **above-last-session-but-below-all-time → no PR (the bug)**; genuine all-time PR → announced; first-time exercise (no prior) → no PR; skipped/undone/bodyweight sets ignored; reports reps of the heaviest done set.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (297 tests, +5 new; 43 files)
+- `npx electron-vite build` → PASS
+
+### Deferred (carried forward; each real and reachable but lower severity than a false PR announcement — the training PR item is now FIXED)
+- **[progress] "Weeks Tracked" counts check-ins, not weeks** — `Progress/index.tsx` `weeksCompleted = checkinHistory.length`; `elapsedWeeks` is already computed right above.
+- **[widget] PeakWeekWidget shows "SHOW DAY!" for a past show** — `utils/dates.ts getShowCountdown` clamps `totalDays` to `Math.max(0, …)`, so a past show renders the red peak-week indicator (with "SHOW DAY!") indefinitely until the next launch's `startupRefresh` repoints `show_date`. Fix needs care: 6 callers rely on the `>= 0` clamp, so distinguish past-vs-today without changing the shared contract (e.g. a widget-local past check or a separate signed helper).
+- **[chart] Projected trajectory renders a lone dot** — `charts/WeightChart.tsx` projected series has one non-null point so the dashed line never draws.
+- **[low] `parseRepMidpoint("12-")` → NaN** — SessionEditor Reps free text; a trailing-dash yields a NaN default rep → NaN volume if logged unedited (`WorkoutSession.tsx:15-19`).
+
+---
+
 ## Run: 2026-07-25 #2 (BUG FIX — the weekly weight-rate is extrapolated from a sub-week window at 3 display sites, so a daily-cadence athlete's routine water swing becomes a ~7× per-week rate that flips the on-track badge and blows up the show-day weight projection)
 
 ### STEP 0 — Backlog
