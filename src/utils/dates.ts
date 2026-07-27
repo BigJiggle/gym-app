@@ -12,11 +12,18 @@ export function parseLocalDate(dateStr: string): Date {
 
 // Returns exact days, whole weeks, and remainder days until a show date.
 // Uses local midnight → local noon to stay immune to DST and UTC shifts.
-export function getShowCountdown(showDate: string): { totalDays: number; weeks: number; days: number } {
+// `totalDays` is clamped at 0 (a past show reads as 0, same as today) — many
+// callers rely on that non-negative contract — so `isPast` is exposed
+// separately to distinguish a show that has already happened from one that is
+// today. Without it, a widget left open past the show day can't tell "today"
+// (totalDays 0) from "yesterday" (also clamped to 0) and shows "SHOW DAY!"
+// forever until the next launch repoints show_date.
+export function getShowCountdown(showDate: string): { totalDays: number; weeks: number; days: number; isPast: boolean } {
   const show = new Date(showDate + 'T12:00:00')
   const now = new Date()
   // Construct local midnight explicitly — avoids setHours DST edge cases
   const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const totalDays = Math.max(0, Math.floor((show.getTime() - todayMidnight.getTime()) / 86400000))
-  return { totalDays, weeks: Math.floor(totalDays / 7), days: totalDays % 7 }
+  const rawDays = Math.floor((show.getTime() - todayMidnight.getTime()) / 86400000)
+  const totalDays = Math.max(0, rawDays)
+  return { totalDays, weeks: Math.floor(totalDays / 7), days: totalDays % 7, isPast: rawDays < 0 }
 }

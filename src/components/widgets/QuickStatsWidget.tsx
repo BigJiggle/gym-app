@@ -29,7 +29,7 @@ export default function QuickStatsWidget() {
         delta={`${dietPlan?.protein_g ?? '—'}g protein`}
         color="green"
       />
-      {showCountdown !== null ? (
+      {showCountdown !== null && !showCountdown.isPast ? (
         <StatCard
           label="Show Countdown"
           value={(() => {

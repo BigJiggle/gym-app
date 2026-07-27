@@ -1,5 +1,42 @@
 # Change Agent Report
 
+## Run: 2026-07-27 #2 (BUG FIX — a show left on the calendar past its date makes PeakWeekWidget render the peak-week protocol with "SHOW DAY!" and QuickStatsWidget show "Show Day!" indefinitely, because getShowCountdown clamps totalDays to 0 and can't tell "today" from "already happened")
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (`grep '^\- \[ \]'` returns nothing; the header `[ ]`/`[x]` mentions are the format legend, not queue items). Proceeded to a bug hunt.
+
+### STEP 1 — Regression guard (clean baseline)
+On a fresh rebased `master` pull: `npx tsc --noEmit` PASS · `npm test` PASS (310 tests, 45 files) · `npx electron-vite build` PASS. (`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.) No regressions to fix.
+
+### STEP 2 — Area audited: (f) shows/competition + date/week logic + (e) show-driven widgets
+Rotated off last run's (b) training. Swept the backend show/date/checkin layer first — `showHandlers.ts` (syncPrimaryToNearest / setPrimaryShow / add / update / cancel / delete), `checkinHandlers.ts` (submit / submitMissed / update week_number renumbering + one-per-day invariants), `checkinSchedule.ts`, `nutritionEngine.ts` (BMR/TDEE/deficit/macros — all `clampWeightKg`/`MIN_CALORIE_TARGET`/`clampMealCount` guarded), `workoutHandlers.ts`, `progressHandlers.ts`, `mealCompletionHandlers.ts`, `planHandlers.ts` swap/reorder (index-bounds + count-mismatch guarded), and the water/volume widgets — all clean. Traced the deferred **PeakWeekWidget "SHOW DAY!" for a past show** item to root cause; it is real and reachable.
+
+### The bug (root cause)
+`src/utils/dates.ts getShowCountdown` computes `totalDays = Math.max(0, floor((show − todayMidnight)/day))`. The `Math.max(0, …)` clamp means a **past** show and a show **today** both report `totalDays === 0` — indistinguishable. Two widgets read `user.show_date` directly (not the upcoming-only filtered list that NavSidebar/Education use) and so break once the app is left open past the show day (before the next launch's `startupRefresh`/`syncPrimaryToNearest` repoints/NULLs a past `show_date`):
+- `PeakWeekWidget.tsx` self-hides only for `totalDays < 0` (dead — never fires after the clamp) or `> 7`, and sets `isShowDay = totalDays === 0`. A past show → renders the full red peak-week protocol card with **"SHOW DAY!"** indefinitely.
+- `QuickStatsWidget.tsx` (L37) → `if (totalDays === 0) return 'Show Day!'`, so the Show Countdown stat reads **"Show Day!"** for a past show.
+`Settings/index.tsx` (L602) already hand-rolls the exact missing check — `countdown.totalDays === 0 && new Date(show.show_date+'T12:00:00') < new Date()` — which both confirms the defect and points at the right shared fix.
+
+### STEP 3 — Fix (minimum correct change, additive to the shared helper)
+- `getShowCountdown` now also returns **`isPast: boolean`** (`rawDays < 0`, computed before the `Math.max(0,…)` clamp). `totalDays` stays clamped so the ≥0 contract the other 6 callers rely on is unchanged; the new field is purely additive (every existing caller destructures only `weeks`/`days`/`totalDays`).
+- `PeakWeekWidget.tsx`: hide condition `totalDays < 0` → `showCountdown.isPast`.
+- `QuickStatsWidget.tsx`: the Show Countdown card now renders only when `showCountdown !== null && !showCountdown.isPast`; a past show falls through to the "Phase" card — exactly the state the app shows after the next relaunch, so it's consistent either way.
+
+### Tests added
+- `tests/unit/showCountdownPast.test.ts` (5 tests): show today → `isPast false`, totalDays 0; **yesterday → totalDays 0 but `isPast true` (the bug)**; a month ago → `isPast true`; +10d → `isPast false`, 1w 3d; +14d → 2w 0d.
+- `tests/unit/pastShowWidgets.test.tsx` (4 tests, jsdom): PeakWeekWidget renders **nothing** for a yesterday show (no "SHOW DAY") yet **still renders** on the actual show day; QuickStatsWidget shows the **Phase** card (not "Show Day!") for a past show yet still shows "Show Day!" today.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (319 tests, +9 new; 47 files)
+- `npx electron-vite build` → PASS
+
+### Deferred (carried forward; real but lower severity — the PeakWeekWidget/QuickStats past-show item above is now FIXED)
+- **[chart] Projected trajectory renders a lone dot** — `charts/WeightChart.tsx` builds the `projected` series with a single non-null point (only the appended "Show Day" row), so with `connectNulls` there's no second point to draw the dashed blue "Projected to show" line to; the user sees just a floating dot. Fix: seed the projected series at the last actual weigh-in so the segment has two endpoints. Borderline (chart rendering) — verify it's treated as a functional defect, not cosmetic, before fixing.
+- **[cleanup] Settings past-show check** — `Settings/index.tsx` L602 now duplicates the logic `getShowCountdown().isPast` provides; could be simplified to use the new field (a tidy-up, not a bug — the hand-rolled check is correct).
+
+---
+
 ## Run: 2026-07-27 (BUG FIX — a free-text Reps entry with a stray dash like "12-" makes parseRepMidpoint return NaN, which seeds every set's default reps and propagates into the post-workout summary volume ("NaN") and the persisted reps_actual)
 
 ### STEP 0 — Backlog

@@ -8,7 +8,11 @@ import { PEAK_WEEK_PROTOCOL } from '../../data/competitionPrep'
 export default function PeakWeekWidget() {
   const { user } = useUserStore()
   const showCountdown = user?.show_date ? getShowCountdown(user.show_date) : null
-  if (showCountdown === null || showCountdown.totalDays < 0 || showCountdown.totalDays > 7) return null
+  // Hide once the show has passed (isPast) — totalDays is clamped to 0 for a past
+  // show, so `totalDays < 0` never fires and the widget would otherwise render the
+  // peak-week protocol with "SHOW DAY!" indefinitely if the app is left open past
+  // the show day (until the next launch repoints show_date).
+  if (showCountdown === null || showCountdown.isPast || showCountdown.totalDays > 7) return null
 
   const daysOut = Math.max(1, showCountdown.totalDays)
   const todayProtocol = PEAK_WEEK_PROTOCOL.days.find(d => d.daysOut === daysOut)
