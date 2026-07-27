@@ -4,6 +4,7 @@ import { useSettingsStore } from '../../store/settingsStore'
 import { usePlanStore } from '../../store/planStore'
 import { clampSetCount } from '../../utils/clampSetCount'
 import { detectNewPRs } from '../../utils/detectNewPRs'
+import { parseRepMidpoint } from '../../utils/parseRepMidpoint'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -11,12 +12,6 @@ function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60).toString().padStart(2, '0')
   const s = (seconds % 60).toString().padStart(2, '0')
   return `${m}:${s}`
-}
-
-function parseRepMidpoint(repRange: string): number {
-  const parts = repRange.split('-')
-  if (parts.length === 2) return Math.round((parseInt(parts[0]) + parseInt(parts[1])) / 2)
-  return parseInt(repRange) || 10
 }
 
 // ── types ─────────────────────────────────────────────────────────────────────

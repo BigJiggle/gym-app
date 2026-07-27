@@ -1,5 +1,41 @@
 # Change Agent Report
 
+## Run: 2026-07-27 (BUG FIX — a free-text Reps entry with a stray dash like "12-" makes parseRepMidpoint return NaN, which seeds every set's default reps and propagates into the post-workout summary volume ("NaN") and the persisted reps_actual)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (`grep '^\- \[ \]'` returns nothing; the two `[ ]`/`[x]` mentions in the header are the format legend, not queue items). Proceeded to a bug hunt.
+
+### STEP 1 — Regression guard (clean baseline)
+On a fresh rebased `master` pull: `npx tsc --noEmit` PASS · `npm test` PASS (304 tests, 44 files) · `npx electron-vite build` PASS. (`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.) No regressions to fix.
+
+### STEP 2 — Area audited: (b) training session flow — the deferred `parseRepMidpoint` NaN item
+Rotated off last run's (c) Progress. Swept area (f) date/week logic first (`utils/dates.ts getShowCountdown`, `showDates.ts`, `showHandlers.ts syncPrimaryToNearest/setPrimaryShow`, `checkinSchedule.ts` missed-slot math) and the nutrition/checkin engines + IPC handlers (`nutritionEngine`, `checkinEngine`, `checkinHandlers`, `mealCompletionHandlers`, `progressHandlers`) — all well-guarded (finite/clamp guards, `MIN_CALORIE_TARGET` floors, UNIQUE(user_id,date,meal_index), one-weigh-in-per-day invariants, week_number renumbering on date edits). Traced the deferred carry-forward **training** item, which is real, reachable, and always-on once triggered.
+
+### The bug (root cause)
+`src/pages/Training/WorkoutSession.tsx` seeds every set's default reps via `parseRepMidpoint(ex.reps)`. The old local helper split on `-` and, in the exactly-two-parts branch, did `Math.round((parseInt(parts[0]) + parseInt(parts[1])) / 2)` **with no NaN guard**; the `|| 10` fallback existed ONLY on the single-part branch. The Reps field in `SessionEditor.tsx` (L152-158) is FREE TEXT (`<input type="text">`, no validation) and persists whatever is typed. So a natural partial entry — `"12-"` (meant to be "12-15" but stopped) or `"-12"` — becomes `parts = ["12", ""]` → `Math.round((12 + NaN)/2)` === **NaN**. That NaN:
+- seeds `reps: NaN` for every set in `buildInitialStates` (L215-223),
+- makes the post-workout summary **total volume** `x.weight * x.reps` → NaN, shown to the user as "NaN" (`handleComplete`, L388-391),
+- is persisted as `reps_actual: s.reps` (L430) — lost/desync'd (NaN → NULL in SQLite).
+`parseRepMidpoint` was the SOLE NaN source for set reps: the live input path uses `Number(e.target.value)` (empty → 0, never NaN), so fixing the parser fully closes the hole.
+
+### STEP 3 — Fix (minimum correct change, extracted to a pure testable helper)
+- New pure `src/utils/parseRepMidpoint.ts`: extracts every numeric token (`split('-').map(parseInt).filter(Number.isFinite)`), returns the rounded midpoint of the lowest→highest present, and falls back to 10 when no numeric token exists. Valid ranges ("8-12"→10, "12"→12) behave exactly as before; malformed input ("12-"→12, "-12"→12, ""/"-"/"abc"→10) now yields a finite rep count.
+- `WorkoutSession.tsx` imports the util and drops the local buggy copy (both call sites — L215 seed and the add-set handler ~L357 — are covered).
+
+### Tests added
+`tests/unit/parseRepMidpoint.test.ts` (6 tests): well-formed ranges → midpoint; lone number → itself; **"12-" → 12, not NaN (the bug)**; "-12" → 12; empty/"-"/"abc" → 10; and a sweep asserting no input in the malformed set ever returns NaN.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (310 tests, +6 new; 45 files)
+- `npx electron-vite build` → PASS
+
+### Deferred (carried forward; each real and reachable but lower severity — the training `parseRepMidpoint` item above is now FIXED)
+- **[widget] PeakWeekWidget shows "SHOW DAY!" for a past show** — `utils/dates.ts getShowCountdown` clamps `totalDays` to `Math.max(0, …)`, so a past show renders the red peak-week indicator (with "SHOW DAY!") when the app is left open past the show day; QuickStatsWidget shows "Show Day!" for the same reason. Self-heals on next launch via `startupRefresh`/`syncPrimaryToNearest` nulling a past `show_date`. Fix needs care: 6 callers rely on the `>= 0` clamp, so distinguish past-vs-today without changing the shared contract (a widget-local past check or a separate signed helper).
+- **[chart] Projected trajectory renders a lone dot** — `charts/WeightChart.tsx` projected series has one non-null point so the dashed line never draws.
+
+---
+
 ## Run: 2026-07-26 #2 (BUG FIX — Progress's "Weeks Tracked" stat shows the number of check-ins, not the elapsed calendar span, so a more-than-weekly athlete sees a wildly inflated week count)
 
 ### STEP 0 — Backlog
