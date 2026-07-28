@@ -18,6 +18,53 @@ interface Props {
   weeksToShow?: number | null
 }
 
+export interface WeightChartPoint {
+  week: string
+  weight: number | null
+  date: string
+  projected: number | null
+}
+
+// Build the chart's data rows. Extracted as a pure function so the projected-
+// series construction is unit-testable without rendering recharts.
+//
+// The projected trajectory is a dashed line meant to run from the last actual
+// weigh-in to the projected show-day weight. recharts' `connectNulls` needs at
+// least TWO non-null points to draw a segment — so the last actual point is
+// seeded with its own weight. Without that seed the only non-null `projected`
+// value is the appended Show-Day row, leaving connectNulls nothing to connect:
+// the line never renders and the user sees just a lone dot despite the
+// "Projected to show" legend.
+export function buildWeightChartData(
+  entries: ProgressEntry[],
+  units: 'metric' | 'imperial',
+  projectedWeightKg?: number,
+  weeksToShow?: number | null,
+): WeightChartPoint[] {
+  const toDisplay = (kg: number) =>
+    units === 'imperial' ? Math.round(kg * 2.20462 * 10) / 10 : kg
+
+  const actualData: WeightChartPoint[] = entries.map((e) => ({
+    week: `Wk ${e.week_number}`,
+    weight: toDisplay(e.weight_kg),
+    date: e.check_in_date,
+    projected: null,
+  }))
+
+  const showProjection = projectedWeightKg != null && weeksToShow != null && weeksToShow > 0
+  if (!showProjection || actualData.length === 0) return actualData
+
+  // Seed the last actual weigh-in's projected value so the dashed line has two
+  // endpoints (last actual -> show day).
+  const seeded = actualData.map((d, i) =>
+    i === actualData.length - 1 ? { ...d, projected: d.weight } : d
+  )
+  return [
+    ...seeded,
+    { week: 'Show Day', weight: null, date: '', projected: toDisplay(projectedWeightKg) },
+  ]
+}
+
 const CustomTooltip = ({ active, payload, label, units }: { active?: boolean; payload?: { value: number; dataKey: string }[]; label?: string; units?: string }) => {
   if (active && payload?.length) {
     const actual = payload.find(p => p.dataKey === 'weight')
@@ -42,28 +89,10 @@ export default function WeightChart({ entries, startWeight, units = 'metric', pr
   const toDisplay = (kg: number) =>
     units === 'imperial' ? Math.round(kg * 2.20462 * 10) / 10 : kg
 
-  const actualData = entries.map((e) => ({
-    week: `Wk ${e.week_number}`,
-    weight: toDisplay(e.weight_kg),
-    date: e.check_in_date,
-    projected: null as number | null,
-  }))
-
-  // Append a projected "Show Day" data point when we have a projection
   const showProjection = projectedWeightKg != null && weeksToShow != null && weeksToShow > 0
-  const data = showProjection
-    ? [
-        ...actualData,
-        {
-          week: 'Show Day',
-          weight: null as number | null,
-          date: '',
-          projected: toDisplay(projectedWeightKg!),
-        },
-      ]
-    : actualData
+  const data = buildWeightChartData(entries, units, projectedWeightKg, weeksToShow)
 
-  if (actualData.length === 0) {
+  if (entries.length === 0) {
     return (
       <div className="flex items-center justify-center h-48 text-gray-600 text-sm">
         No weight data yet. Submit your first check-in to start tracking.

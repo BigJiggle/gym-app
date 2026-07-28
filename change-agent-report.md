@@ -1,5 +1,37 @@
 # Change Agent Report
 
+## Run: 2026-07-28 (BUG FIX — the "Projected to show" dashed line on the Progress weight chart never renders: the projected series carries a value only on the appended Show-Day row, so recharts' connectNulls has a single non-null point and draws no segment — the athlete sees a lone blue dot at the far right and an empty legend instead of the trajectory from their last weigh-in)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (`grep '^\- \[ \]'` returns nothing; the `[ ]`/`[x]` mentions in the header are the format legend, not queue items). Proceeded to a bug hunt.
+
+### STEP 1 — Regression guard (clean baseline)
+On a fresh rebased `master` pull: `npx tsc --noEmit` PASS · `npm test` PASS (319 tests, 47 files) · `npx electron-vite build` PASS. (`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.) No regressions to fix.
+
+### STEP 2 — Area audited: (a) nutrition engine + Diet flows (+ swept e/c/d/b for the fix target)
+Rotated off last run's (f)+(e). Read the nutrition engine (`nutritionEngine.ts` — BMR/TDEE/deficit/macros, `clampWeightKg`/`MIN_CALORIE_TARGET`/`clampMealCount`/`sanitizeCalorieTarget`, buildMeals ratios), all Diet flows (`Diet/index.tsx`, `WeeklyMealView`, `GroceryList` portion parsing/aggregation, `swapAlternatives`, `refeed`, `recipeSteps`, `mealAccordion`), and the plan IPC handlers (`recalculateMacros`, `swapMeal`, `reorderMeals`, `previewGoalCalories`, `refineDiet`/`applyAIRequest`) — all well-guarded (finite/clamp guards, floored divisors, index-bounds, meal-count-mismatch, orphaned-completion purge). Also re-swept `checkinEngine` (weight-trend normalization), `checkinHandlers` (week_number, adaptive macro scaling), `trainingEngine` (freq/exPerSession/sets/maxSets guards), `units.ts`, `weeklyRate.ts`, CheckIn submit/edit/projection, `userSanitize` (drops non-finite profile values), `PrepPaceWidget`, `detectNewPRs`, `clampSetCount` — all clean. Confirmed the deferred **WeightChart projected-line** item is a real, reachable functional defect (a feature that renders nothing), and fixed it.
+
+### The bug (root cause)
+`src/components/charts/WeightChart.tsx` builds the `projected` series with `projected: null` on every actual weigh-in and a value **only** on the single appended `Show Day` row. The projected `<Line dataKey="projected" connectNulls>` needs **≥2 non-null points** to draw a segment; with exactly one non-null point there is nothing to connect, so the dashed blue "Projected to show" trajectory never draws. The custom `dot` renders only at the last index (Show Day), so the user is left with a lone blue dot at the far right of the chart and a legend promising a line that isn't there. Reachable on the Progress page whenever a show date is set and there are ≥2 check-ins (`Progress/index.tsx:509-510` passes `projectedWeightKg`/`weeksToShow`).
+
+### STEP 3 — Fix (minimum correct change, extracted to a pure testable helper)
+- New exported pure `buildWeightChartData(entries, units, projectedWeightKg?, weeksToShow?)` in `WeightChart.tsx` builds the rows and, when projecting, **seeds the last actual weigh-in's `projected` value with its own weight** so the dashed line has two endpoints (last actual → show day). No projection / no entries → unchanged (no phantom Show-Day row).
+- The component now calls the helper for `data`; the empty-state guard reads `entries.length` (was `actualData.length`). No visual/style changes — the custom dot still fires only at the Show-Day index, so the last-actual point gains no extra dot; the orange "Actual" dot and blue Show-Day dot are unchanged, and the dashed segment now connects them.
+
+### Tests added
+`tests/unit/weightChartData.test.ts` (5 tests): no projection → all `projected` null; **with a projection → exactly 2 non-null projected points (the bug: previously 1), last-actual seeded to its own weight (last actual → show day)**; imperial seed/projection converted consistently; `weeksToShow` 0/negative or missing projection → no projection; empty entries → `[]` (no phantom row).
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (324 tests, +5 new; 48 files)
+- `npx electron-vite build` → PASS
+
+### Deferred (carried forward; lower severity / out of clear scope)
+- **[cleanup] Settings past-show check** — `Settings/index.tsx` L602 duplicates the logic `getShowCountdown().isPast` now provides; could be simplified to use the field (tidy-up, not a bug).
+- **[low] swap-sheet empty-string exclusion** — `swapAlternatives.getSwapAlternatives` `isExcluded` does `f.includes(ex.replace(/_/g,' '))`; a hand-edited/corrupted empty-string entry in `food_exclusions` would make `''.includes('')` true and filter out ALL swap options. Only reachable via corrupted DB data (the exclude UI never produces an empty id), so low priority.
+
+---
+
 ## Run: 2026-07-27 #2 (BUG FIX — a show left on the calendar past its date makes PeakWeekWidget render the peak-week protocol with "SHOW DAY!" and QuickStatsWidget show "Show Day!" indefinitely, because getShowCountdown clamps totalDays to 0 and can't tell "today" from "already happened")
 
 ### STEP 0 — Backlog
