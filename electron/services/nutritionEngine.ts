@@ -844,6 +844,22 @@ export function sanitizeCalorieTarget(raw: unknown, mealsCalorieSum = 0): number
   return MIN_CALORIE_TARGET
 }
 
+// Coerce an (untrusted, possibly AI-supplied) macro gram target (protein/carbs/fat)
+// into a finite, non-negative value. Falls back to the summed per-meal grams when
+// the top-level value is missing/invalid/zero — so a model that omits protein_g /
+// carbs_g / fat_g (or returns null/0) can't persist a 0-gram macro target. A stored
+// protein_g of 0 both shows the athlete a 0g protein goal and divides-by-zero in the
+// meal-adherence widgets (eatenProtein / protein_g → NaN). Mirrors the calorie floor,
+// minus the 1200 minimum (macro grams have no universal floor). Returns 0 only when
+// both the top-level value AND every per-meal value are missing/zero.
+export function sanitizeMacroGrams(raw: unknown, mealsMacroSum = 0): number {
+  const n = Math.round(Number(raw))
+  if (Number.isFinite(n) && n > 0) return n
+  const summed = Math.round(Number(mealsMacroSum))
+  if (Number.isFinite(summed) && summed > 0) return summed
+  return 0
+}
+
 // Supported main-meal range (1–20) shared by onboarding, Settings, and the
 // engine. Every path that turns a meal_count into a plan must clamp identically —
 // a mismatched clamp (e.g. the AI-request handler's old 3–6 cap) silently drops a

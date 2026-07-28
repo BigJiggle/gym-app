@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { generateNutritionPlan, clampWeightKg, clampMealCount, buildMealsPublic, sanitizeCalorieTarget, MIN_CALORIE_TARGET } from '../../electron/services/nutritionEngine'
+import { generateNutritionPlan, clampWeightKg, clampMealCount, buildMealsPublic, sanitizeCalorieTarget, sanitizeMacroGrams, MIN_CALORIE_TARGET } from '../../electron/services/nutritionEngine'
 
 const BASE_INPUT = {
   weight_kg: 80,
@@ -482,6 +482,31 @@ describe('nutritionEngine — meal prep style affects food selection', () => {
       expect(sanitizeCalorieTarget(undefined, 2500)).toBe(2500)
       // A valid target is preserved unchanged.
       expect(sanitizeCalorieTarget(2200, 0)).toBe(2200)
+    })
+
+    it('sanitizeMacroGrams floors a missing/degenerate AI macro to the summed per-meal grams', () => {
+      // The AI diet write seam previously stored `cr.protein_g ?? 0`, so a model
+      // response that omitted protein_g / carbs_g / fat_g persisted a 0-gram macro
+      // target — a 0g protein goal AND a divide-by-zero in TodaysMealsWidget
+      // (eatenProtein / protein_g → NaN). Missing/invalid/zero top-level values must
+      // fall back to the summed per-meal grams the model DID return.
+      expect(sanitizeMacroGrams(undefined, 184)).toBe(184)
+      expect(sanitizeMacroGrams(null, 184)).toBe(184)
+      expect(sanitizeMacroGrams(0, 184)).toBe(184)
+      expect(sanitizeMacroGrams(NaN, 184)).toBe(184)
+      expect(sanitizeMacroGrams(Infinity, 184)).toBe(184)
+      expect(sanitizeMacroGrams(-30, 184)).toBe(184)
+      // A valid top-level value is preserved (rounded) unchanged.
+      expect(sanitizeMacroGrams(200, 0)).toBe(200)
+      expect(sanitizeMacroGrams(199.6, 0)).toBe(200)
+      // Fully-empty plan (no top-level value, no per-meal grams) → 0 (nothing to recover).
+      expect(sanitizeMacroGrams(undefined, 0)).toBe(0)
+      // A stored protein target is never NaN/negative/non-finite.
+      for (const [raw, sum] of [[undefined, 150], [0, 0], [NaN, 200], [-5, -5]] as const) {
+        const g = sanitizeMacroGrams(raw, sum)
+        expect(Number.isFinite(g)).toBe(true)
+        expect(g).toBeGreaterThanOrEqual(0)
+      }
     })
 
     it('buildMealsPublic with a 0 calorie target produces finite (not NaN/Infinity) meal macros', () => {

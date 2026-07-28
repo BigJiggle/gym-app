@@ -1,7 +1,7 @@
 import { IpcMain } from 'electron'
 import { getDb, namedParams } from '../database/db'
 import { generateTrainingPlan, getExerciseLibraryForUI, determinePhase } from '../services/trainingEngine'
-import { generateNutritionPlan, buildMealsPublic, calcBMR, getPhaseAwareDeficit, ACTIVITY_MULTIPLIERS, clampWeightKg, clampMealCount, sanitizeCalorieTarget, MIN_CALORIE_TARGET } from '../services/nutritionEngine'
+import { generateNutritionPlan, buildMealsPublic, calcBMR, getPhaseAwareDeficit, ACTIVITY_MULTIPLIERS, clampWeightKg, clampMealCount, sanitizeCalorieTarget, sanitizeMacroGrams, MIN_CALORIE_TARGET } from '../services/nutritionEngine'
 import { generateDietWithClaude, generateWorkoutWithClaude, refineDietPlan, refineWorkoutWithClaude, processAIRequest, refineWorkoutForSafety } from '../services/claudeService'
 import { regenerateDietForGoal } from './showHandlers'
 import { weeksUntilShow, localToday } from '../services/showDates'
@@ -186,7 +186,13 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
           // divides by zero in the macro-recalc / check-in-scaling paths. Floor
           // to MIN_CALORIE_TARGET exactly as the rule-based engine does.
           sanitizeCalorieTarget(cr.calories_target, (cr.meals ?? []).reduce((s: number, m: any) => s + (Number(m.calories) || 0), 0)),
-          cr.protein_g ?? 0, cr.carbs_g ?? 0, cr.fat_g ?? 0,
+          // Macros get the same treatment as calories: the model may omit protein_g /
+          // carbs_g / fat_g, which `?? 0` would persist as a 0-gram target (a 0g protein
+          // goal + a divide-by-zero in the meal-adherence widgets). Fall back to the
+          // summed per-meal grams the model DID return.
+          sanitizeMacroGrams(cr.protein_g, (cr.meals ?? []).reduce((s: number, m: any) => s + (Number(m.protein_g) || 0), 0)),
+          sanitizeMacroGrams(cr.carbs_g, (cr.meals ?? []).reduce((s: number, m: any) => s + (Number(m.carbs_g) || 0), 0)),
+          sanitizeMacroGrams(cr.fat_g, (cr.meals ?? []).reduce((s: number, m: any) => s + (Number(m.fat_g) || 0), 0)),
           (cr.meals ?? []).length, JSON.stringify(cr.meals ?? []),
           cr.phase ?? 'deficit', 3
         ])

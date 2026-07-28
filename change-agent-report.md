@@ -1,5 +1,44 @@
 # Change Agent Report
 
+## Run: 2026-07-28 #2 (BUG FIX — the AI diet-generation write seam stores `cr.protein_g ?? 0` / `cr.carbs_g ?? 0` / `cr.fat_g ?? 0`, so a Claude response that omits (or returns null/0 for) the top-level macros persists a **0-gram protein/carb/fat target** — a nonsensical 0g protein goal for a bodybuilder AND a reachable divide-by-zero in TodaysMealsWidget's unguarded `eatenProtein / dietPlan.protein_g` → `NaN%` bar. The sibling `calories_target` was hardened for exactly this in the 07-22 run via `sanitizeCalorieTarget`; the macros were left with the naive `?? 0`.)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** — nothing to implement, so this was a bug-hunt run.
+
+### STEP 1 — Regression guard (all PASS on a clean pull of `master`)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (324 tests, 48 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` run with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.)
+
+### STEP 2 — Area audited: (d/e) data lifecycle + widgets + localStorage stores, then the AI diet write seam
+Rotated away from the recent progress/check-in/diet-UI cluster. Audited and found **clean/well-guarded**: `createWidgetStore`/`localStore` (shape-checked corrupt storage), `useWaterLog`+`WaterWidget` (NaN/zero guards), `resetData` (validated weigh-in merge), `userSanitize`/`user:update` (drops non-finite → no NULLed columns), Settings profile edit (Steppers + sanitize seam), Onboarding numeric inputs (`? : undefined` + validation), `checkinEngine`/`weeklyRate`/`dates` (bodyweight & span guards), `WeeklyScorecardWidget`/`SleepWidget`/`WorkoutStats`/`TrainingVolumeWidget`/`swapAlternatives` (all divisions guarded or floored).
+
+**Real reachable bug found** at the AI diet-generation seam.
+
+### Root cause + fix
+`electron/ipc/planHandlers.ts` `plan:generateDiet` (Claude path), line ~189: after `generateDietWithClaude`, the INSERT bound
+`cr.protein_g ?? 0, cr.carbs_g ?? 0, cr.fat_g ?? 0`. `?? 0` only catches null/undefined and, worse, actively persists 0 when a macro is missing. The model's JSON is untrusted — it can omit or null any of these — so the stored plan gets a 0-gram macro target. Downstream:
+- Athlete sees "0g / 0g" protein target and a 0g goal everywhere.
+- `src/components/widgets/TodaysMealsWidget.tsx:69` `eatenProtein / dietPlan.protein_g` → `0/0 = NaN` (nothing logged yet) → `proteinPct = NaN` → `width: NaN%` (invalid CSS, blank bar) + red color. (Its sibling `TodaysMacrosWidget` guards with `protein_g > 0 ?`; this one doesn't.)
+
+**Fix (guard at the seam, mirroring the calories treatment):**
+- `electron/services/nutritionEngine.ts` — new `sanitizeMacroGrams(raw, mealsMacroSum)`: coerces an untrusted macro to a finite, non-negative value; falls back to the **summed per-meal grams** the model DID return (per-meal `protein_g`/`carbs_g`/`fat_g` are already stored in `cr.meals`) when the top-level value is missing/invalid/zero. Returns 0 only when both are absent (pathological empty plan).
+- `electron/ipc/planHandlers.ts:189` — replaced the three `?? 0` binds with `sanitizeMacroGrams(cr.<macro>, Σ per-meal <macro>)`. So an AI plan that lists meals with macros but omits the top-level totals now stores the correct summed targets instead of 0.
+
+Only the Claude generate-diet seam had this gap: the check-in and AI-refine paths derive protein/fat from bodyweight (already clamped) or fall back to the current plan, and the rule engine supplies sane values.
+
+### Tests added
+- `tests/unit/nutritionEngine.test.ts` — `sanitizeMacroGrams` cases: missing/null/0/NaN/Infinity/negative top-level all fall back to the summed per-meal grams; a valid value is preserved (and rounded); fully-empty → 0; result is always finite and ≥ 0.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (325 tests, +1 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-07-28 (BUG FIX — the "Projected to show" dashed line on the Progress weight chart never renders: the projected series carries a value only on the appended Show-Day row, so recharts' connectNulls has a single non-null point and draws no segment — the athlete sees a lone blue dot at the far right and an empty legend instead of the trajectory from their last weigh-in)
 
 ### STEP 0 — Backlog
