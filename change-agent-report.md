@@ -1,5 +1,43 @@
 # Change Agent Report
 
+## Run: 2026-07-29 #2 (BUG FIX — the Settings "Edit profile" save path persists `age` / `height_cm` / `weight_kg` **unclamped**. Onboarding gates these to age 16–80, height 100–250 cm, weight 30–300 kg via `validateStep`, but the Settings save calls `user:update` → `sanitizeUserUpdate`, which clamps `meal_count`/`snack_count`/`body_fat_pct` but NOT these three. The HTML `min`/`max` on the `<input type="number">` boxes only bound the spinner arrows — a *typed* extreme (e.g. `850` from a fat-fingered `85.0`, or a cm value typed into the imperial inches box) passes straight through `parseFloat`. `clampWeightKg` only FLOORS at 30 (no ceiling), so an 850-kg weight then drives `calcBMR`/TDEE to a ~13,000 kcal / ~1,955 g protein plan — a nonsensical, dangerous target. Same fields, two entry points, one guarded and one not.)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (`grep '^\- \[ \]'` → no match; all queue items are `- [x]`). Bug-hunt run.
+
+### STEP 1 — Regression guard (clean baseline on fresh rebased `master`)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (328 tests, 49 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.)
+
+### STEP 2 — Area audited: (d) onboarding + Settings + data lifecycle — chasing the explicit lead the 2026-07-29 run recorded
+Rotated off last run's dashboard-widget / Diet-flow cluster. The prior run's "Lead for a future run" named the exact seam: Settings profile editor has no upper-bound clamp on `weight_kg` / `height_cm` / `age`. Confirmed it reachable end-to-end:
+- `src/pages/Settings/index.tsx` — the age/height/weight inputs use `onChange={… parseFloat(e.target.value)}` with only HTML `min`/`max` attrs (age `16`/`80`, height `100`/`250` or imperial, weight `30`/`300` or imperial). Those attrs bound the spinner arrows only; a keyboard-typed `850` sets `editForm.weight_kg = 850`. `handleSaveProfile` (`:109`) then calls `updateUser({ ...editForm })` with no range check.
+- `electron/ipc/userSanitize.ts` `sanitizeUserUpdate` — clamps `meal_count` (1–20), `snack_count` (0–20), `body_fat_pct` (3–60), and drops non-finite numbers, but passed `age`/`height_cm`/`weight_kg` through verbatim.
+- `electron/services/nutritionEngine.ts` `clampWeightKg` (`:823`) guards downstream consumers but is a **floor only** (`>= 30 ? … : fallback`) — no ceiling — so `generateNutritionPlan` (`:872`) computes `protein_g = 850 * 2.3 = 1955` and `calcBMR(850, …) ≈ 9442 → TDEE ≈ 14,635`.
+- `src/pages/Onboarding/*` `validateStep` (`:22-24`) already enforces age 16–80 / height 100–250 / weight 30–300 and blocks the wizard — so the two entry points disagreed on the same invariant.
+
+Also re-verified already-guarded in this area: `sanitizeUserUpdate` non-finite drop (cleared field → NaN → dropped, stored value preserved), `resetAllData`, `clampMealCount`/`clampSnackCount`/`clampBodyFatPct`. No other unclamped required-column write found.
+
+**Real reachable bug found** at the `sanitizeUserUpdate` write seam.
+
+### STEP 3 — Root cause + fix
+- **Root cause:** `sanitizeUserUpdate` never clamped `age`/`height_cm`/`weight_kg` to the physiological ranges Onboarding enforces, and `clampWeightKg` (the only downstream guard) has no ceiling. A Settings save of a typed extreme persisted it and inflated the diet plan.
+- **Fix (minimum change, mirrors the existing `clampBodyFatPct` pattern in the same file):** added `clampProfileNumber(value, min, max)` plus `clampAge` (16–80, rounded), `clampHeightCm` (100–250), `clampWeightKgField` (30–300) to `electron/ipc/userSanitize.ts`, and wired them into `sanitizeUserUpdate`'s serialized map. The ranges are exactly Onboarding's `validateStep` bounds, so both entry points now agree. A non-finite value (cleared field → NaN) still returns `undefined` → dropped by the final filter → stored value preserved (never NULLing a required column — the existing behavior the 2 non-finite tests assert is unchanged).
+
+### Tests added — `tests/unit/userSanitize.test.ts`
+- `clamps out-of-range age / height_cm / weight_kg to the Onboarding bounds` — `{age:850, height_cm:900, weight_kg:850}` → `80/250/300`; `{age:4, height_cm:5, weight_kg:2}` → `16/100/30`. **Confirmed fail-first** (stashed the fix: `expected 850 to be 300` etc.), passes after.
+- `leaves in-range age / height_cm / weight_kg untouched` — `28/180/82.5` pass through verbatim.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (330 tests, +2 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-07-29 (BUG FIX — `TodaysMealsWidget`'s calorie/protein progress bars divide by `dietPlan.calories_target` / `dietPlan.protein_g` with NO `> 0` guard, while every sibling nutrition surface (TodaysMacrosWidget, Diet "Today's Intake") guards the identical division. A stored plan with `calories_target = 0` — a legacy/pre-sanitize row that `plan:recalculateMacros` floors only *locally* and never writes back — makes the dashboard bar render `width: NaN%` (blank bar) with 0 meals logged, or a falsely-**100%**-full bar once any meal is logged (`x/0 → Infinity → min(100, Infinity) = 100`). The same 0 plan shows correct 0% in the sibling widget beside it — a visible DB↔UI disagreement.)
 
 ### STEP 0 — Backlog

@@ -24,6 +24,34 @@ export function clampBodyFatPct(value: unknown): number | null | undefined {
   return Number.isFinite(n) ? Math.max(3, Math.min(60, n)) : null
 }
 
+// age / height_cm / weight_kg are guarded to a physiological range by the Onboarding
+// wizard's validateStep (age 16–80, height 100–250 cm, weight 30–300 kg), but the
+// Settings "Edit profile" save path calls user:update directly with NO equivalent
+// check — the HTML min/max on those <input type="number"> boxes only bound the
+// spinner arrows, so a typed-in extreme (e.g. "850" from a fat-fingered "85.0", or a
+// cm value typed into the imperial inches box) persists unclamped. clampWeightKg only
+// FLOORS at 30 (no ceiling), so an 850-kg weight then drives calcBMR/TDEE to a
+// ~13,000 kcal, ~1,955 g protein plan — a nonsensical, dangerous target. Clamp each
+// to the same Onboarding range at the write seam so both entry points agree. A
+// non-finite value (a cleared field → NaN) returns undefined so it is dropped by the
+// final filter and the stored value is preserved (never NULLing a required column).
+function clampProfileNumber(value: unknown, min: number, max: number): number | undefined {
+  if (value === undefined) return undefined
+  const n = Number(value)
+  if (!Number.isFinite(n)) return undefined
+  return Math.max(min, Math.min(max, n))
+}
+export function clampAge(value: unknown): number | undefined {
+  const n = clampProfileNumber(value, 16, 80)
+  return n === undefined ? undefined : Math.round(n)
+}
+export function clampHeightCm(value: unknown): number | undefined {
+  return clampProfileNumber(value, 100, 250)
+}
+export function clampWeightKgField(value: unknown): number | undefined {
+  return clampProfileNumber(value, 30, 300)
+}
+
 // Serialize + clean a partial user-update payload for binding.
 // - JSON array / boolean fields are stringified/int-coerced (node-sqlite3-wasm
 //   rejects raw arrays/booleans).
@@ -49,6 +77,9 @@ export function sanitizeUserUpdate(data: Record<string, unknown>): Record<string
     meal_count: clampMealCount(data.meal_count),
     snack_count: clampSnackCount(data.snack_count),
     body_fat_pct: clampBodyFatPct(data.body_fat_pct),
+    age: clampAge(data.age),
+    height_cm: clampHeightCm(data.height_cm),
+    weight_kg: clampWeightKgField(data.weight_kg),
   }
   return Object.fromEntries(
     Object.entries(serialized).filter(

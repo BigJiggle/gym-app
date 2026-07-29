@@ -47,6 +47,31 @@ describe('sanitizeUserUpdate — non-finite numeric guard', () => {
     expect(clean.body_fat_pct).toBeNull()
   })
 
+  // Onboarding's validateStep enforces age 16–80, height 100–250 cm, weight 30–300 kg
+  // and blocks progression outside those ranges. The Settings "Edit profile" save path
+  // has no such gate — the HTML min/max only bound the spinner arrows, so a typed-in
+  // extreme (e.g. "850" from a fat-fingered "85.0") reaches user:update unclamped and
+  // clampWeightKg only floors (no ceiling), inflating the diet plan to ~13,000 kcal /
+  // ~1,955 g protein. sanitizeUserUpdate must clamp these to the same Onboarding range.
+  it('clamps out-of-range age / height_cm / weight_kg to the Onboarding bounds', () => {
+    const high = sanitizeUserUpdate({ id: 1, age: 850, height_cm: 900, weight_kg: 850 })
+    expect(high.age).toBe(80)
+    expect(high.height_cm).toBe(250)
+    expect(high.weight_kg).toBe(300)
+
+    const low = sanitizeUserUpdate({ id: 1, age: 4, height_cm: 5, weight_kg: 2 })
+    expect(low.age).toBe(16)
+    expect(low.height_cm).toBe(100)
+    expect(low.weight_kg).toBe(30)
+  })
+
+  it('leaves in-range age / height_cm / weight_kg untouched', () => {
+    const clean = sanitizeUserUpdate({ id: 1, age: 28, height_cm: 180, weight_kg: 82.5 })
+    expect(clean.age).toBe(28)
+    expect(clean.height_cm).toBe(180)
+    expect(clean.weight_kg).toBe(82.5)
+  })
+
   it('serializes array fields and clamps meal/snack counts', () => {
     const clean = sanitizeUserUpdate({
       id: 1,
