@@ -65,8 +65,15 @@ export default function TodaysMealsWidget() {
             const meals = dietPlan.meals ?? []
             const eatenCals = meals.reduce((sum, m, i) => sum + (eatenIndices.has(i) ? m.calories : 0), 0)
             const eatenProtein = meals.reduce((sum, m, i) => sum + (eatenIndices.has(i) ? m.protein_g : 0), 0)
-            const calPct = Math.min(100, Math.round((eatenCals / dietPlan.calories_target) * 100))
-            const proteinPct = Math.min(100, Math.round((eatenProtein / dietPlan.protein_g) * 100))
+            // Guard the denominators: a stored plan can carry calories_target=0 /
+            // protein_g=0 (a legacy/pre-sanitize row — plan:recalculateMacros floors
+            // calories only locally and never writes calories_target back, so a 0
+            // persists until a check-in heals it). Unguarded, 0 meals → 0/0 = NaN →
+            // width:"NaN%" (invalid CSS, blank bar); ≥1 meal → x/0 = Infinity →
+            // min(100, Infinity) = 100 (a bar falsely reading fully complete).
+            // Mirror the sibling TodaysMacrosWidget / Diet "Today's Intake" guard.
+            const calPct = Math.min(100, dietPlan.calories_target > 0 ? Math.round((eatenCals / dietPlan.calories_target) * 100) : 0)
+            const proteinPct = Math.min(100, dietPlan.protein_g > 0 ? Math.round((eatenProtein / dietPlan.protein_g) * 100) : 0)
             const remainingCals = dietPlan.calories_target - eatenCals
             const remainingProtein = dietPlan.protein_g - eatenProtein
             return (

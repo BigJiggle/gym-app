@@ -1,5 +1,40 @@
 # Change Agent Report
 
+## Run: 2026-07-29 (BUG FIX — `TodaysMealsWidget`'s calorie/protein progress bars divide by `dietPlan.calories_target` / `dietPlan.protein_g` with NO `> 0` guard, while every sibling nutrition surface (TodaysMacrosWidget, Diet "Today's Intake") guards the identical division. A stored plan with `calories_target = 0` — a legacy/pre-sanitize row that `plan:recalculateMacros` floors only *locally* and never writes back — makes the dashboard bar render `width: NaN%` (blank bar) with 0 meals logged, or a falsely-**100%**-full bar once any meal is logged (`x/0 → Infinity → min(100, Infinity) = 100`). The same 0 plan shows correct 0% in the sibling widget beside it — a visible DB↔UI disagreement.)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all queue items are `- [x]`). Bug-hunt run.
+
+### STEP 1 — Regression guard (clean baseline on a fresh rebased `master`)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (325 tests, 48 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.)
+
+### STEP 2 — Area audited: (e) dashboard widgets + (a) Diet flows, rotating off last run's diet-write-seam + widget cluster
+Deep-read the training engine/session/stats/log-editor/handlers, checkin engine + handlers, shows/date logic, and Progress page — all found well-guarded (no new reachable defect). Then swept the nutrition/diet UI + dashboard widgets + Settings/onboarding for the fix target. Verified already-guarded: `meal_completions` (`UNIQUE(user_id,date,meal_index)` + `INSERT OR REPLACE`), settings upsert, `TodaysMacrosWidget`/`NextMealWidget`/`WeeklyScorecardWidget`/`PrepPaceWidget`/`QuickStatsWidget`/`PeakWeekWidget` divisions and empty states, `computeWeeklyWeightRate`/`weeksTracked`, `GroceryList` parsing, `refeed`/`swapAlternatives`. Ruled out a flagged `TrainingVolumeWidget:79` "population mismatch" as NOT reachable — `workout_logs.started_at` is `NOT NULL DEFAULT (datetime('now'))` and `ended_at` is always set by `workout:complete`, so every `completed` log has both timestamps and `sessionsWithDuration === thisWeekLogs.length` (no mismatch).
+
+**Real reachable bug found** at the `TodaysMealsWidget` render seam.
+
+### STEP 3 — Root cause + fix
+- **Root cause:** `src/components/widgets/TodaysMealsWidget.tsx:68-69` computed `calPct`/`proteinPct` as `eatenX / dietPlan.target` with no `> 0` guard. The `calories_target = 0` state is one the codebase explicitly defends against elsewhere (nutritionEngine `buildMeals` floor `:345`, `plan:recalculateMacros` floor `:528`, `checkin:submit` ratio floor, and the guards in `TodaysMacrosWidget:23-26` + Diet `index.tsx` "Today's Intake"). `plan:recalculateMacros` floors `calories` locally (`:528`) but its UPDATE (`:550-552`) writes only `protein_g/carbs_g/fat_g/meals` — it never persists `calories_target`, so a pre-existing 0 survives recalcs and refines (refine `:580-582` also never writes `calories_target`) until the next `checkin:submit` heals it via `Math.max(1200, …)`. In that window the dashboard divides by 0.
+- **Fix (minimum change, mirrors the sibling exactly):**
+  `const calPct = Math.min(100, dietPlan.calories_target > 0 ? Math.round((eatenCals / dietPlan.calories_target) * 100) : 0)` and the same `dietPlan.protein_g > 0 ? … : 0` for `proteinPct`. Now a 0-target plan clamps both bars to a valid `0%`, matching `TodaysMacrosWidget` beside it.
+
+### Tests added
+- `tests/unit/todaysMealsWidgetZeroTarget.test.tsx` (jsdom): renders `TodaysMealsWidget` with a `calories_target = 0 / protein_g = 0` plan. (1) no meals logged → all bar widths are a valid `0%` (not NaN/blank); (2) one meal logged against the 0 target → bars clamp to `0%` (was `100%` before the fix — the failing case); (3) a valid 2000-kcal plan with 1000 kcal logged still renders `50%`. Test 2 failed against the pre-fix code (`expected '100%' to be '0%'`) and passes after.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (328 tests, +3 new)
+- `npx electron-vite build` → PASS
+
+### Lead for a future run (NOT fixed this run — one fix per run)
+Settings profile editor has **no upper-bound clamp** on `weight_kg` / `height_cm` / `age`: `clampWeightKg` (`nutritionEngine.ts:823`) only floors at 30 (no ceiling), `sanitizeUserUpdate` doesn't range-check these, and the plan-calorie `Math.max(1200, …)` is a floor only. A typo (e.g. `850` for `85.0`, or a cm value typed into the imperial inches box) persists and inflates the diet plan to a ~13,000 kcal / ~1,955 g protein target. Onboarding is protected by `validateStep`; the Settings save path is not. Candidate: add `clampWeightKg` upper bound + `clampHeight`/`clampAge` guards at the `sanitizeUserUpdate` seam.
+
+---
+
 ## Run: 2026-07-28 #2 (BUG FIX — the AI diet-generation write seam stores `cr.protein_g ?? 0` / `cr.carbs_g ?? 0` / `cr.fat_g ?? 0`, so a Claude response that omits (or returns null/0 for) the top-level macros persists a **0-gram protein/carb/fat target** — a nonsensical 0g protein goal for a bodybuilder AND a reachable divide-by-zero in TodaysMealsWidget's unguarded `eatenProtein / dietPlan.protein_g` → `NaN%` bar. The sibling `calories_target` was hardened for exactly this in the 07-22 run via `sanitizeCalorieTarget`; the macros were left with the naive `?? 0`.)
 
 ### STEP 0 — Backlog
