@@ -33,8 +33,10 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
     if (latestCheckin) {
       const energyAvg = (((latestCheckin.energy_level as number) ?? 3) + ((latestCheckin.sleep_quality as number) ?? 3)) / 2
       if (energyAvg < 2.5) {
-        // Low recovery: force deload phase
-        ;(input as any).weeks_out = 1
+        // Low recovery: force a deload PHASE. Use force_deload (not weeks_out=1)
+        // so the plan's weeks_total keeps the real prep length instead of
+        // collapsing to a 1-week plan (which broke the Duration card / prep-%).
+        ;(input as any).force_deload = true
       } else if (((latestCheckin.training_adherence as number) ?? 80) > 90) {
         // High adherence: slight volume bump
         input.training_experience_years = Math.min(10, input.training_experience_years + 0.5)
@@ -49,6 +51,7 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
         training_frequency: user.training_frequency, training_experience_years: user.training_experience_years,
         equipment_access: user.equipment_access, split_preference: user.split_preference,
         goal: user.goal, division: user.division, weeks_out: input.weeks_out,
+        force_deload: (input as any).force_deload === true,
         exercises_per_session: (user.exercises_per_session as number) ?? 6,
         sets_per_exercise: (user.sets_per_exercise as number) ?? 4,
         recovery_notes: (user.recovery_notes as string) || undefined,

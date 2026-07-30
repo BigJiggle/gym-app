@@ -1,5 +1,46 @@
 # Change Agent Report
 
+## Run: 2026-07-30 #2 (BUG FIX — the low-recovery deload override in `plan:generateTraining` forces the deload PHASE by faking `weeks_out = 1`, but `generateTrainingPlan` derives the plan's DURATION from the same field — `weeks_total = Math.min(weeks_out, 16)` — so the hack collapses the stored plan length to **1 week**. A user with a real prep (e.g. 12 weeks out) who logs a low energy + sleep check-in and then regenerates training gets a plan with `weeks_total = 1`. That shows "1 weeks" in the Training **Duration** card and pins the Show-Day countdown's prep-% at `0%` for the rest of prep (`weeksDone = max(0, 1 − weeksOut) = 0`) — a DB↔UI desync. The same field also drove the Claude prompt (`weeks_out=1` → the prompt told Claude `weeks_total=1`), so the Claude path was corrupted identically. Fixed with a `force_deload` flag that forces only the phase, preserving the true `weeks_total`.)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all queue items are `- [x]`). Bug-hunt run.
+
+### STEP 1 — Regression guard (clean baseline on fresh rebased `master`)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (331 tests, 49 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.)
+
+### STEP 2 — Area audited: (b) training engine + workout/session flows
+Rotated off the last three runs' (c) check-in/adaptive-nutrition and (d) Settings/onboarding clusters. Deep-read `trainingEngine.ts` (split builders, `getExercises`/`getExercisesByMuscleGroup`, `getSets`/`buildExercises`, `determinePhase`, the freq/exPerSession/setsPerEx/maxSets guards), `workoutHandlers.ts` (all 11 IPC handlers), `WorkoutSession.tsx` / `WorkoutLogEditor.tsx` / `SessionEditor.tsx` / `WorkoutStats.tsx`, the `Training/index.tsx` widgets + session/history rendering, and the utils (`clampSetCount`, `parseRepMidpoint`, `detectNewPRs`, `dates`). Nearly everything is already well-hardened by prior runs (empty-session guards for every split/equipment, undefined→NULL set-update binding, clamped set counts, NaN-safe rep parsing, all-time PR comparison, local-date handling).
+
+Investigated but found NOT reachable/harmful this run: an empty-exercise session (SessionEditor can save one) renders a `width: NaN%` progress bar — but jsdom **and** real browsers silently drop an invalid `NaN%` width, so the bar just reads 0% (a non-defect); noted as a minor UX lead only.
+
+The one **real, reachable** backend defect: the check-in-driven deload override corrupting `weeks_total`.
+
+### STEP 3 — Root cause + fix
+- **Root cause:** `plan:generateTraining` (`electron/ipc/planHandlers.ts:35-37`) forced a recovery deload by setting `input.weeks_out = 1`. `generateTrainingPlan` (`trainingEngine.ts`) derives BOTH the phase (`determinePhase(weeks_out)`) AND the duration (`weeks_total = Math.min(weeks_out, 16)`) from `weeks_out`, so the phase-forcing hack silently overwrote the plan's real duration with 1. The Claude prompt (`claudeService.ts`) likewise derived `prepPhase` and `weeks_total` from `weeks_out`, so passing `weeks_out=1` corrupted that path too.
+- **Fix (minimum correct change — decouple phase-forcing from duration):**
+  - `electron/services/trainingEngine.ts` — added an optional `force_deload?: boolean` to `TrainingInput`; `generateTrainingPlan` now computes `phase = input.force_deload ? 'deload' : determinePhase(...)`, leaving `weeks_total` derived from the real `weeks_out`.
+  - `electron/services/claudeService.ts` — `generateWorkoutWithClaude` now reads `workoutProfile.force_deload`; when set, `prepPhase = 'deload'` while `weeks_out`/`weeks_total` stay the real prep length.
+  - `electron/ipc/planHandlers.ts` — the low-recovery branch now sets `(input as any).force_deload = true` instead of `weeks_out = 1`, and passes `force_deload` into the Claude `workoutProfile`. Real `weeks_out` is preserved for both `weeks_total` and the stored `generated_at_weeks_out`. The `else` branch (high-adherence experience bump) is unchanged.
+  - Only this one handler applied the override (confirmed by grep); `regenerateAll`, the show-change recalc, and the AI-request path use the real `weeks_out` and are unaffected.
+
+### Tests added — `tests/unit/trainingEngine.test.ts`
+- `force_deload sets the deload phase without collapsing weeks_total` — `{weeks_out:12, force_deload:true}` → phase `deload`, `weeks_total` **12** (was the corrupted 1); no-show + `force_deload` → phase `deload`, `weeks_total` 12 (default). **Confirmed fail-first** (reverted the engine phase line: `expected 'strength' to be 'deload'`), passes after.
+- `without force_deload the phase follows weeks_out (unchanged behavior)` — `{weeks_out:12}` → phase `strength`, `weeks_total` 12 (regression guard on the default path).
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (333 tests, +2 new)
+- `npx electron-vite build` → PASS
+
+### Lead for a future run
+SessionEditor lets a user remove **all** exercises and Save (`plan:updateSession` stores `[]` verbatim), and `handleStartWorkout` will then start a workout on a zero-exercise session — creating an in-progress `workout_logs` row that can only be Abandoned (uncompletable, `canComplete` false) and that the auto-resume keeps restoring. A future (b) run could guard `handleStartWorkout` (or `plan:updateSession`) against an empty session. The `width: NaN%` it also produces is inert (browsers drop it), so the log-orphan is the real harm.
+
+---
+
 ## Run: 2026-07-30 (BUG FIX — `clampWeightKg`, the *shared* bodyweight→macro guard, floors at 30 kg but has **no ceiling**, so the check-in adaptive recalc and the manual `plan:recalculateMacros` derive protein/fat from an **unbounded** check-in weight. The Check-In page's `toKg` only rejects `≤ 0` (no upper bound), so a fat-fingered `850` — meant `85.0`, or an lbs value typed into a kg field — persists a check-in weight of 850 kg and drives `protein_g = round(850·2.3) = 1955`, `fat_g = round(850·0.9) = 765`, `carbs_g = 0` into the diet plan: a nonsensical, dangerous macro target. The 07-29 #2 run clamped the *user-record* write via `clampWeightKgField` (30–300) but explicitly noted `clampWeightKg` "only FLOORS at 30 (no ceiling)" — this is that same invariant, left open on the check-in / recalc entry points.)
 
 ### STEP 0 — Backlog

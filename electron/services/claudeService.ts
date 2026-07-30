@@ -120,9 +120,13 @@ export async function generateWorkoutWithClaude(
   const defaultSets = (workoutProfile.sets_per_exercise as number) ?? 4
   const maxSets = (workoutProfile.max_sets_per_exercise as number) ?? defaultSets + 1
 
-  // Determine prep phase from weeks_out for phase-specific programming
+  // Determine prep phase from weeks_out for phase-specific programming.
+  // `force_deload` (a low-recovery check-in) overrides only the PHASE — weeks_out
+  // stays the real prep length so weeks_total below isn't collapsed to a 1-week plan.
   const weeksOut = workoutProfile.weeks_out as number | undefined
-  const prepPhase = weeksOut !== undefined
+  const prepPhase = workoutProfile.force_deload === true
+    ? 'deload'
+    : weeksOut !== undefined
     ? (weeksOut > 16 ? 'hypertrophy' : weeksOut > 8 ? 'strength' : weeksOut > 3 ? 'peak' : 'deload')
     : (workoutProfile.goal === 'cut' ? 'strength' : 'hypertrophy')
 

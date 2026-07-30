@@ -209,6 +209,30 @@ describe('trainingEngine', () => {
     }
   })
 
+  // Regression: forcing a recovery deload (a low-recovery check-in) must change
+  // only the PHASE, never the plan's DURATION. The handler used to fake the
+  // deload by setting weeks_out = 1, but weeks_total is derived from weeks_out
+  // (Math.min(weeks_out, 16)) — so that hack collapsed a 12-week prep plan's
+  // stored weeks_total to 1, which showed "1 weeks" in the Duration card and
+  // pinned the show-day prep-% readout at 0% for the rest of the prep. The
+  // force_deload flag forces the phase while preserving the true weeks_total.
+  it('force_deload sets the deload phase without collapsing weeks_total', () => {
+    const forced = generateTrainingPlan({ ...BASE_INPUT, weeks_out: 12, force_deload: true })
+    expect(forced.phase).toBe('deload')
+    expect(forced.weeks_total).toBe(12)   // real prep length preserved (was 1 under the old hack)
+
+    // No-show fallback: force_deload still yields deload, weeks_total stays the default.
+    const forcedNoShow = generateTrainingPlan({ ...BASE_INPUT, force_deload: true })
+    expect(forcedNoShow.phase).toBe('deload')
+    expect(forcedNoShow.weeks_total).toBe(12)
+  })
+
+  it('without force_deload the phase follows weeks_out (unchanged behavior)', () => {
+    const plan = generateTrainingPlan({ ...BASE_INPUT, weeks_out: 12 })
+    expect(plan.phase).toBe('strength')  // determinePhase(12) → strength
+    expect(plan.weeks_total).toBe(12)
+  })
+
   // A valid hard cap must still be enforced (guards against the fix over-reaching).
   it('enforces a valid max_sets_per_exercise cap on every exercise', () => {
     const plan = generateTrainingPlan({

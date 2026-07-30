@@ -10,6 +10,13 @@ export interface TrainingInput {
   sets_per_exercise?: number  // user preference — overrides default when set
   max_sets_per_exercise?: number  // hard cap across all exercises
   recovery_notes?: string  // injury/recovery context passed to generation
+  // Force a recovery deload PHASE (low-recovery check-in) without altering the
+  // plan's DURATION. Callers used to fake this by setting weeks_out = 1, but
+  // weeks_total is derived from weeks_out (Math.min(weeks_out, 16)), so that hack
+  // collapsed the stored plan length to 1 week — corrupting the Duration card and
+  // the show-day prep-% readout. This flag drives only the phase; weeks_total
+  // still reflects the real weeks_out.
+  force_deload?: boolean
 }
 
 export interface Exercise {
@@ -503,7 +510,7 @@ export function generateTrainingPlan(input: TrainingInput): TrainingPlan {
   // empty session list and silently produce a training plan with zero workouts.
   const rawFreq = Math.round(Number(input.training_frequency))
   const freq = Number.isFinite(rawFreq) ? Math.min(6, Math.max(2, rawFreq)) : 4
-  const phase = determinePhase(input.weeks_out, input.goal)
+  const phase = input.force_deload ? 'deload' : determinePhase(input.weeks_out, input.goal)
   const weeksTotal = input.weeks_out ? Math.min(input.weeks_out, 16) : 12
   const pref = input.split_preference ?? 'auto'
   // Guard against a non-positive / non-finite exercises-per-session. A hand-typed
