@@ -140,6 +140,16 @@ describe('clampWeightKg', () => {
   it('honors a custom fallback', () => {
     expect(clampWeightKg(0, 65)).toBe(65)
   })
+
+  // A check-in / manual-recalc weight is unbounded on the high end at the input
+  // boundary (toKg only rejects <= 0); a fat-fingered 850 (meant 85.0) or an
+  // lbs-as-kg entry must not drive protein_g = 850*2.3 = 1955 into the diet plan.
+  // The ceiling mirrors Onboarding/Settings (30–300 kg) so both entry points agree.
+  it('clamps an implausibly high weight to the 300 kg ceiling', () => {
+    expect(clampWeightKg(850)).toBe(300)
+    expect(clampWeightKg(301)).toBe(300)
+    expect(clampWeightKg(300)).toBe(300)
+  })
 })
 
 // ── Main-meal count clamp: 1–20, shared by generation and AI regeneration ─────

@@ -1,5 +1,43 @@
 # Change Agent Report
 
+## Run: 2026-07-30 (BUG FIX — `clampWeightKg`, the *shared* bodyweight→macro guard, floors at 30 kg but has **no ceiling**, so the check-in adaptive recalc and the manual `plan:recalculateMacros` derive protein/fat from an **unbounded** check-in weight. The Check-In page's `toKg` only rejects `≤ 0` (no upper bound), so a fat-fingered `850` — meant `85.0`, or an lbs value typed into a kg field — persists a check-in weight of 850 kg and drives `protein_g = round(850·2.3) = 1955`, `fat_g = round(850·0.9) = 765`, `carbs_g = 0` into the diet plan: a nonsensical, dangerous macro target. The 07-29 #2 run clamped the *user-record* write via `clampWeightKgField` (30–300) but explicitly noted `clampWeightKg` "only FLOORS at 30 (no ceiling)" — this is that same invariant, left open on the check-in / recalc entry points.)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all queue items are `- [x]`). Bug-hunt run.
+
+### STEP 1 — Regression guard (clean baseline on fresh rebased `master`)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (330 tests, 49 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.)
+
+### STEP 2 — Area audited: (c) check-in + Progress + adaptive nutrition
+Rotated off the last two runs' (d) Settings/onboarding and (e)+(a) widgets/Diet clusters. Deep-read `checkinEngine.ts` (weight-trend normalization, `weightTrendPct`/`weightTrend`, recovery/stress/adherence notes), `checkinHandlers.ts` (submit / submitMissed / update — duplicate-day guard, week_number renumber-on-date-edit, non-finite drop all confirmed guarded), `checkinSchedule.ts` (`getNextCheckinDate`/`computeMissedSlots` — anchor walk-back, late≠missed, biweekly cadence all correct), `progressHandlers.ts`, `Progress/index.tsx`, and the `weeklyRate`/`weeksTracked` utils (both null-guarded and span-based). All well-guarded.
+
+The one **real, reachable** defect: the adaptive-nutrition macro derivation trusts the check-in weight with no upper bound. Traced end-to-end:
+- **Input boundary** `src/pages/CheckIn/index.tsx` `toKg` (`:153`) and the edit path (`:508`) reject only `≤ 0` — a typed `850` passes through.
+- **Adaptive recalc** `electron/ipc/checkinHandlers.ts:137` — `weightKg = clampWeightKg(data.weight_kg, …)`; `protein_g = round(weightKg·2.3)`.
+- **Manual recalc** `electron/ipc/planHandlers.ts:534` — same, from `latestCheckin.weight_kg`.
+- **The guard** `electron/services/nutritionEngine.ts:823` `clampWeightKg` — floors at 30 → `fallback`, but returns any high value verbatim. Its own docstring says it is "Shared by every call site that derives protein/fat directly from bodyweight (plan generation, check-in macro recalculation, manual macro recalculation)" — it was guarding one end only.
+
+### STEP 3 — Root cause + fix
+- **Root cause:** `clampWeightKg` had a floor but no ceiling, and the check-in weight is unbounded at its input boundary — so a typed extreme reached the macro math and inflated the stored diet plan.
+- **Fix (minimum change, at the documented shared seam):** `electron/services/nutritionEngine.ts` — added `export const MAX_WEIGHT_KG = 300` (matches Onboarding/Settings `validateStep`) and changed `clampWeightKg` to cap the high end: missing/`<30`/non-finite → `fallback` (unchanged); otherwise `Math.min(weight, 300)`. This closes the ceiling gap for **all three** call sites at once (plan generation, check-in recalc, manual recalc) and makes the check-in entry point agree with the already-clamped user-record write. Existing floor/fallback behavior (0/-10/NaN/undefined → 70; custom fallback) is preserved exactly.
+
+### Tests added — `tests/unit/nutritionEngine.test.ts`
+- `clamps an implausibly high weight to the 300 kg ceiling` — `clampWeightKg(850) → 300`, `(301) → 300`, `(300) → 300`. **Confirmed fail-first** (stashed the fix: `expected 850 to be 300`), passes after.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (331 tests, +1 new)
+- `npx electron-vite build` → PASS
+
+### Lead for a future run
+The *stored* check-in weight itself is still unbounded (the 850 kg row persists and displays as "Current Weight" in Progress and feeds the raw trend/projection). Only the macro derivation is now bounded. A future (c)/(d) run could clamp the check-in weight at its input/write boundary (30–300, mirroring `clampWeightKgField`) so the displayed weight agrees too.
+
+---
+
 ## Run: 2026-07-29 #2 (BUG FIX — the Settings "Edit profile" save path persists `age` / `height_cm` / `weight_kg` **unclamped**. Onboarding gates these to age 16–80, height 100–250 cm, weight 30–300 kg via `validateStep`, but the Settings save calls `user:update` → `sanitizeUserUpdate`, which clamps `meal_count`/`snack_count`/`body_fat_pct` but NOT these three. The HTML `min`/`max` on the `<input type="number">` boxes only bound the spinner arrows — a *typed* extreme (e.g. `850` from a fat-fingered `85.0`, or a cm value typed into the imperial inches box) passes straight through `parseFloat`. `clampWeightKg` only FLOORS at 30 (no ceiling), so an 850-kg weight then drives `calcBMR`/TDEE to a ~13,000 kcal / ~1,955 g protein plan — a nonsensical, dangerous target. Same fields, two entry points, one guarded and one not.)
 
 ### STEP 0 — Backlog

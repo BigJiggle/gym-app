@@ -815,13 +815,25 @@ export function buildMealsPublic(
   return buildMeals(totalCal, protein_g, carbs_g, fat_g, mealCount, dietary_preference, food_exclusions, food_preferences, cooking_time_pref, snack_count, culture_pref, dietary_restrictions, meal_prep_style)
 }
 
+// Upper bound on bodyweight used for macro derivation — matches the Onboarding /
+// Settings validation range (30–300 kg). A check-in / manual-recalc weight is
+// unbounded on the high end at the input boundary, so this is where the ceiling
+// is enforced for the macro math.
+export const MAX_WEIGHT_KG = 300
+
 // Guard against absent / nonsensical bodyweight. A weight of 0 (or NaN) would
 // yield 0g protein and 0g fat — physiologically impossible and dangerous to
-// present to a user — and could propagate NaN into downstream macro math.
+// present to a user — and could propagate NaN into downstream macro math. An
+// implausibly high weight (e.g. a fat-fingered 850 kg, or an lbs value typed
+// into a kg field) is just as dangerous the other way: protein_g = 850*2.3 =
+// 1955g. Floor to `fallback` for missing/too-low values (no signal), and cap
+// too-high values at MAX_WEIGHT_KG (the athlete is heavy but the value is
+// out of range) so the two entry points agree with Onboarding/Settings.
 // Shared by every call site that derives protein/fat directly from bodyweight
 // (plan generation, check-in macro recalculation, manual macro recalculation).
 export function clampWeightKg(weightKg: number | undefined | null, fallback = 70): number {
-  return Number.isFinite(weightKg) && (weightKg as number) >= 30 ? (weightKg as number) : fallback
+  if (!Number.isFinite(weightKg) || (weightKg as number) < 30) return fallback
+  return Math.min(weightKg as number, MAX_WEIGHT_KG)
 }
 
 // The absolute minimum daily calorie target the app will ever store or build a
