@@ -252,6 +252,21 @@ export function registerShowHandlers(ipcMain: IpcMain): void {
       }
     }
 
+    // Another upcoming show remains. If the DELETED show was the primary,
+    // syncPrimaryToNearest just re-pointed users.show_date at the next upcoming
+    // show — whose weeks-out drives the diet's phase + calorie deficit. The stored
+    // diet plan was generated for the deleted show's weeks-out, so it must be
+    // regenerated for the new context; otherwise the Diet page keeps serving the
+    // deleted show's macros while the sidebar countdown / prep timeline show the new
+    // show — the same DB↔UI desync shows:cancelShow and setPrimaryShow already fix.
+    if ((show.is_primary as number) === 1) {
+      const user = db.prepare('SELECT * FROM users WHERE id=?').get([show.user_id as number]) as Record<string, unknown> | null
+      if (user?.show_date) {
+        const weeksOut = computeWeeksOut(user.show_date as string)
+        regenerateDietForGoal(db, show.user_id as number, user.goal as string, weeksOut)
+      }
+    }
+
     return { shows: remaining, message: null, needs_goal_selection: false }
   })
 

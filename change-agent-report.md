@@ -1,5 +1,42 @@
 # Change Agent Report
 
+## Run: 2026-07-31 (BUG FIX — `shows:delete` is the ONE show-context mutation that failed to regenerate the diet plan. The Settings show list renders a **Delete** button next to **Cancel Show** for every upcoming show, including the primary. When a user has ≥2 upcoming shows and DELETES the primary (nearer) one, `syncPrimaryToNearest` re-points `users.show_date`/`division` at the next upcoming show — but the delete handler returned without regenerating the diet, so the stored `diet_plans` row (its `generated_at_weeks_out`, phase, and calorie deficit) stayed pinned to the DELETED show's weeks-out. The sidebar countdown, prep timeline, and Peak-Week widget all followed the new show while the Diet page kept serving the deleted show's macros — a persistent DB↔UI desync (the Diet page reloads the STORED plan on mount, so it never self-heals). `shows:add`, `shows:update` (date change), `shows:cancelShow` (→ next show), and `setPrimaryShow` all already regenerate; delete was the lone gap. Fixed by regenerating the diet in the delete handler's "another upcoming show remains" branch when the deleted show was the primary.)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all queue items are `- [x]`). Bug-hunt run.
+
+### STEP 1 — Regression guard (clean baseline on fresh rebased `master`)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (333 tests, 49 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.)
+
+### STEP 2 — Area audited: (f) shows/competition + date/week logic
+Rotated off the last runs' (b) training-engine and (c) check-in/adaptive-nutrition clusters. Deep-read `showDates.ts` (`weeksUntilShow`/`localToday`), `showHandlers.ts` (all 6 IPC handlers + `syncPrimaryToNearest`/`regenerateDietForGoal`/`setPrimaryShow`/`transitionTrainingToOffSeason`), `competitionPrep.ts` (`getWeekGuidance`/`buildPrepTimeline`/`PEAK_WEEK_PROTOCOL`), `utils/dates.ts` (`getShowCountdown` local-midnight/noon math), the show/countdown widgets (`PeakWeekWidget`, `PrepGuidanceWidget`, `PrepPaceWidget`, `QuickStatsWidget`, `WeeklyScorecardWidget`, `NavSidebar`), the Training "Show Day Countdown" card, and `checkinSchedule.ts` week-rollover helpers. Nearly everything is already well-hardened by prior runs (local-date convention everywhere, past-show `isPast` guards, DST-safe day math, per-period missed-slot cadence).
+
+Investigated but found NOT a defect: the `PeakWeekWidget` day-mapping `daysOut = max(1, totalDays)` looked off-by-one (day-before-show maps to the "Show Day" protocol), but the Education page (`index.tsx:944`) renders the same `PEAK_WEEK_PROTOCOL.days` treating `daysOut` as literal days-until-show with `daysOut:1` deliberately doubling as "Show Day" — so the widget is consistent with the app's own model, not a bug. Left it alone per "do not fix correct code."
+
+The one **real, reachable** backend defect: `shows:delete` not regenerating the diet when the deleted primary show has a remaining upcoming successor.
+
+### STEP 3 — Root cause + fix
+- **Root cause:** `electron/ipc/showHandlers.ts` `ipcMain.handle('shows:delete', …)` — after deleting a show and calling `syncPrimaryToNearest` (which re-points `users.show_date`/`division`), the `hasUpcoming === true` branch returned `{ shows, message: null, needs_goal_selection: false }` with no diet regeneration. Every sibling handler (`cancelShow`'s `next_show` branch at ~L281–286, `setPrimaryShow` at ~L324–331, `add`, `update`) regenerates via `regenerateDietForGoal`; delete was the lone omission.
+- **Fix (minimum change — mirror the sibling handlers, guarded to the buggy path):** in the delete handler's "another upcoming show remains" branch, when the DELETED show was the primary (`show.is_primary === 1`, read from the row fetched before deletion), fetch the (freshly re-pointed) user, compute `weeksOut = computeWeeksOut(user.show_date)`, and call `regenerateDietForGoal`. Guarding on `is_primary` keeps deleting a NON-primary show a no-op for the diet (no needless churn / meal-completion clearing), so only the actual desync path regenerates. `clearOrphanedMealCompletions` (invoked inside `regenerateDietForGoal`) is a no-op when the meal count is unchanged, so completions are preserved.
+
+### Tests added — `tests/unit/showDeleteDiet.test.ts` (new)
+- `re-points the diet plan at the next upcoming show (no stale weeks-out / phase)` — seeds a near (~2 wk out) primary show + a far (~18 wk out) show, generates the near diet, invokes the REAL registered `shows:delete` handler (captured via a fake `ipcMain`) on the primary, and asserts `users.show_date`/`division` AND `diet_plans.generated_at_weeks_out` both follow the far show. **Confirmed fail-first** (reverted the fix: `expected 2 to be 18`), passes after.
+- `leaves the diet untouched when a NON-primary show is deleted (no needless churn)` — deleting the far (non-primary) show leaves the primary and the diet's `generated_at_weeks_out` unchanged (regression guard on the `is_primary` guard).
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (335 tests, +2 new)
+- `npx electron-vite build` → PASS
+
+### Lead for a future run
+The frontend `deleteShow` store action (`src/store/userStore.ts`) only re-fetches the diet plan when the handler returns a `message` or `needs_goal_selection` — neither is set on the "another show remains" branch, so the in-memory `planStore.dietPlan` stays stale until the Diet page remounts and reloads it (which it does on mount, so the persisted fix above is the real correctness fix). A future run could make `deleteShow` always refresh `dietPlan`/`trainingPlan` after a delete so dashboard widgets update immediately without a navigation — mirroring how `setPrimaryShow`'s store action also skips the refresh (same transient-staleness pattern).
+
+---
+
 ## Run: 2026-07-30 #2 (BUG FIX — the low-recovery deload override in `plan:generateTraining` forces the deload PHASE by faking `weeks_out = 1`, but `generateTrainingPlan` derives the plan's DURATION from the same field — `weeks_total = Math.min(weeks_out, 16)` — so the hack collapses the stored plan length to **1 week**. A user with a real prep (e.g. 12 weeks out) who logs a low energy + sleep check-in and then regenerates training gets a plan with `weeks_total = 1`. That shows "1 weeks" in the Training **Duration** card and pins the Show-Day countdown's prep-% at `0%` for the rest of prep (`weeksDone = max(0, 1 − weeksOut) = 0`) — a DB↔UI desync. The same field also drove the Claude prompt (`weeks_out=1` → the prompt told Claude `weeks_total=1`), so the Claude path was corrupted identically. Fixed with a `force_deload` flag that forces only the phase, preserving the true `weeks_total`.)
 
 ### STEP 0 — Backlog
