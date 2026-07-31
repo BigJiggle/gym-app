@@ -550,9 +550,16 @@ Ensure every exercise respects the constraints above while maintaining phase-app
       const carb = Math.max(0, Math.round((cal - pro * 4 - fat * 9) / 4))
       return { ...m, protein_g: pro, fat_g: fat, carbs_g: carb }
     })
+    // Persist the floored calorie target too. A legacy/pre-sanitize row can carry
+    // calories_target=0; `calories` above floors it to MIN_CALORIE_TARGET for the
+    // macro math, but if we don't write it back the stored target stays 0 while the
+    // recomputed protein/carbs/fat reflect a 1200-kcal plan — a DB↔UI desync (the
+    // Diet page shows a 0-kcal target beside non-zero macros). checkin:submit already
+    // writes calories_target back for exactly this reason; mirror it so recalc truly
+    // self-heals the row as its comment promises.
     db.prepare(
-      'UPDATE diet_plans SET protein_g=?, carbs_g=?, fat_g=?, meals=? WHERE user_id=? AND id=(SELECT id FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1)'
-    ).run([protein_g, carbs_g, fat_g, JSON.stringify(meals), userId, userId])
+      'UPDATE diet_plans SET calories_target=?, protein_g=?, carbs_g=?, fat_g=?, meals=? WHERE user_id=? AND id=(SELECT id FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1)'
+    ).run([calories, protein_g, carbs_g, fat_g, JSON.stringify(meals), userId, userId])
     const saved = db.prepare('SELECT * FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1').get(userId) as Record<string,unknown>
     return { ...saved, meals: JSON.parse(saved.meals as string) }
   })

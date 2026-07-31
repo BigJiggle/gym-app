@@ -1,5 +1,34 @@
 # Change Agent Report
 
+## Run: 2026-07-31 #2 (BUG FIX — `plan:recalculateMacros` does NOT self-heal a legacy `calories_target=0` row despite a comment claiming it does. The Diet page's "⟳ Recalculate Macros" button recomputes protein/carbs/fat from the athlete's current body weight while keeping their meal structure. A legacy/pre-sanitize `diet_plans` row can carry `calories_target=0`; the handler floors that to `MIN_CALORIE_TARGET` (1200) *locally* for the ratio math — and its own comment says "Self-heals such a row to a valid target on recalculation" — but the `UPDATE` only wrote `protein_g`/`carbs_g`/`fat_g`/`meals`, never `calories_target`. So the stored target stayed **0** while the recomputed macros reflected a full 1200-kcal plan: the Diet page then renders a "0 kcal" daily target beside a non-zero ~196g protein / ~331g carb target (internal inconsistency), and every calorie-scaling consumer keeps dividing by a stored 0. The sibling check-in adaptive recalc (`checkin:submit`) already writes `calories_target` back after flooring — recalc was the lone gap. Fixed by adding `calories_target=?` (the floored `calories`) to the recalc UPDATE.)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all queue items are `- [x]`). Bug-hunt run.
+
+### STEP 1 — Regression guard
+Clean pull of `master`. Baseline all green before any change:
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (335 tests, 50 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` run with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.)
+
+### STEP 2 — Area audited: (a) nutrition engine + Diet flows
+Rotated off last run's (f) shows/competition. Read deeply: `nutritionEngine.ts` (BMR/TDEE, phase-aware deficit, `buildMeals`, meal templates, portion/snack math, clamps), `planHandlers.ts` (generate/recalc/refine/AI-request diet paths), `checkinHandlers.ts` + `checkinEngine.ts` (adaptive macro recalc), `mealCompletionHandlers.ts`, and the Diet page (`index.tsx` intake math, `refeed.ts`, `GroceryList.tsx`). The engine and most handlers are heavily hardened (calorie/macro/weight/meal-count sanitizers, div-by-zero guards). The one genuine defect: the manual macro-recalc handler's incomplete self-heal (above).
+
+### STEP 3 — Root cause & fix
+`electron/ipc/planHandlers.ts` `plan:recalculateMacros` (~line 553): the `UPDATE diet_plans SET …` omitted `calories_target`, so a floored value was computed but never persisted. Added `calories_target=?` bound to the floored `calories` local — a no-op for any valid (>= 1200) plan and a true self-heal for a 0/sub-floor legacy row. Mirrors `checkin:submit`'s recalc, which already writes it back.
+
+### Tests added
+`tests/unit/recalculateMacrosZeroTarget.test.ts` — exercises the REAL handler against an in-memory `node-sqlite3-wasm` DB: (1) a stored `calories_target=0` row is healed to `>= MIN_CALORIE_TARGET` with body-weight-derived protein (85 kg → 196g); (2) a normal 2400-kcal plan's target is left unchanged. Verified the test FAILS without the fix (`expected 0 to be >= 1200`) and PASSES with it.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (337 tests, +2 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-07-31 (BUG FIX — `shows:delete` is the ONE show-context mutation that failed to regenerate the diet plan. The Settings show list renders a **Delete** button next to **Cancel Show** for every upcoming show, including the primary. When a user has ≥2 upcoming shows and DELETES the primary (nearer) one, `syncPrimaryToNearest` re-points `users.show_date`/`division` at the next upcoming show — but the delete handler returned without regenerating the diet, so the stored `diet_plans` row (its `generated_at_weeks_out`, phase, and calorie deficit) stayed pinned to the DELETED show's weeks-out. The sidebar countdown, prep timeline, and Peak-Week widget all followed the new show while the Diet page kept serving the deleted show's macros — a persistent DB↔UI desync (the Diet page reloads the STORED plan on mount, so it never self-heals). `shows:add`, `shows:update` (date change), `shows:cancelShow` (→ next show), and `setPrimaryShow` all already regenerate; delete was the lone gap. Fixed by regenerating the diet in the delete handler's "another upcoming show remains" branch when the deleted show was the primary.)
 
 ### STEP 0 — Backlog
