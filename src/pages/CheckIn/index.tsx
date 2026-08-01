@@ -753,6 +753,9 @@ export default function CheckIn() {
             knows at a glance whether their cut/bulk pace will hit their target */}
         {checkinHistory.length >= 2 && user.show_date && (() => {
           const newest = checkinHistory[0]
+          // The smoothing window the weekly rate is averaged over (matches the
+          // `5` passed to computeWeeklyWeightRate below). Used for the caption.
+          const recent = checkinHistory.slice(0, 5)
           const weeklyRateKg = computeWeeklyWeightRate(checkinHistory, 5)
           if (weeklyRateKg === null) return null
           const weeksToShow = (new Date(user.show_date + 'T12:00:00').getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 7)

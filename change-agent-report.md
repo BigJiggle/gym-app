@@ -1,5 +1,57 @@
 # Change Agent Report
 
+## Run: 2026-08-01 #2 (BUG FIX — the Check-In **success screen crashes with `ReferenceError: recent is not defined`** for any athlete who has a show scheduled and ≥2 check-ins. After submitting a check-in, the page renders a "Show Day Projection" card whose footer caption reads `Avg over {recent.length} check-in…` — but `recent` was never defined in that scope. It was clearly a leftover: an earlier refactor changed the rate call to `computeWeeklyWeightRate(checkinHistory, 5)` and deleted the `const recent = checkinHistory.slice(0, 5)` window variable, but left the caption referencing it. Because the block only renders when `checkinHistory.length >= 2 && user.show_date` (and the weekly rate is computable), a real competitor in prep hits it every time they weigh in: React throws mid-render → the entire coach-feedback + projection screen white-screens instead of showing their adjustments. **This slipped past every prior run's tsc gate because `npx tsc --noEmit` on the root `tsconfig.json` — which has `files: []` + solution `references` — type-checks NOTHING** (verified: injecting `const x: string = 123` yields no error). The real per-project check `tsc -p tsconfig.web.json` flags it as TS2304. Fixed by restoring `const recent = checkinHistory.slice(0, 5)` in the projection IIFE. Also surfaced a second, type-only (runtime-safe) error the vacuous gate hid — see "Also found" below.)
+
+### STEP 1 — Regression guard
+Clean pull of `master`; no regressions. `npx tsc --noEmit` (routine gate) → PASS,
+`npm test` → 340 passed, `npx electron-vite build` → PASS. (`npm ci` with
+`ELECTRON_SKIP_BINARY_DOWNLOAD=1`.)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items**. Bug-hunt run.
+
+### STEP 2/3 — Area: (c) check-in + Progress + adaptive nutrition (front-end)
+**Bug:** `src/pages/CheckIn/index.tsx:802` referenced an undefined identifier
+`recent` inside the post-submit "Show Day Projection" render block.
+**Reachability:** success state (`submitted`) + `checkinHistory.length >= 2` +
+`user.show_date` set + `computeWeeklyWeightRate(checkinHistory, 5)` non-null +
+`weeksToShow > 0` → the JSX evaluates `recent.length` → `ReferenceError` →
+React render throws → the whole Check-In success screen crashes. A prepping
+competitor (show on calendar, ≥2 weigh-ins) hits this on every check-in.
+**Root cause:** stale reference to a window variable removed in a prior refactor
+of the weekly-rate call; the caption "Avg over N check-ins" still read
+`recent.length`.
+**Fix:** `src/pages/CheckIn/index.tsx` — restored
+`const recent = checkinHistory.slice(0, 5)` at the top of the projection IIFE
+(the smoothing window matching the `5` passed to `computeWeeklyWeightRate`), so
+`recent.length` renders the honest count (1–5) the rate was averaged over.
+**Test:** `tests/unit/checkinSuccessProjection.test.tsx` — renders CheckIn (not
+locked), seeds two prior check-ins >1 week apart + a future `show_date`, submits
+a weigh-in, and asserts the "Show Day Projection" card renders without a
+ReferenceError. Fails with `recent is not defined` before the fix; passes after.
+
+### ⚠ Also found (NOT fixed this run — reported for owner)
+1. **The STEP-1/STEP-4 tsc gate is vacuous.** `npx tsc --noEmit` resolves the
+   root `tsconfig.json` (`"files": []`, solution `references`) and, without
+   `--build`, type-checks no source at all. Every "tsc PASS" in this report has
+   been meaningless; type errors ship undetected (this run's crash is proof).
+   **Recommend** the owner change the gate to `tsc -b` (or
+   `tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.node.json --noEmit`).
+   Filing as a backlog candidate.
+2. **`src/pages/Diet/index.tsx:228`** — `culture_pref: prefsCuisine` is a
+   `string` assigned to a cuisine string-literal union (TS2322 under the real
+   check). **Runtime-safe** (the value comes from a fixed-option dropdown, and
+   its sibling `dietary_restrictions` field is already `as any`-cast), so it is
+   NOT a reachable defect and is left untouched under the one-fix rule. Would be
+   trivially fixed alongside the tsc-gate change.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` (routine gate) → PASS
+- `npm test` → **341 passed** (+1 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-08-01 (BUG FIX — the dashboard **Daily Weigh-In** widget accepts an unbounded weight, so a fat-fingered extreme (`850` typed where `85.0` was meant, or an lbs value into a kg field) persists a nonsensical entry that poisons the widget's "7-day avg" and "weekly change" and survives a data reset. `DailyWeighInWidget.logDailyWeight` guarded only `raw <= 0`; the input's `min`/`max` attrs (metric 30–300 kg, imperial 66–660 lbs) are cosmetic — the browser does NOT block a JS-submitted (Enter / Save-click) out-of-range value. So `850` stored `weight_kg=850`, and both the 7-day rolling average and the ±/wk delta shown on the dashboard rendered garbage; `mergeWeighIns` (which folds this log into the reset-surviving weigh-in history) also has no ceiling, so the bad value outlived a reset. Mirrors the 2026-07-30 precedent that clamped fat-fingered check-in weights to 30–300 kg — the daily weigh-in was the remaining unguarded weight-entry seam. Fixed by rejecting a converted weight outside [30, 300] kg in the handler.)
 
 ### STEP 0 — Backlog
