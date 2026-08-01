@@ -24,6 +24,13 @@ export default function DailyWeighInWidget() {
     const raw = parseFloat(dailyWeightInput)
     if (isNaN(raw) || raw <= 0) return
     const weight_kg = isImp ? Math.round((raw / 2.20462) * 1000) / 1000 : raw
+    // Reject out-of-range weights. The input's min/max attrs (metric 30–300 kg,
+    // imperial 66–660 lbs) are only hints — the browser doesn't block a
+    // JS-submitted value — so a fat-fingered extreme (e.g. 850 meant as 85.0)
+    // would otherwise persist and poison the 7-day avg / weekly-change display
+    // and the reset-surviving weigh-in history. Bound on the converted kg,
+    // matching the check-in weight range.
+    if (weight_kg < 30 || weight_kg > 300) return
     const updated = [...dailyWeightLog.filter(e => e.date !== todayStr), { date: todayStr, weight_kg }]
     setDailyWeightLog(updated)
     localStorage.setItem('daily_weight_log', JSON.stringify(updated))

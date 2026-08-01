@@ -1,5 +1,40 @@
 # Change Agent Report
 
+## Run: 2026-08-01 (BUG FIX — the dashboard **Daily Weigh-In** widget accepts an unbounded weight, so a fat-fingered extreme (`850` typed where `85.0` was meant, or an lbs value into a kg field) persists a nonsensical entry that poisons the widget's "7-day avg" and "weekly change" and survives a data reset. `DailyWeighInWidget.logDailyWeight` guarded only `raw <= 0`; the input's `min`/`max` attrs (metric 30–300 kg, imperial 66–660 lbs) are cosmetic — the browser does NOT block a JS-submitted (Enter / Save-click) out-of-range value. So `850` stored `weight_kg=850`, and both the 7-day rolling average and the ±/wk delta shown on the dashboard rendered garbage; `mergeWeighIns` (which folds this log into the reset-surviving weigh-in history) also has no ceiling, so the bad value outlived a reset. Mirrors the 2026-07-30 precedent that clamped fat-fingered check-in weights to 30–300 kg — the daily weigh-in was the remaining unguarded weight-entry seam. Fixed by rejecting a converted weight outside [30, 300] kg in the handler.)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all queue items are `- [x]`). Bug-hunt run.
+
+### STEP 1 — Regression guard (clean baseline on fresh rebased `master`)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (337 tests, 51 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.)
+
+### STEP 2 — Area audited: (e) widgets (dashboard + Training/Nutrition tabs) + localStorage stores
+Rotated off the recent (a) nutrition, (f) shows, (b) training, (c) check-in clusters. Deep-read the localStorage plumbing (`localStore.ts` `createLocalStore`, `createWidgetStore.ts`, `useWidgets.ts`, `useWaterLog.ts`, `competitionLogs.ts`, `cardioStore.ts`, `resetData.ts`) and every dashboard/tab widget: `QuickStats`, `TodaysMacros`, `NextMeal`, `DailyWeighIn`, `Sleep`, `Supplement`, `Posing`, `Condition`, `Water`, `Cardio`, `WeeklyScorecard`, `WeeklyVolume`, `TrainingVolume`, `MuscleCoverage`, `SessionsWeek`, `TodaysSession`, `RecentCheckins`, `CheckinFeedback`, `PrepPace`, `PrepGuidance`, plus `TabWidgetZone`/`TabWidgetControls`/`tabWidgets.ts`. The stores are well-hardened (top-level shape guards on corrupted/hand-edited storage, div-by-zero guards, reorder bounds checks, id migration, reset-preservation). The one genuine reachable defect: the unbounded daily weigh-in input.
+
+Noted as **leads (not fixed this run)**, both pre-existing architectural mismatches, not minimal fixes:
+- The Diet page (`src/pages/Diet/index.tsx`) keeps its own single-entry-per-day cardio model, writing `cardio_log` directly (no `id`, collapsing all of a day's entries to one) while the dashboard `cardioStore`/`CardioWidget` use a multi-entry-per-day model summing all entries. Using both views can undercount the weekly cardio total and lose sessions — but reconciling the two models is a refactor, out of "minimum change" scope.
+- `CheckinFeedbackWidget` does `latestCheckin.adjustments.notes.map(...)` without the `?.` guard that `RecentCheckinsWidget` uses; only reachable if a `weekly_checkins.adjustments` column is NULL/corrupt (not produced by any normal insert path), so low reachability.
+
+### STEP 3 — Root cause + fix
+- **Root cause:** `src/components/widgets/DailyWeighInWidget.tsx` `logDailyWeight` validated only `isNaN(raw) || raw <= 0`. No upper (or realistic lower) bound, so any positive number persisted to `daily_weight_log` and flowed into the `avg7` / `avgPrev7` / `weeklyChange` display math and (via `mergeWeighIns`) the reset-surviving history.
+- **Fix (minimum change):** after converting the entered value to kg, `if (weight_kg < 30 || weight_kg > 300) return`. Bounds match the input's own declared min/max (metric 30–300 kg; imperial 66–660 lbs ≈ 30–300 kg) and the check-in weight clamp range. Rejects rather than clamps, matching the existing `raw <= 0` reject style so a bogus value isn't silently recorded as a sane-but-wrong one.
+
+### Tests added — `tests/unit/dailyWeighInBounds.test.tsx` (new, jsdom)
+- `rejects an absurd fat-fingered weight (850 kg)` — types 850, clicks Save, asserts nothing written to `daily_weight_log` and no "today" row renders. **Confirmed fail-first** (`expected '[{…weight_kg:850…}]' to be null`), passes after.
+- `rejects a below-floor weight (5 kg)` — same, floor guard.
+- `accepts and stores a sane weight (85 kg)` — 85 persists with `weight_kg === 85` and the confirmation row renders (regression guard on the happy path).
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (340 tests, +3 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-07-31 #2 (BUG FIX — `plan:recalculateMacros` does NOT self-heal a legacy `calories_target=0` row despite a comment claiming it does. The Diet page's "⟳ Recalculate Macros" button recomputes protein/carbs/fat from the athlete's current body weight while keeping their meal structure. A legacy/pre-sanitize `diet_plans` row can carry `calories_target=0`; the handler floors that to `MIN_CALORIE_TARGET` (1200) *locally* for the ratio math — and its own comment says "Self-heals such a row to a valid target on recalculation" — but the `UPDATE` only wrote `protein_g`/`carbs_g`/`fat_g`/`meals`, never `calories_target`. So the stored target stayed **0** while the recomputed macros reflected a full 1200-kcal plan: the Diet page then renders a "0 kcal" daily target beside a non-zero ~196g protein / ~331g carb target (internal inconsistency), and every calorie-scaling consumer keeps dividing by a stored 0. The sibling check-in adaptive recalc (`checkin:submit`) already writes `calories_target` back after flooring — recalc was the lone gap. Fixed by adding `calories_target=?` (the floored `calories`) to the recalc UPDATE.)
 
 ### STEP 0 — Backlog
