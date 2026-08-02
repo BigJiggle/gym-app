@@ -1,5 +1,39 @@
 # Change Agent Report
 
+## Run: 2026-08-02 (BUG FIX — the workout-set write handlers persist **negative / non-finite `reps_actual` and `weight_kg` verbatim**, so a fat-fingered negative rep count (a stray `-` before a number) inverts the post-workout **Total Volume** and permanently poisons the training log. In the live `WorkoutSession`, the RIR input clamps to 0–5 (`Math.max(0, Math.min(5, …))`) but the sibling **reps and weight inputs have no `min`** — the HTML `min` attr never blocks a typed/JS value — so `Number('-5') = -5` flows straight through `onSetUpdate` → `saveSetsBatch`. The post-workout summary's volume is `Σ weight × reps` over done sets (`weight > 0` guard only, no reps guard), so one `-5`-rep set at 100 kg subtracts `500` from the headline Total Volume. Worse, `reps_actual: -5` (or a negative `weight_kg`) is written to `exercise_logs` and never re-validated: it then feeds `WorkoutStats` charts, all-time PR detection, and the **next session's "last performance" pre-fill** (`if (!s.reps_actual) continue` skips 0 but NOT −5, so the negative becomes the pre-filled reps). The same hole exists on the **WorkoutLogEditor** edit path via `workout:updateSet`. All three write seams — `workout:logSet`, `workout:updateSet`, `workout:saveSetsBatch` — stored the values with only `?? null` and no bound. Fixed by clamping reps/weight to non-negative finite at the backend write seam so every entry point agrees.)
+
+### STEP 0 — Backlog
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (every queue item is `- [x]`). Bug-hunt run.
+
+### STEP 1 — Regression guard (clean baseline on fresh rebased `master`)
+- `npx tsc --noEmit` (routine gate) → PASS
+- `npm test` → PASS (341 tests, 53 files)
+- `npx electron-vite build` → PASS
+
+Also ran the REAL per-project checks the 2026-08-01 #2 run flagged as hidden by the vacuous root gate: `tsc -p tsconfig.web.json` still reports the one **runtime-safe** `Diet/index.tsx:228 culture_pref` string→union mismatch (dropdown-constrained value; left untouched per the one-fix rule), and `tsc -p tsconfig.node.json` reports `showHandlers.ts:332` binding `unknown`/`{}|null` to `JSValue` (real DB row values bound to `UPDATE users SET show_date=?, division=?` — runtime-safe, type-only). Neither is a reachable defect; both are noise from the vacuous gate and are NOT this run's target. My change adds no new type errors on either project.
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.)
+
+### STEP 2 — Area audited: (d) onboarding + Settings + reset + data lifecycle, then (b) training/workout session flows
+Rotated off last run's (c) check-in cluster. Deep-read area (d): `resetData.ts` (`isPreservedKey`/`mergeWeighIns`/`resetLocalData`), `userStore.resetAllData`, `userHandlers` (`user:update`/`user:resetAll`/`parseUser`), `userSanitize.ts` (age/height/weight/body-fat/meal/snack clamps), `settingsStore`/`settingsHandlers`, `Onboarding` (`useOnboarding`, `validateStep`, `StepAiSetup`, Step2 show-date `min`), and the `DailyWeighIn`/water preserved-store math. **Area (d) is genuinely clean/well-hardened** — every write seam already guards NaN/±Infinity/out-of-range (the last several runs closed those holes), and the training-count fields (`training_frequency`/`exercises_per_session`/`sets_per_exercise`) that (d) leaves unclamped are re-clamped at the training-engine seam. No fabricated fix there.
+
+Extended the hunt into the next-least-recent area **(b)** and found the real defect in the workout-set write path. Also noted (NOT fixed — matches prior "low reachability" assessment): `CheckinFeedbackWidget:58` / `CheckIn:726` read `adjustments.notes.map(...)` without the `?.` that `RecentCheckinsWidget:45` uses — only reachable with a corrupt/hand-edited `weekly_checkins.adjustments` (the schema DEFAULT `'{}'` has no `notes`), never produced by a normal insert (`calculateAdjustments` always returns ≥1 note and all inserts write it).
+
+### STEP 3 — Root cause + fix
+- **Root cause:** `electron/ipc/workoutHandlers.ts` — `logSet`, `updateSet`, and `saveSetsBatch` bound `reps_actual`/`weight_kg` with only `(… as number | null) ?? null`, applying NO lower bound or finiteness check. The renderer's reps/weight inputs never clamp (only RIR does), so a typed negative persists.
+- **Fix (minimum change, at the seam):** added two pure helpers `sanitizeReps` / `sanitizeWeightKg` (null/undefined → null; non-finite → null; otherwise `Math.max(0, …)`, reps rounded to an integer) and applied them in all three write handlers. Clamps at the DB boundary so every UI entry point (live session, log editor, single logSet) is covered by one guard. A cleared field still round-trips to NULL (the existing `updateSet` "emptied field = clear column" contract is preserved).
+
+### Tests added — `tests/unit/workoutSetBounds.test.ts` (new, 6 tests)
+- Pure `sanitizeReps`/`sanitizeWeightKg`: negative → 0, fractional reps rounded, weight fractional preserved, NaN/±Infinity → null, null/undefined → null.
+- Real handlers vs in-memory node-sqlite3-wasm DB: `saveSetsBatch` clamps a `-5` reps to `0` (and a `-140` weight to `0`); `logSet`+`updateSet` clamps a `-3` reps edit to `0`. **Confirmed fail-first** (before the fix the rows stored `-5`/`-3`).
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` (routine gate) → PASS
+- `npm test` → **347 passed** (+6 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-08-01 #2 (BUG FIX — the Check-In **success screen crashes with `ReferenceError: recent is not defined`** for any athlete who has a show scheduled and ≥2 check-ins. After submitting a check-in, the page renders a "Show Day Projection" card whose footer caption reads `Avg over {recent.length} check-in…` — but `recent` was never defined in that scope. It was clearly a leftover: an earlier refactor changed the rate call to `computeWeeklyWeightRate(checkinHistory, 5)` and deleted the `const recent = checkinHistory.slice(0, 5)` window variable, but left the caption referencing it. Because the block only renders when `checkinHistory.length >= 2 && user.show_date` (and the weekly rate is computable), a real competitor in prep hits it every time they weigh in: React throws mid-render → the entire coach-feedback + projection screen white-screens instead of showing their adjustments. **This slipped past every prior run's tsc gate because `npx tsc --noEmit` on the root `tsconfig.json` — which has `files: []` + solution `references` — type-checks NOTHING** (verified: injecting `const x: string = 123` yields no error). The real per-project check `tsc -p tsconfig.web.json` flags it as TS2304. Fixed by restoring `const recent = checkinHistory.slice(0, 5)` in the projection IIFE. Also surfaced a second, type-only (runtime-safe) error the vacuous gate hid — see "Also found" below.)
 
 ### STEP 1 — Regression guard

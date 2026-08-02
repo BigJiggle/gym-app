@@ -1,6 +1,29 @@
 import { IpcMain } from 'electron'
 import { getDb } from '../database/db'
 
+// A persisted set's reps/weight must never be negative or non-finite. The live
+// WorkoutSession's reps and weight inputs (and the WorkoutLogEditor's) have no
+// `min` — unlike the RIR input, which clamps to 0–5 — so the browser does NOT
+// block a typed negative (e.g. a stray "-" before a number). A stored negative
+// `reps_actual` inverts the post-workout Total Volume (weight × reps) and, once
+// in `exercise_logs`, poisons the permanent history: WorkoutStats charts, PR
+// detection, and next-session "last performance" pre-fill all read it back.
+// Clamp at the write seam so every entry point (live session saveSetsBatch, log
+// editor updateSet, single logSet) agrees. A null/undefined/absent value stays
+// null — an emptied field means "clear this column", which is exactly NULL.
+export function sanitizeReps(v: unknown): number | null {
+  if (v === null || v === undefined) return null
+  const n = Number(v)
+  if (!Number.isFinite(n)) return null
+  return Math.max(0, Math.round(n))
+}
+export function sanitizeWeightKg(v: unknown): number | null {
+  if (v === null || v === undefined) return null
+  const n = Number(v)
+  if (!Number.isFinite(n)) return null
+  return Math.max(0, n)
+}
+
 export function registerWorkoutHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('workout:start', (_event, userId: number, sessionId: number | null) => {
     const db = getDb()
@@ -25,8 +48,8 @@ export function registerWorkoutHandlers(ipcMain: IpcMain): void {
         data.exercise_name as string,
         data.set_number as number,
         (data.reps_prescribed as number | null) ?? null,
-        (data.reps_actual as number | null) ?? null,
-        (data.weight_kg as number | null) ?? null,
+        sanitizeReps(data.reps_actual),
+        sanitizeWeightKg(data.weight_kg),
         (data.rir_actual as number | null) ?? null,
         data.skipped ? 1 : 0,
         (data.notes as string | null) ?? null
@@ -86,8 +109,12 @@ export function registerWorkoutHandlers(ipcMain: IpcMain): void {
     // for an emptied field (e.g. a set with no RIR, or a cleared weight).
     // node-sqlite3-wasm throws on an `undefined` binding, so coerce it to NULL —
     // an emptied field means "clear this column", which is exactly NULL.
-    const values = updates.map(([k, v]) =>
-      k === 'skipped' ? (v ? 1 : 0) : (v === undefined ? null : v as string | number | null))
+    const values = updates.map(([k, v]) => {
+      if (k === 'skipped') return v ? 1 : 0
+      if (k === 'reps_actual') return sanitizeReps(v)
+      if (k === 'weight_kg') return sanitizeWeightKg(v)
+      return v === undefined ? null : (v as string | number | null)
+    })
     const sql = `UPDATE exercise_logs SET ${updates.map(([k]) => `${k}=?`).join(', ')} WHERE id=?`
     db.prepare(sql).run([...values, setId])
     return db.prepare('SELECT * FROM exercise_logs WHERE id=?').get([setId])
@@ -114,8 +141,8 @@ export function registerWorkoutHandlers(ipcMain: IpcMain): void {
         s.exercise_name as string,
         s.set_number as number,
         (s.reps_prescribed as number | null) ?? null,
-        (s.reps_actual as number | null) ?? null,
-        (s.weight_kg as number | null) ?? null,
+        sanitizeReps(s.reps_actual),
+        sanitizeWeightKg(s.weight_kg),
         (s.rir_actual as number | null) ?? null,
         s.skipped ? 1 : 0,
         (s.notes as string | null) ?? null,
