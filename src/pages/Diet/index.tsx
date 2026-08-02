@@ -16,6 +16,7 @@ import TabWidgetZone from '../../components/widgets/TabWidgetZone'
 import { NUTRITION_WIDGET_META, nutritionWidgetStore } from '../../components/widgets/tabWidgets'
 import { FOODS } from '../../data/foods'
 import { localDateStr } from '../../utils/dates'
+import { nextWaterMl } from '../../utils/water'
 import { applyRefeedToMeals } from '../../utils/refeed'
 import type { Meal, MealCompletion } from '../../types'
 
@@ -94,11 +95,15 @@ export default function Diet() {
   })
 
   function updateWater(delta: number) {
-    setWaterGlasses(prev => {
-      const next = Math.max(0, Math.min(20, prev + delta))
-      localStorage.setItem(`water_ml_${todayStr}`, String(next * ML_PER_GLASS))
-      return next
-    })
+    // Water shares the `water_ml_<date>` key with the Dashboard widget, which logs
+    // arbitrary ml (its oz quick-adds persist 237/355/473/946 ml). Writing
+    // `glasses * 250` here overwrote — and quantized away — any sub-250ml value the
+    // Dashboard had logged. Apply the glass delta to the TRUE stored ml so that
+    // finer-grained value is preserved (and survives a +/- round-trip).
+    const stored = parseInt(localStorage.getItem(`water_ml_${todayStr}`) ?? '0', 10)
+    const updatedMl = nextWaterMl(stored, delta, ML_PER_GLASS, 20)
+    localStorage.setItem(`water_ml_${todayStr}`, String(updatedMl))
+    setWaterGlasses(Math.round(updatedMl / ML_PER_GLASS))
   }
 
   function cycleWaterTarget() {
