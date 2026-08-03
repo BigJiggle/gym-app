@@ -20,6 +20,13 @@ function getDaysBetween(dateA: string, dateB: string): number {
 }
 
 function countMissedBetween(dateA: string, dateB: string, interval: number): number {
+  // A non-positive or non-finite interval (e.g. a corrupt/hand-edited
+  // `checkin_interval_days` of 0, or a legacy row with no stored interval that
+  // falls back to such a setting) makes `days / interval` Infinity/NaN. The caller
+  // feeds this count into `for (k < count)` in addMissedFrom — an interval of 0
+  // yields count === Infinity and an infinite loop that hard-freezes the renderer.
+  // An unusable interval means "no missed slots detectable", not a hang.
+  if (!Number.isFinite(interval) || interval <= 0) return 0
   const days = getDaysBetween(dateA, dateB)
   return Math.max(0, Math.floor(days / interval) - 1)
 }

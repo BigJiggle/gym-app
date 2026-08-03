@@ -339,3 +339,26 @@ describe('computeMissedSlots — post-last-checkin detection', () => {
     expect(missed).toHaveLength(0)
   })
 })
+
+describe('computeMissedSlots — degenerate interval guard', () => {
+  it('does not hang when the effective interval is 0 (corrupt setting)', () => {
+    // A hand-edited/corrupt `checkin_interval_days` of 0 (or a legacy row with no
+    // stored interval that falls back to a 0 setting) makes the gap math divide by
+    // zero: floor(days/0) === Infinity → the missed-slot loop `for (k<count)` runs
+    // forever and hard-freezes the Check-In page. Guard it: an unusable interval
+    // means "no missed slots detectable", not a renderer hang.
+    const h = makeHistory([
+      { daysAgo: 30, schedule_type: 'interval' }, // interval_days undefined → falls back
+    ])
+    const missed = computeMissedSlots(h, 'interval', 1, 0) // currentIntervalDays = 0
+    expect(missed).toEqual([])
+  })
+
+  it('does not hang on a negative or NaN effective interval', () => {
+    const h = makeHistory([
+      { daysAgo: 30, schedule_type: 'interval' },
+    ])
+    expect(computeMissedSlots(h, 'interval', 1, -7)).toEqual([])
+    expect(computeMissedSlots(h, 'interval', 1, NaN)).toEqual([])
+  })
+})
