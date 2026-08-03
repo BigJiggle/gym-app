@@ -11,6 +11,7 @@ import { displayWeight, displayLength, weightLabel, lengthLabel } from '../../ut
 import { ratingTextClass } from '../../utils/ratingColor'
 import { computeWeeklyWeightRate } from '../../utils/weeklyRate'
 import { computeWeeksTracked } from '../../utils/weeksTracked'
+import { parseTargetWeightKg } from '../../utils/targetWeight'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LineChart, Line, CartesianGrid, Legend } from 'recharts'
 import type { ProgressPhoto } from '../../types'
 
@@ -142,7 +143,7 @@ export default function Progress() {
     weeklyRateKg !== null && weeksToShow !== null
       ? currentWeightKg + weeklyRateKg * weeksToShow
       : null
-  const targetKg = settings.target_weight_kg ? parseFloat(settings.target_weight_kg) : null
+  const targetKg = parseTargetWeightKg(settings.target_weight_kg)
   const requiredRateKg =
     targetKg !== null && weeksToShow !== null && weeksToShow > 0
       ? (targetKg - currentWeightKg) / weeksToShow

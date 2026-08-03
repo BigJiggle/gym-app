@@ -11,6 +11,7 @@ import { localDateStr } from '../../utils/dates'
 import { computeMissedSlots } from '../../utils/checkinSchedule'
 import { ratingBgClass, ratingTextClass, type RatingDirection } from '../../utils/ratingColor'
 import { computeWeeklyWeightRate } from '../../utils/weeklyRate'
+import { parseTargetWeightKg } from '../../utils/targetWeight'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -761,7 +762,7 @@ export default function CheckIn() {
           const weeksToShow = (new Date(user.show_date + 'T12:00:00').getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 7)
           if (weeksToShow <= 0) return null
           const projectedKg = newest.weight_kg + weeklyRateKg * weeksToShow
-          const targetKg = settings.target_weight_kg ? parseFloat(settings.target_weight_kg as string) : null
+          const targetKg = parseTargetWeightKg(settings.target_weight_kg as string | undefined)
           const fmt = (kg: number) => isImperial
             ? `${Math.round(kg * 2.20462 * 10) / 10} lbs`
             : `${Math.round(kg * 10) / 10} kg`
