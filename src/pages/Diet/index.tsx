@@ -1131,6 +1131,9 @@ export default function Diet() {
                           setDragIndex(null); setDragOverIndex(null)
                           await window.api.reorderMeals(user.id, meals)
                           await loadDietPlan(user.id)
+                          // Completions are keyed by positional index and the handler
+                          // remaps them through the reorder, so refresh the store copy.
+                          await loadMealCompletions(user.id, mondayStr, todayStr)
                         }}
                       />
                     )}
@@ -1268,6 +1271,9 @@ export default function Diet() {
                     setDragIndex(null); setDragOverIndex(null)
                     await window.api.reorderMeals(user.id, meals)
                     await loadDietPlan(user.id)
+                    // Completions are keyed by positional index and the handler
+                    // remaps them through the reorder, so refresh the store copy.
+                    await loadMealCompletions(user.id, mondayStr, todayStr)
                   }}
                 />
               )}

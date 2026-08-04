@@ -957,7 +957,53 @@ Ensure every exercise respects the constraints above while maintaining phase-app
     if (!plan) throw new Error('No diet plan found')
     const existing = JSON.parse(plan.meals as string) as unknown[]
     if ((newMeals as unknown[]).length !== existing.length) throw new Error('Meal count mismatch')
+
+    // Meal completions are keyed by POSITIONAL meal_index, so reordering the meals
+    // without remapping them leaves each completion pointing at whatever meal now
+    // occupies its old slot — the wrong meal shows the "eaten" ✓ and its macros get
+    // counted (Today's Intake + the weekly tab), a persistent DB↔UI desync. Recover
+    // the old→new index permutation by matching each moved meal back to its original
+    // slot, then move today/future completions to their meal's new position. Past
+    // days are left immutable, mirroring clearOrphanedMealCompletions.
+    const used = new Array(existing.length).fill(false)
+    const oldToNew = new Map<number, number>()
+    for (let newIdx = 0; newIdx < newMeals.length; newIdx++) {
+      const target = JSON.stringify(newMeals[newIdx])
+      for (let oldIdx = 0; oldIdx < existing.length; oldIdx++) {
+        if (!used[oldIdx] && JSON.stringify(existing[oldIdx]) === target) {
+          used[oldIdx] = true
+          oldToNew.set(oldIdx, newIdx)
+          break
+        }
+      }
+    }
+
     db.prepare('UPDATE diet_plans SET meals = ? WHERE id = ?').run([JSON.stringify(newMeals), plan.id as number])
+
+    // Only remap when a COMPLETE permutation was recovered (a pure reorder). If the
+    // arrays diverge in content the match is ambiguous, so leave completions as-is
+    // (prior behavior) rather than risk corrupting them.
+    const isPermutation = oldToNew.size === existing.length
+    const moved = isPermutation && Array.from(oldToNew).some(([o, n]) => o !== n)
+    if (moved) {
+      const today = new Date().toLocaleDateString('en-CA')
+      const rows = db.prepare(
+        'SELECT date, meal_index, meal_name, completed FROM meal_completions WHERE user_id=? AND date>=?'
+      ).all([userId, today]) as { date: string; meal_index: number; meal_name: string; completed: number }[]
+      if (rows.length > 0) {
+        // Delete-then-reinsert so the in-flight index shuffle can't transiently
+        // violate the UNIQUE(user_id, date, meal_index) constraint.
+        db.prepare('DELETE FROM meal_completions WHERE user_id=? AND date>=?').run([userId, today])
+        const ins = db.prepare(
+          'INSERT OR REPLACE INTO meal_completions (user_id, date, meal_index, meal_name, completed) VALUES (?, ?, ?, ?, ?)'
+        )
+        for (const r of rows) {
+          const newIdx = oldToNew.get(r.meal_index) ?? r.meal_index
+          ins.run([userId, r.date, newIdx, r.meal_name, r.completed])
+        }
+      }
+    }
+
     const saved = db.prepare('SELECT * FROM diet_plans WHERE id = ?').get(plan.id as number) as Record<string, unknown>
     return { ...saved, meals: JSON.parse(saved.meals as string) }
   })

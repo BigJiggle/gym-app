@@ -1,5 +1,89 @@
 # Change Agent Report
 
+## Run: 2026-08-04 #2 (BUG FIX — reordering meals desyncs the "eaten" marks: meal completions are keyed by positional `meal_index`, but `plan:reorderMeals` stored the reordered meals without remapping completions, so dragging a snack past an already-eaten meal moved the ✓ and its macros onto the WRONG meal — a persistent DB↔UI desync)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 checked
+off). Proceeded to the bug hunt.
+
+### STEP 1 — Regression guard
+On a clean pull of `master`:
+- root `npx tsc --noEmit` → PASS (root `tsconfig.json` is `files:[]` + solution
+  `references`, so it checks nothing; the real per-project checks
+  `tsc -p tsconfig.web.json` / `tsconfig.node.json` each surface the **same two
+  pre-existing, runtime-safe, type-only** errors every prior run documented and
+  deferred: `Diet/index.tsx:233` cuisine `string`→union and `showHandlers.ts:332`
+  `unknown`/`{}|null`→`JSValue`. Untouched again; my change adds **no new** errors.)
+- `npm test` → PASS (363 tests)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (a) nutrition / Diet flows + (e) meal-completion state
+Rotated coverage — recent runs hit (d) Settings/reset (08-04), (a)/(c)
+nutrition+Progress (08-03 #2), and the check-in interval loop (08-03). This run
+deep-read the training area first (`workoutHandlers`, `trainingEngine`,
+`WorkoutSession`, `WorkoutStats`, `Training/index`, and the `detectNewPRs` /
+`parseRepMidpoint` / `clampSetCount` utils) — all exceptionally hardened by prior
+runs, no reachable defect. Then traced the check-in/date/week layer
+(`checkinEngine`, `checkinSchedule`, `checkinHandlers`, `showDates`, Progress/
+CheckIn math) — also clean. Moved into the **Diet meal-interaction layer**
+(mark-eaten, swap, drag-reorder) and the `plan:reorderMeals` /
+`mealCompletionHandlers` seam, where one genuine reachable desync surfaced.
+
+### The bug
+`meal_completions` are keyed by **positional `meal_index`** (with
+`UNIQUE(user_id, date, meal_index)`), and the app is careful about this everywhere
+else — `clearOrphanedMealCompletions` purges today/future completions whenever a
+regenerate/refine changes `meal_count` (`planHandlers.ts:182/229/321/491/593/737`).
+But `plan:reorderMeals` (`planHandlers.ts:954`) stored the reordered meals array
+verbatim and **never touched completions**. The Diet "Meal Plan" tab lets the user
+drag snack cards to reorder them (`draggable={snack}`, two drop handlers in
+`src/pages/Diet/index.tsx`), and moving a snack shifts the positional index of
+every meal it crosses.
+
+**Repro:** meals `[Breakfast(0), Lunch(1), Dinner(2), Snack(3)]`; mark **Lunch**
+eaten today → completion `{meal_index:1}`. Drag Snack to the front → stored order
+`[Snack, Breakfast, Lunch, Dinner]`, but the completion is still `{meal_index:1}`
+— which now points at **Breakfast**. Result: Breakfast shows the "✓ Eaten" mark and
+its macros are counted toward Today's Intake / the weekly tab, while Lunch (the meal
+actually eaten) reads as not eaten. The desync **persists across reloads** because
+the stored DB row is wrong. In scope: "cancelled/completed drags", "DB↔UI desync —
+a value shown that doesn't match what's stored".
+
+### STEP 3 — Fix (minimum correct, at the reorder seam + the client refresh)
+- **Handler** (`electron/ipc/planHandlers.ts` `plan:reorderMeals`): recover the
+  old→new index permutation by matching each reordered meal back to its original
+  slot (greedy `JSON.stringify` match — for a pure reorder the multiset is
+  unchanged, and identical meals are interchangeable so any valid match is
+  correct), then **move today/future completions to their meal's new index** via
+  delete-then-reinsert (avoids a transient `UNIQUE` collision mid-shuffle). Guarded
+  to run **only** when a complete permutation is recovered AND something actually
+  moved — otherwise completions are left as-is (prior behavior), so a content
+  change can't corrupt them. Past days stay immutable, mirroring
+  `clearOrphanedMealCompletions`.
+- **Client** (`src/pages/Diet/index.tsx`, both drag-drop reorder handlers): after
+  `reorderMeals` + `loadDietPlan`, also `loadMealCompletions(user.id, mondayStr,
+  todayStr)` so the in-memory store reflects the remapped indices immediately
+  (the completions effect keys on `[user?.id, tab]`, not `dietPlan`, so it wouldn't
+  otherwise refresh).
+
+### Files changed
+- `electron/ipc/planHandlers.ts` — `plan:reorderMeals` now remaps meal completions
+  through the reorder permutation.
+- `src/pages/Diet/index.tsx` — both reorder drop handlers reload completions.
+- `tests/unit/mealReorderCompletions.test.ts` — +3 tests against the REAL handler
+  on an in-memory DB. Failing-first confirmed: the "snack dragged in front of the
+  eaten meal" case asserted `meal_index === 2` but got `1` before the fix. The
+  no-move and past-day-immutable cases pass both before and after (they pin the
+  correct non-desync behavior).
+
+### STEP 4 — Verification (all PASS)
+- root `npx tsc --noEmit` → PASS; `tsc -p tsconfig.web.json` / `tsconfig.node.json`
+  → only the two pre-existing runtime-safe errors, **no new** errors from this change.
+- `npm test` → PASS (366 tests, +3 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-08-04 (BUG FIX — a Settings-typed extreme `training_frequency` persists **unclamped**, so the dashboard shows a nonsensical "999 / week" while the actual plan is capped at 6 sessions — a DB↔UI desync)
 
 ### STEP 0 — Requested changes
