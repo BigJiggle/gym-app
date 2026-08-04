@@ -51,6 +51,20 @@ export function clampHeightCm(value: unknown): number | undefined {
 export function clampWeightKgField(value: unknown): number | undefined {
   return clampProfileNumber(value, 30, 300)
 }
+// training_frequency is displayed verbatim (QuickStatsWidget "Training Days
+// {value}/week", the Settings "Training Days" row) and drives the plan, whose
+// session count generateTrainingPlan caps at 2–6 (Math.min(6, Math.max(2, …))).
+// Onboarding sets it with a range slider (min 2, max 6) so it can't go out of
+// range there, but the Settings number input's min/max only bind the spinner
+// arrows — a typed extreme (e.g. "999") reaches user:update unclamped and then
+// persists, so the dashboard shows "999/week" while the plan still has 6 sessions
+// (a DB↔UI desync). Clamp to the same 2–6 range both onboarding and the engine
+// agree on. A non-finite value (cleared field → NaN) returns undefined so it is
+// dropped by the final filter and the stored value is preserved.
+export function clampTrainingFrequency(value: unknown): number | undefined {
+  const n = clampProfileNumber(value, 2, 6)
+  return n === undefined ? undefined : Math.round(n)
+}
 
 // Serialize + clean a partial user-update payload for binding.
 // - JSON array / boolean fields are stringified/int-coerced (node-sqlite3-wasm
@@ -80,6 +94,7 @@ export function sanitizeUserUpdate(data: Record<string, unknown>): Record<string
     age: clampAge(data.age),
     height_cm: clampHeightCm(data.height_cm),
     weight_kg: clampWeightKgField(data.weight_kg),
+    training_frequency: clampTrainingFrequency(data.training_frequency),
   }
   return Object.fromEntries(
     Object.entries(serialized).filter(

@@ -72,6 +72,26 @@ describe('sanitizeUserUpdate — non-finite numeric guard', () => {
     expect(clean.weight_kg).toBe(82.5)
   })
 
+  // training_frequency is DISPLAYED verbatim (QuickStatsWidget "Training Days
+  // {value}/week", Settings "Training Days" row) AND drives the plan, whose session
+  // count the engine caps at 2–6 (generateTrainingPlan: Math.min(6, Math.max(2, …))).
+  // Onboarding sets it via a range slider (min 2, max 6) so it can't go out of range,
+  // but the Settings "Edit profile" number input's min/max only bind the spinner
+  // arrows — a typed extreme (e.g. "999") reaches user:update unclamped. It then
+  // persists as 999, so the dashboard shows "999/week" while the plan has 6 sessions
+  // (a DB↔UI desync). sanitizeUserUpdate must clamp it to the same 2–6 range the
+  // engine and onboarding agree on. Mirrors the age/height/weight guard above.
+  it('clamps out-of-range training_frequency to the engine bounds (2–6)', () => {
+    expect(sanitizeUserUpdate({ id: 1, training_frequency: 999 }).training_frequency).toBe(6)
+    expect(sanitizeUserUpdate({ id: 1, training_frequency: 1 }).training_frequency).toBe(2)
+    // Fractional typed values round to a whole day count.
+    expect(sanitizeUserUpdate({ id: 1, training_frequency: 3.4 }).training_frequency).toBe(3)
+  })
+
+  it('leaves an in-range training_frequency untouched', () => {
+    expect(sanitizeUserUpdate({ id: 1, training_frequency: 4 }).training_frequency).toBe(4)
+  })
+
   it('serializes array fields and clamps meal/snack counts', () => {
     const clean = sanitizeUserUpdate({
       id: 1,

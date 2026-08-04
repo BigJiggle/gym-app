@@ -1,5 +1,91 @@
 # Change Agent Report
 
+## Run: 2026-08-04 (BUG FIX — a Settings-typed extreme `training_frequency` persists **unclamped**, so the dashboard shows a nonsensical "999 / week" while the actual plan is capped at 6 sessions — a DB↔UI desync)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 checked
+off). Proceeded to the bug hunt.
+
+### STEP 1 — Regression guard
+On a clean pull of `master`:
+- root `npx tsc --noEmit` → PASS (note: the root `tsconfig.json` has `files: []`
+  + solution `references` so it type-checks NOTHING — the real per-project checks
+  `tsc -p tsconfig.web.json` / `tsconfig.node.json` each surface **one pre-existing,
+  runtime-safe, type-only** error: `Diet/index.tsx:233` cuisine `string`→union
+  (dropdown-constrained) and `showHandlers.ts:332` `unknown`/`{}|null`→`JSValue`
+  (real string/number DB values). Both predate this run and every prior run
+  deferred them under the one-fix rule; untouched again. My change adds **no new**
+  type errors on either project.)
+- `npm test` → PASS (361 tests)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (d) onboarding + Settings + reset + data lifecycle
+Rotated off the last runs' (c) check-in/Progress, (f) show/date, (a) diet/water,
+(b) workout-set clusters. Deep-read the reset/data-lifecycle layer
+(`utils/resetData.ts` `isPreservedKey`/`mergeWeighIns`/`resetLocalData`,
+`userHandlers.ts` `resetAll`/`create`/`update`, `settingsHandlers.ts`), the
+localStorage store layer (`components/widgets/localStore.ts` shape-guarded reader,
+`store/cardioStore.ts` migration, `competitionLogs.ts` stores), the logging
+widgets' input guards (`SleepWidget`, `PosingWidget`, `CardioWidget` — all guard
+`isNaN`/`<=0`), the aggregation widgets (`WeeklyScorecardWidget`,
+`WeeklyVolumeWidget`, `MuscleCoverageWidget`, `NextMealWidget` — all guard
+divisions by length), the training/nutrition/checkin engines, and the Settings +
+Onboarding profile inputs + `sanitizeUserUpdate` write seam. Almost everything is
+already well-hardened by prior runs. **One reachable defect found:** the Settings
+profile-edit save persists `training_frequency` unclamped.
+
+### The bug
+`sanitizeUserUpdate` (`electron/ipc/userSanitize.ts`) clamps `age`, `height_cm`,
+`weight_kg`, `meal_count`, `snack_count`, and `body_fat_pct` to their contract
+ranges (the 07-29 #2 run added the age/height/weight clamps for exactly this
+class), but it did **not** clamp `training_frequency`. That field is:
+- **displayed verbatim** — `QuickStatsWidget` renders it as "Training Days
+  {value} / week" on the dashboard (`src/components/widgets/QuickStatsWidget.tsx:51`),
+  and the Settings "Training Days" row shows `${user.training_frequency}/week`
+  (`src/pages/Settings/index.tsx:538`); and
+- **capped by the engine** — `generateTrainingPlan` clamps the session count to
+  `Math.min(6, Math.max(2, …))` (`trainingEngine.ts:512`).
+
+Onboarding sets it with a **range slider** (`min={2} max={6}`,
+`Step3Training.tsx`) so it can't go out of range there. But the Settings
+"Edit profile" input is `<input type="number" min={2} max={6}>` — HTML `min`/`max`
+only bound the spinner arrows, never a typed/pasted value — and `handleSaveProfile`
+spreads the whole `editForm` (which always carries `training_frequency`) into
+`updateUser`. So typing e.g. `999` and saving stores `training_frequency = 999`.
+The dashboard then shows **"999 / week"** and the Settings row **"999/week"**,
+while the generated plan still has 6 sessions — a persistent DB↔UI desync (in
+scope: "invalid / extreme / boundary inputs", "a value shown that doesn't match
+what's [used]"). A cleared field (`parseInt('')` → NaN) was already dropped by the
+final non-finite filter; the gap was specifically a **finite** out-of-range value.
+
+### STEP 3 — Fix
+Added `clampTrainingFrequency(value)` to `userSanitize.ts` — reuses the existing
+`clampProfileNumber(value, 2, 6)` helper and rounds (whole days), returning
+`undefined` for a non-finite/absent value so it's dropped and the stored value is
+preserved (exactly like `clampAge`/`clampHeightCm`/`clampWeightKgField`). Wired it
+into `sanitizeUserUpdate`'s serialized map. Minimum change, at the same write seam,
+matching the app's own 2–6 contract (onboarding slider + engine cap).
+
+Left `exercises_per_session` / `sets_per_exercise` alone: they are **not** displayed
+verbatim and `generateTrainingPlan` already guards them (finite-&-positive-or-default),
+so an out-of-range value can't crash or desync a shown value — clamping them would
+risk over-narrowing legitimate AI-supplied values for no user-visible gain.
+
+### Files changed
+- `electron/ipc/userSanitize.ts` — new `clampTrainingFrequency`; wired into
+  `sanitizeUserUpdate`.
+- `tests/unit/userSanitize.test.ts` — +2 tests (out-of-range 999→6 / 1→2 / 3.4→3;
+  in-range 4 untouched). Failing-first confirmed: without the fix the clamp test
+  fails (returns 999); the existing `training_frequency: NaN` drop test still passes.
+
+### STEP 4 — Verification (all PASS)
+- root `npx tsc --noEmit` → PASS; `tsc -p tsconfig.web.json` / `tsconfig.node.json`
+  → only the two pre-existing runtime-safe errors, **no new** errors from this change.
+- `npm test` → PASS (363 tests, +2 new)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-08-03 #2 (BUG FIX — a corrupt / hand-edited `target_weight_kg` setting renders literal **"NaN kg" / "NaN lbs"** to the athlete in the Check-In "Show Day Projection" and Progress "Projected Show Weight" cards. Both pages read the stage-weight goal with the same unguarded pattern — `settings.target_weight_kg ? parseFloat(settings.target_weight_kg) : null` (`src/pages/CheckIn/index.tsx:765`, `src/pages/Progress/index.tsx:146`). A non-numeric persisted value (`"abc"`, `"NaN"`, a stray unit like `"kg"`) is a **truthy string**, so it passes the `?` guard and `parseFloat` yields **NaN**. That NaN then flows into `gap = projectedKg - targetKg` and the target display, and — critically — the `targetKg !== null` render guards on both cards **do not stop it** because `NaN !== null` is `true`. Result: the projection card shows "NaN kg", "NaN kg above/below goal", and (Progress) a NaN `requiredRate`. A `"0"` value likewise passed through as a nonsensical 0-kg goal. **Reachability (in scope — "corrupted or hand-edited localStorage / persisted settings", "NaN propagation", "a value shown that doesn't match what's stored"):** the value is normally written as `String(kg)` by the Progress editor, which only saves `!isNaN(v) && v > 0` — but a hand-edited/corrupt settings row bypasses that validation, and the read seam had no finiteness guard of its own. **Root cause:** `parseFloat` of an untrusted persisted string with no `Number.isFinite` / positivity check, in two places sharing one buggy pattern. **Fix (minimum, at the shared seam):** new pure helper `parseTargetWeightKg(raw)` (`src/utils/targetWeight.ts`) → returns a finite, positive kg number or `null` (absent/empty/non-numeric/≤0 → `null` = "no target set"); both call sites now use it. A bad value now reads as "no goal set" (the card simply omits the target line) instead of surfacing NaN. Valid positive targets are unchanged. Failing-first regression: `tests/unit/targetWeight.test.ts` (5 tests) — asserts `"abc"`/`"NaN"`/etc → `null` (old inline logic returned NaN, demonstrated via node), `"0"`/negatives → `null`, and valid values parse through.)
 
 ### STEP 0 — Backlog
