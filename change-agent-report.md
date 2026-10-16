@@ -1,5 +1,93 @@
 # Change Agent Report
 
+## Run: 2026-10-16 (BUG FIX — the dashboard **Prep Pace** widget renders literal **"(NaN kg below target)"** — and a nonsensical 0-kg goal — from a corrupt/hand-edited `target_weight_kg` setting. This is the THIRD site of the exact pattern run 2026-08-03 #2 fixed in CheckIn + Progress via the shared `parseTargetWeightKg` helper; `PrepPaceWidget.tsx:76` was missed and still used the raw `settings.target_weight_kg ? parseFloat(…) : null`.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 checked
+off). Proceeded to the bug hunt.
+
+### STEP 1 — Regression guard
+On a clean pull of `master`:
+- root `npx tsc --noEmit` → PASS (root `tsconfig.json` is `files:[]` + solution
+  `references`, so it checks nothing; `tsc -p tsconfig.web.json` surfaces the
+  **same one pre-existing, runtime-safe, type-only** error every prior run
+  documented and deferred: `Diet/index.tsx:233` cuisine `string`→union. Untouched;
+  my change adds **no new** errors.)
+- `npm test` → PASS (366 tests)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (f) shows/competition + date/week logic, then (e) widgets
+Rotated off last run's (a) nutrition/Diet + (e) meal-completion state. Deep-read
+the show/date layer — `showDates.ts` (`weeksUntilShow`/`localToday`), `dates.ts`
+(`getShowCountdown`/`isPast`), `showHandlers.ts` (add/update/delete/cancel/
+setPrimary + `syncPrimaryToNearest`/`regenerateDietForGoal`/
+`transitionTrainingToOffSeason`), and `weeklyRate.ts`/`weeksTracked.ts` — all
+exceptionally hardened by prior runs, no reachable defect. Also traced the
+`trainingEngine` numeric guards (freq/exPerSession/sets/maxSets) and `units.ts`
+conversions — clean. Then swept the dashboard widgets for the unguarded
+`target_weight_kg` parse the 08-03 #2 run had centralized, and found one site it
+never reached.
+
+### The bug
+Run **2026-08-03 #2** fixed `settings.target_weight_kg ? parseFloat(…) : null`
+(renders "NaN kg" for a corrupt/hand-edited value, because the truthy string
+passes the `?` guard, `parseFloat` yields `NaN`, and the downstream
+`targetKg !== null` render guard does NOT stop it since `NaN !== null` is `true`)
+by introducing the shared pure helper `parseTargetWeightKg(raw)` →
+finite-positive-kg-or-null, and routing `CheckIn/index.tsx:765` and
+`Progress/index.tsx:146` through it.
+
+**But `src/components/widgets/PrepPaceWidget.tsx:76` was a THIRD copy of the exact
+same pattern and was missed.** PrepPaceWidget is a **default dashboard widget**
+(`prep-pace` is in `DEFAULT_WIDGETS`, registered in `registry.tsx`). For a
+cutting/bulking athlete with ≥2 check-ins and an upcoming show, it renders a
+"Show day (Nw): ~X kg" projection with a "(… above/below target)" comparison line.
+That line read the goal weight with the unguarded pattern:
+
+```ts
+const targetKg = settings.target_weight_kg ? parseFloat(settings.target_weight_kg as string) : null
+```
+
+- A corrupt/hand-edited `target_weight_kg` of `"abc"`/`"NaN"`/`"kg"` is a **truthy
+  string** → passes the `?` → `parseFloat` → `NaN`. The `{targetKg !== null && …}`
+  render guard at line 86 does **not** catch it (`NaN !== null` is `true`), so the
+  comparison renders `Math.abs(projectedKg - NaN)` → `fmt(NaN)` → literal
+  **"(NaN kg below target)"** to the athlete (confirmed in the failing test:
+  `Show day (8w): ~70.9 kg(NaN kg below target)`).
+- A `"0"` (truthy string) → `parseFloat("0")` → `0`, treated as a real **0-kg
+  goal** → renders a nonsensical e.g. **"(70.9 kg above target)"** vs a 0-kg target.
+
+**Reachability (in scope — "corrupted or hand-edited localStorage / persisted
+settings", "NaN propagation", "a value shown that doesn't match what's stored"):**
+identical to the 08-03 #2 precedent — the Progress editor only saves
+`!isNaN(v) && v > 0`, but a hand-edited/corrupt settings row bypasses that and the
+widget's read seam had no finiteness/positivity guard of its own.
+
+### STEP 3 — Fix (minimum — route the missed site through the existing shared helper)
+`src/components/widgets/PrepPaceWidget.tsx`: import `parseTargetWeightKg` and
+replace the inline `settings.target_weight_kg ? parseFloat(…) : null` with
+`parseTargetWeightKg(settings.target_weight_kg)`. A bad value now reads as "no
+target set" (the "(… target)" comparison line is simply omitted — the projection
+and pace still render); valid positive targets are unchanged. No new helper, no
+behavior change for valid data — this just finishes applying the 08-03 #2 fix to
+the one widget it missed.
+
+### Files changed
+- `src/components/widgets/PrepPaceWidget.tsx` — use shared `parseTargetWeightKg`.
+- `tests/unit/prepPaceTargetWeight.test.tsx` — +3 jsdom tests rendering the real
+  widget with seeded stores. Failing-first confirmed: `"abc"` rendered
+  `(NaN kg below target)` and `"0"` rendered `(70.9 kg above target)` before the
+  fix; after, both read as "no target set" (no NaN, no `target)` line) while a
+  valid `"72"` still renders the comparison.
+
+### STEP 4 — Verification (all PASS)
+- root `npx tsc --noEmit` → PASS; `tsc -p tsconfig.web.json` → only the one
+  pre-existing deferred `Diet/index.tsx:233` type-only error, no new errors.
+- `npm test` → PASS (369 tests, +3)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-08-04 #2 (BUG FIX — reordering meals desyncs the "eaten" marks: meal completions are keyed by positional `meal_index`, but `plan:reorderMeals` stored the reordered meals without remapping completions, so dragging a snack past an already-eaten meal moved the ✓ and its macros onto the WRONG meal — a persistent DB↔UI desync)
 
 ### STEP 0 — Requested changes

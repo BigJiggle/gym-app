@@ -4,6 +4,7 @@ import { usePlanStore } from '../../store/planStore'
 import { useSettingsStore } from '../../store/settingsStore'
 import { localDateStr } from '../../utils/dates'
 import { computeWeeklyWeightRate } from '../../utils/weeklyRate'
+import { parseTargetWeightKg } from '../../utils/targetWeight'
 
 export default function PrepPaceWidget() {
   const { user, shows } = useUserStore()
@@ -73,7 +74,12 @@ export default function PrepPaceWidget() {
             const showDateStr = nearestShow?.show_date
             const weeksToShow = showDateStr ? Math.max(0, (new Date(showDateStr + 'T12:00:00').getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 7)) : null
             const projectedKg = weeksToShow !== null ? currentWeightKg + weeklyRateKg * weeksToShow : null
-            const targetKg = settings.target_weight_kg ? parseFloat(settings.target_weight_kg as string) : null
+            // Guard the persisted target the same way CheckIn/Progress do: a
+            // corrupt/hand-edited "abc"/"NaN" would otherwise pass the truthy-string
+            // check, parseFloat to NaN, and render "(NaN kg … target)" (NaN !== null
+            // defeats the render guard below); a "0" would read as a nonsensical 0-kg
+            // goal. parseTargetWeightKg returns a finite positive kg or null.
+            const targetKg = parseTargetWeightKg(settings.target_weight_kg)
             return (
               <>
                 <p className="text-xs text-gray-700 mt-0.5">
