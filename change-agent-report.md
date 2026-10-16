@@ -1,5 +1,88 @@
 # Change Agent Report
 
+## Run: 2026-10-16 #2 (BUG FIX — the dashboard **Daily Weigh-In** widget crashes the whole dashboard tab on a corrupt/hand-edited `daily_weight_log` whose array contains a **`null` entry** (`null.date` → TypeError, no error boundary), and renders a **nonsense 7-day average** when an entry's `weight_kg` is a JSON string. The prior localStorage guard only validated the TOP-LEVEL array shape — never the individual entries.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 checked
+off). Proceeded to the bug hunt.
+
+### STEP 1 — Regression guard
+On a clean pull of `master`:
+- root `npx tsc --noEmit` → PASS (root `tsconfig.json` is `files:[]` + solution
+  `references`, so it checks nothing; `tsc -p tsconfig.web.json` surfaces the
+  **same one pre-existing, runtime-safe, type-only** error every prior run
+  documented and deferred: `Diet/index.tsx:233` cuisine `string`→union. Untouched;
+  my change adds **no new** errors.)
+- `npm test` → PASS (369 tests)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (b) training engine + workout/session flows, then (e) dashboard widgets / localStorage stores
+Rotated off last run's (f) show/date + (e) `target_weight_kg` widget sweep. Deep-read
+the training layer first — `trainingEngine.ts` (all numeric seams: freq /
+exercises-per-session / sets-per-exercise / max-sets guards, every split builder),
+`workoutHandlers.ts` (`sanitizeReps`/`sanitizeWeightKg` at every write seam),
+`WorkoutSession.tsx` (live session, `clampSetCount`/`parseRepMidpoint`/`detectNewPRs`),
+`WorkoutStats.tsx`, and `Training/index.tsx` — all exceptionally hardened by prior
+runs, no reachable defect. Also re-traced the check-in/adaptive-nutrition layer
+(`checkinEngine.ts`, `nutritionEngine.ts`, `weeklyRate.ts`/`weeksTracked.ts`,
+`refeed.ts`, `units.ts`) — clean. Then swept the dashboard widgets' **localStorage
+read seams** for the per-entry corruption gap the prior array-shape fixes didn't
+cover, and found one in a default dashboard widget.
+
+### The bug
+A prior run fixed `DailyWeighInWidget` against a **non-array** `daily_weight_log`
+(valid JSON of wrong shape: `null`/`{}`/`5`/…) by guarding the useState initializer
+with `Array.isArray(parsed) ? parsed : []`. But localStorage is user-editable, so
+each **entry** of a valid array is just as untrusted — and nothing validated them.
+The widget then did:
+
+```ts
+const todayEntry = dailyWeightLog.find(e => e.date === todayStr)      // e may be null
+const avg7 = last7.reduce((s, e) => s + e.weight_kg, 0) / last7.length // weight_kg may be a string
+```
+
+- **Hard crash (dashboard tab dies):** a `null` entry — e.g. a hand-edit that
+  blanked one object but left its comma, `[null, {…}]` — reaches `.find(e => e.date …)`
+  → `null.date` → `TypeError: Cannot read properties of null (reading 'date')`.
+  `DailyWeighInWidget` is a **default dashboard widget** with no error boundary, so
+  the entire dashboard tab unmounts (confirmed with a failing-first render test).
+- **Nonsense average:** an entry whose `weight_kg` is a JSON **string** (`"80"`)
+  rather than a number makes the `reduce` seed `0 + "80" + "81"` concatenate to
+  `"08081"`, then `/ 2` coerces back to **4040.5** — a silently wrong "7-day avg"
+  shown to the athlete (no NaN, so no visible error — worse).
+
+**Reachability (in scope — "corrupted or hand-edited localStorage", "NaN/undefined
+propagation", "a value shown that doesn't match what's stored"):** identical class
+to the prior array-shape and `parseTargetWeightKg` precedents; the write seam
+(`logDailyWeight`) already clamps to 30–300 kg, but a hand-edited/corrupt row
+bypasses it and the read seam had no per-entry guard.
+
+### STEP 3 — Fix (minimum — validate each entry at the read seam)
+`src/components/widgets/DailyWeighInWidget.tsx`: extracted the inline initializer
+into an exported pure helper `parseDailyWeightLog(raw)` that, after the existing
+array guard, keeps only well-formed entries — a **string `date`** and a **finite
+`weight_kg` within 30–300 kg** (the same bounds the write seam enforces), coercing
+a numeric-string weight to a number so it can't string-concat. A `null`/malformed
+entry is dropped (no crash); a string weight is normalized (correct average);
+out-of-bounds corruption (e.g. a stale pre-bounds-fix 850 kg row) is filtered from
+the display. Valid data passes through unchanged.
+
+### Files changed
+- `src/components/widgets/DailyWeighInWidget.tsx` — new exported
+  `parseDailyWeightLog` seam guard; initializer routes through it.
+- `tests/unit/dailyWeighInEntryCorrupted.test.tsx` — +5 tests (3 pure on
+  `parseDailyWeightLog`, 2 jsdom rendering the real widget). Failing-first confirmed:
+  a `null` entry threw `TypeError … reading 'date'` and the string-weight case
+  rendered a 4040.5 average before the fix; after, no crash, no NaN, 80.5 avg.
+
+### STEP 4 — Verification (all PASS)
+- root `npx tsc --noEmit` → PASS; `tsc -p tsconfig.web.json` → only the one
+  pre-existing deferred `Diet/index.tsx:233` type-only error, no new errors.
+- `npm test` → PASS (374 tests, +5)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-10-16 (BUG FIX — the dashboard **Prep Pace** widget renders literal **"(NaN kg below target)"** — and a nonsensical 0-kg goal — from a corrupt/hand-edited `target_weight_kg` setting. This is the THIRD site of the exact pattern run 2026-08-03 #2 fixed in CheckIn + Progress via the shared `parseTargetWeightKg` helper; `PrepPaceWidget.tsx:76` was missed and still used the raw `settings.target_weight_kg ? parseFloat(…) : null`.)
 
 ### STEP 0 — Requested changes

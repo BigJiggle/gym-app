@@ -4,18 +4,40 @@ import { localDateStr } from '../../utils/dates'
 
 interface DailyWeightEntry { date: string; weight_kg: number }
 
+// Parse + sanitize the persisted weigh-in log. localStorage is user-editable, so
+// beyond the top-level array guard each ENTRY can be corrupt too: a `null` entry
+// crashes `.find(e => e.date)` with a TypeError (no error boundary → the whole
+// dashboard tab dies), and a non-numeric `weight_kg` — e.g. the JSON string "80"
+// from a hand-edit — silently poisons the 7-day average via string concatenation
+// in `reduce` ((0 + "80" + "81") / 2 → 4040.5, not 80.5). Keep only well-formed
+// entries: a string date and a finite weight within the same 30–300 kg bounds the
+// write seam (logDailyWeight) already enforces. Valid data passes through unchanged.
+export function parseDailyWeightLog(raw: string | null): DailyWeightEntry[] {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw ?? '[]')
+  } catch {
+    return []
+  }
+  if (!Array.isArray(parsed)) return []
+  const out: DailyWeightEntry[] = []
+  for (const e of parsed) {
+    if (!e || typeof e !== 'object') continue
+    const date = (e as { date?: unknown }).date
+    const weight = Number((e as { weight_kg?: unknown }).weight_kg)
+    if (typeof date === 'string' && Number.isFinite(weight) && weight >= 30 && weight <= 300) {
+      out.push({ date, weight_kg: weight })
+    }
+  }
+  return out
+}
+
 export default function DailyWeighInWidget() {
   const { settings } = useSettingsStore()
   const todayStr = localDateStr()
-  const [dailyWeightLog, setDailyWeightLog] = useState<DailyWeightEntry[]>(() => {
-    // Guard against valid-JSON-but-wrong-shape storage (hand-edited / corrupted:
-    // `null`, `{}`, `5`, …) — it parses without throwing, so try/catch alone
-    // won't catch it, and .find()/.filter() on a non-array crashes the widget.
-    try {
-      const parsed = JSON.parse(localStorage.getItem('daily_weight_log') ?? '[]')
-      return Array.isArray(parsed) ? parsed : []
-    } catch { return [] }
-  })
+  const [dailyWeightLog, setDailyWeightLog] = useState<DailyWeightEntry[]>(
+    () => parseDailyWeightLog(localStorage.getItem('daily_weight_log'))
+  )
   const [dailyWeightInput, setDailyWeightInput] = useState('')
   const [dailyWeightEditing, setDailyWeightEditing] = useState(false)
 
