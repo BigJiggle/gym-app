@@ -61,9 +61,14 @@ function weightTrend(
 // average out water/glycogen noise, short enough to stay responsive.
 const TREND_WINDOW = 4
 
-// Smoothed multi-check-in weight trend: average per-interval % of bodyweight
-// change across the recent window, so a single noisy weigh-in (water, sodium,
-// glycogen) can't whipsaw the calorie target on its own.
+// Smoothed multi-check-in weight trend: the Theil–Sen median of the per-week
+// slopes between every pair of weigh-ins in the window (oldest priors → current),
+// expressed as % of bodyweight per week. Taking the MEDIAN of all pairwise slopes
+// reads every point in the window and is robust to a single noisy weigh-in
+// (water, sodium, glycogen) on ANY slot — newest, oldest, or interior — so one
+// off day can't whipsaw the calorie target. (A plain endpoint slope or an average
+// of consecutive deltas both collapse to (newest − oldest)/span and ignore the
+// interior points entirely, so either endpoint's noise drives the whole signal.)
 // `recentCheckins` are the PRIOR check-ins (not including `current`), most-recent
 // first — exactly as returned by the history query. Returns null when there is
 // too little history to form a trend, so the caller falls back to the single-week
@@ -81,15 +86,47 @@ function weightTrendPct(
   // Need at least two priors so the window spans ≥2 intervals — otherwise it's
   // just the single-week delta and offers no smoothing.
   if (priors.length < 2) return null
-  // priors are most-recent-first, so the last one is the oldest anchor. The series
-  // runs oldest → … → current. Normalize by the ACTUAL weeks elapsed between the
-  // oldest anchor and the current weigh-in so non-weekly cadences (biweekly,
-  // every-3-days) aren't misread; fall back to the interval count when dates are
-  // unavailable (unchanged legacy behavior — intervals ≈ weeks for weekly users).
-  const oldest = priors[priors.length - 1]
-  const weeks = weeksBetweenDates(oldest.check_in_date, currentDate) ?? priors.length
-  const change = (currentWeight - oldest.weight_kg) / weeks
-  return (change / bodyweight) * 100
+  // priors are most-recent-first; reverse to run oldest → … → newest-prior, then
+  // append the current weigh-in as the last point.
+  const oldestFirst = [...priors].reverse()
+  const weights = [...oldestFirst.map((c) => c.weight_kg), currentWeight]
+  const dates = [...oldestFirst.map((c) => c.check_in_date), currentDate]
+
+  // x-positions in weeks-from-anchor so each pairwise slope is a true per-week
+  // rate regardless of cadence (weekly, biweekly, every-3-days, daily). Use real
+  // dates when every point has a parseable, strictly-later date than the anchor;
+  // otherwise fall back to the interval index (1 week per interval — unchanged
+  // legacy assumption, and intervals ≈ weeks for weekly users).
+  const anchor = dates[0]
+  let xs: number[] | null = anchor ? [0] : null
+  if (xs) {
+    for (let i = 1; i < dates.length; i++) {
+      const w = weeksBetweenDates(anchor, dates[i])
+      if (w === null) {
+        xs = null
+        break
+      }
+      xs.push(w)
+    }
+  }
+  const x = xs ?? weights.map((_, i) => i)
+
+  // Theil–Sen: median of the slope between every pair of points. Pairs with a
+  // non-positive x-gap (same-day duplicate entries) are skipped so a hand-edited
+  // or double-submitted same-day weigh-in can't divide by zero → Infinity.
+  const slopes: number[] = []
+  for (let i = 0; i < weights.length; i++) {
+    for (let j = i + 1; j < weights.length; j++) {
+      const dx = x[j] - x[i]
+      if (dx <= 0) continue
+      slopes.push((weights[j] - weights[i]) / dx)
+    }
+  }
+  if (slopes.length === 0) return null
+  slopes.sort((a, b) => a - b)
+  const mid = Math.floor(slopes.length / 2)
+  const slope = slopes.length % 2 === 0 ? (slopes[mid - 1] + slopes[mid]) / 2 : slopes[mid]
+  return (slope / bodyweight) * 100
 }
 
 export function calculateAdjustments(

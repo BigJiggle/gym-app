@@ -207,6 +207,51 @@ describe('checkinEngine', () => {
       expect(adj.calories_delta).toBe(-100)
       expect(adj.notes.some((n) => n.includes('Weight trend'))).toBe(true)
     })
+
+    // A single noisy weigh-in on the NEWEST slot (today's water/sodium day) must
+    // not whipsaw the target. Athlete is cutting cleanly (83.0→82.6→82.3→82.0 over
+    // the window) and today reads +2 kg of water (84.0). An endpoint-only slope
+    // reads (84.0−83.0)/4wk ≈ +0.3 %/wk and wrongly fires a "stalling" −100 kcal;
+    // a trend that reads ALL points sees the clean ~−0.3 %/wk loss and holds.
+    it('does not read a stall when today is a one-off water spike over a clean cut', () => {
+      const adj = calculateAdjustments(
+        { ...GOOD_CHECKIN, weight_kg: 84.0 }, // today: +2 kg water
+        { weight_kg: 83.0, week_number: 4 },
+        2000,
+        'cut',
+        [
+          { weight_kg: 82.0, week_number: 4 }, // most recent prior
+          { weight_kg: 82.3, week_number: 3 },
+          { weight_kg: 82.6, week_number: 2 },
+          { weight_kg: 83.0, week_number: 1 } // oldest anchor
+        ]
+      )
+      expect(adj.calories_delta).toBe(0)
+      expect(adj.notes.some((n) => n.includes('stalling'))).toBe(false)
+      expect(adj.notes.some((n) => n.toLowerCase().includes('on track'))).toBe(true)
+    })
+
+    // Symmetric case: a single dehydrated-LOW weigh-in on the newest slot must not
+    // trigger the "dropping too fast" +150 kcal branch. Athlete is essentially
+    // maintaining (82.5→82.3→82.1→82.0) and today reads a 5 kg dehydration low
+    // (77.0). Endpoint slope reads (77.0−82.5)/4wk ≈ −1.8 %/wk → wrongly +150 kcal;
+    // an all-points trend ignores the lone outlier.
+    it('does not read a fast drop when today is a one-off dehydration low', () => {
+      const adj = calculateAdjustments(
+        { ...GOOD_CHECKIN, weight_kg: 77.0 }, // today: dehydrated low
+        { weight_kg: 82.5, week_number: 4 },
+        2000,
+        'cut',
+        [
+          { weight_kg: 82.0, week_number: 4 }, // most recent prior
+          { weight_kg: 82.1, week_number: 3 },
+          { weight_kg: 82.3, week_number: 2 },
+          { weight_kg: 82.5, week_number: 1 } // oldest anchor
+        ]
+      )
+      expect(adj.calories_delta).toBe(0)
+      expect(adj.notes.some((n) => n.includes('too fast'))).toBe(false)
+    })
   })
 
   // A biweekly / every-3-days schedule (both first-class Settings options) means

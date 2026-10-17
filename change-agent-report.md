@@ -1,5 +1,87 @@
 # Change Agent Report
 
+## Run: 2026-10-17 #2 (BUG FIX — adaptive-nutrition `weightTrendPct` was a **2-point endpoint slope masquerading as a smoothed multi-check-in trend**: it read ONLY the newest and oldest weigh-ins in the window and ignored every intermediate prior, so a single noisy weigh-in on either endpoint — today's water/sodium day, or a dehydrated-low morning — whipsawed the stored calorie target the wrong way, the exact failure its name and docstring promised to prevent. This is the finding the previous run surfaced and DEFERRED in area (c).)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 checked
+off). Proceeded to the bug hunt.
+
+### STEP 1 — Regression guard
+On a clean pull of `master` (`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc -p tsconfig.web.json` / `-p tsconfig.node.json` → the **two
+  PRE-EXISTING, type-only** errors every prior run documents and defers —
+  `src/pages/Diet/index.tsx:233` (cuisine `string`→union, runtime-safe) and
+  `electron/ipc/showHandlers.ts:332` (`unknown`→`JSValue`). Both predate this run
+  and live in files this fix does not touch. (Root `tsconfig.json` is `files:[]` +
+  solution `references`, so bare `tsc --noEmit` is a known vacuous gate.)
+- `npm test` → PASS (376 tests, 59 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (c) check-in + Progress + adaptive nutrition
+Rotated off last run's area (b) training. Took the real, distinct correctness bug
+the previous run documented at the bottom of its entry (`weightTrendPct`,
+`electron/services/checkinEngine.ts`) and confirmed it from source before fixing.
+
+### STEP 3 — Root cause & fix
+`weightTrendPct` is named/documented as a "smoothed multi-check-in weight trend …
+so a single noisy weigh-in can't whipsaw the calorie target," but the body was:
+
+```
+const oldest = priors[priors.length - 1]
+const weeks = weeksBetweenDates(oldest.check_in_date, currentDate) ?? priors.length
+const change = (currentWeight - oldest.weight_kg) / weeks   // only 2 points read
+```
+
+The up-to-3 intermediate priors are read ONLY to pick the oldest anchor + count
+the intervals; their **weights are never used**. So it is a 2-point endpoint slope
+and is maximally sensitive to noise on either endpoint — precisely the whipsaw it
+claims to prevent. (An "average of consecutive per-interval deltas" would be no
+better: it telescopes to `(newest − oldest)/span` and also ignores the interior.)
+
+**Reachable, normal-data trigger** (`calculateAdjustments` cut/recomp branch,
+`checkinEngine.ts:109-111`): an athlete cutting cleanly `83.0→82.6→82.3→82.0` whose
+today's weigh-in is a routine +2 kg water day (84.0) → endpoint reads
+`(84.0−83.0)/4wk ≈ +0.30 %/wk` → engine fires **"stalling" −100 kcal**. The
+symmetric dehydrated-low endpoint (e.g. 77.0) reads `≈ −1.8 %/wk` → wrongly
+**+150 kcal**. The bad `calories_delta` then persists into `diet_plans`
+(`checkinHandlers.ts`), so one off-day weigh-in permanently nudges stored
+calorie/macro targets. No crash/NaN — purely a logic defect.
+
+**Fix (minimum correct change, `checkinEngine.ts:64-124`):** replaced the endpoint
+slope with a **Theil–Sen median slope** — the median of the per-week slope between
+every pair of points in the window (oldest priors → current). The median of all
+pairwise slopes reads every point and is robust to a single outlier on ANY slot
+(newest, oldest, or interior), so one off day can't drive the signal. Kept the
+existing cadence normalization (real weeks-from-anchor when every point has a
+parseable strictly-later date; interval-index fallback otherwise — unchanged
+legacy behavior for weekly users). Added a `dx <= 0` guard that skips same-day
+pairs, so a duplicate / double-submitted same-day weigh-in can't divide by zero →
+Infinity (an in-SCOPE robustness win). `< 2` priors still returns `null` →
+single-week fallback, unchanged for early check-ins.
+
+### Tests
+`tests/unit/checkinEngine.test.ts` — 2 new failing-first cases in the
+`multi-check-in weight trend (adaptive)` block: a clean cut + one-off water spike
+on today's slot must read **on-track (Δ0)** not "stalling −100"; a clean maintain +
+one-off dehydration low on today's slot must **not** fire "too fast +150". Both
+FAIL against the old endpoint code (−100 / +150) and PASS after the fix. The 3
+pre-existing trend tests still pass — they placed their noise on the most-recent /
+interior slot the old formula happened to ignore (false confidence); the median
+handles those identically.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc -p tsconfig.node.json` → no NEW errors (only the pre-existing
+  `showHandlers.ts:332` documented above; my file is clean)
+- `npm test` → PASS (378 tests, +2 new)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `electron/services/checkinEngine.ts` — `weightTrendPct` endpoint slope → Theil–Sen median (all-points, outlier-robust) + same-day `dx<=0` guard + accurate docstring.
+- `tests/unit/checkinEngine.test.ts` — 2 new failing-first tests.
+- `change-agent-report.md` — this entry.
+
+---
+
 ## Run: 2026-10-17 (BUG FIX — the Settings "Edit profile" save path persists **`exercises_per_session` and `sets_per_exercise` unclamped**, so a typed extreme (e.g. "999") "Save & regenerate"s a training plan with **~1000 sets per exercise and dozens of exercises per session** — a nonsensical plan the Training tab renders verbatim while the live WorkoutSession silently clamps each exercise to 1–20, a DB↔UI desync. This is the exact hole the 2026-08-04 `training_frequency` fix closed, left open on its two sibling training fields.)
 
 ### STEP 0 — Requested changes
