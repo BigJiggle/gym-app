@@ -77,6 +77,43 @@ failing-first (reverting the fix → 1 failed), passing after.
 - `tests/unit/userSanitize.test.ts` — 2 new tests.
 - `change-agent-report.md` — this entry.
 
+### Also found (DEFERRED to a future run — area (c), NOT fixed this run)
+While surveying the check-in / adaptive-nutrition path in parallel, a **real,
+distinct correctness bug** surfaced in `weightTrendPct`
+(`electron/services/checkinEngine.ts:71-93`, core at **89-92**). Recorded here for
+continuity since runs are memoryless; left for a dedicated run under the
+one-fix-per-run rule.
+
+- **What:** the function's docstring promises a *"Smoothed multi-check-in weight
+  trend: average per-interval % of bodyweight change across the recent window, so
+  a single noisy weigh-in (water, sodium, glycogen) can't whipsaw the calorie
+  target."* The implementation, however, is a **2-point endpoint slope** —
+  `change = (currentWeight − oldest.weight_kg) / weeks` — that reads ONLY the newest
+  and oldest weights in the window. The up-to-3 intermediate priors are never read
+  for their weight (only to pick the oldest anchor + interval count). So it is not
+  an average and is maximally sensitive to noise on either endpoint — the exact
+  whipsaw it claims to prevent.
+- **Trigger (normal, uncorrupted data):** a cut/recomp athlete with ≥2 priors
+  trending down cleanly (83.0→82.6→82.3→82.0 kg) whose *current* weigh-in is a
+  routine +2 kg water/sodium day (84.0) → `(84.0−83.0)/4wk = +0.25 kg/wk` → engine
+  reads a stall and fires `calories_delta = -100` ("Weight trend stalling"). The
+  symmetric dehydrated-low endpoint fires the `< -1.5` branch and wrongly **adds
+  150 kcal**. For short cadences (daily / every-2–3-days — all Settings options)
+  `weeks < 1`, so endpoint noise is *amplified*, not dampened.
+- **Downstream:** the bad `calories_delta` persists into `diet_plans` via
+  `checkinHandlers.ts:132` — one water-heavy weigh-in permanently nudges stored
+  calorie/macro targets the wrong way. No crash/NaN (those paths are guarded);
+  purely a logic defect.
+- **Why the existing test misses it:** `tests/unit/checkinEngine.test.ts:134`
+  ("smoothed trend treats the same weigh-in as a stall, not a fast drop") places
+  the +2 kg spike on an **intermediate** prior (week 3) — the one slot the formula
+  ignores — so it passes by coincidence and gives false confidence. Moving the same
+  noise to the current/oldest slot breaks it.
+- **Suggested fix direction (not applied):** compute the trend from ALL points in
+  the window — a least-squares slope over (date, weight) pairs, or the average of
+  consecutive per-week deltas — instead of `(current − oldest)/weeks`. Add a
+  failing-first test that puts the noise on the newest/oldest slot.
+
 ---
 
 ## Run: 2026-10-16 #2 (BUG FIX — the dashboard **Daily Weigh-In** widget crashes the whole dashboard tab on a corrupt/hand-edited `daily_weight_log` whose array contains a **`null` entry** (`null.date` → TypeError, no error boundary), and renders a **nonsense 7-day average** when an entry's `weight_kg` is a JSON string. The prior localStorage guard only validated the TOP-LEVEL array shape — never the individual entries.)
