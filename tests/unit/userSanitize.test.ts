@@ -92,6 +92,34 @@ describe('sanitizeUserUpdate — non-finite numeric guard', () => {
     expect(sanitizeUserUpdate({ id: 1, training_frequency: 4 }).training_frequency).toBe(4)
   })
 
+  // exercises_per_session / sets_per_exercise feed generateTrainingPlan, which honors
+  // each with NO upper bound: getSets() returns `userDefault` (isolations) or
+  // `userDefault + 1` (compounds) sets, and the builders request that many exercises
+  // per group. The Settings number inputs (exercises 3–12, sets 2–8) only bound the
+  // spinner arrows, so a typed "999" reaches user:update unclamped — "Save & regenerate"
+  // then stores a plan with ~1000 sets per exercise and dozens of exercises per session,
+  // which the Training tab renders verbatim while the live WorkoutSession clamps each to
+  // 1–20 (a nonsensical plan + DB↔UI desync). sanitizeUserUpdate must clamp both to the
+  // Settings ranges. Mirrors the training_frequency guard above.
+  it('clamps out-of-range exercises_per_session (3–12) and sets_per_exercise (2–8)', () => {
+    const high = sanitizeUserUpdate({ id: 1, exercises_per_session: 999, sets_per_exercise: 999 })
+    expect(high.exercises_per_session).toBe(12)
+    expect(high.sets_per_exercise).toBe(8)
+
+    const low = sanitizeUserUpdate({ id: 1, exercises_per_session: 0, sets_per_exercise: -5 })
+    expect(low.exercises_per_session).toBe(3)
+    expect(low.sets_per_exercise).toBe(2)
+
+    // Fractional typed values round to a whole count.
+    expect(sanitizeUserUpdate({ id: 1, sets_per_exercise: 4.6 }).sets_per_exercise).toBe(5)
+  })
+
+  it('leaves in-range exercises_per_session / sets_per_exercise untouched', () => {
+    const clean = sanitizeUserUpdate({ id: 1, exercises_per_session: 6, sets_per_exercise: 4 })
+    expect(clean.exercises_per_session).toBe(6)
+    expect(clean.sets_per_exercise).toBe(4)
+  })
+
   it('serializes array fields and clamps meal/snack counts', () => {
     const clean = sanitizeUserUpdate({
       id: 1,

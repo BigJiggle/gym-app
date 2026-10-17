@@ -65,6 +65,28 @@ export function clampTrainingFrequency(value: unknown): number | undefined {
   const n = clampProfileNumber(value, 2, 6)
   return n === undefined ? undefined : Math.round(n)
 }
+// exercises_per_session / sets_per_exercise are the SAME hole as training_frequency
+// above, on two sibling training fields that sanitizeUserUpdate left unguarded.
+// They feed generateTrainingPlan, which honors each verbatim with NO upper bound:
+// getSets() returns `userDefault` sets for isolations and `userDefault + 1` for
+// compounds (no cap unless a max is set), and the builders request
+// `exercises_per_session` exercises per muscle group. The Settings "Edit profile"
+// number inputs (exercises 3–12, sets 2–8) only bound the spinner arrows — a typed
+// extreme (e.g. "999") reaches user:update unclamped, so "Save & regenerate" stores
+// a plan with ~1000 sets per exercise and dozens of exercises per session. The
+// Training tab then renders that verbatim ("1000 × 8-12 @ RIR 2"), while the live
+// WorkoutSession silently clamps each exercise to clampSetCount's 1–20 — a nonsensical
+// plan and a DB↔UI desync. Clamp to the same ranges the Settings UI (and the engine's
+// sane output) agree on. A non-finite value (cleared field → NaN) returns undefined so
+// it is dropped by the final filter and the stored value is preserved.
+export function clampExercisesPerSession(value: unknown): number | undefined {
+  const n = clampProfileNumber(value, 3, 12)
+  return n === undefined ? undefined : Math.round(n)
+}
+export function clampSetsPerExercise(value: unknown): number | undefined {
+  const n = clampProfileNumber(value, 2, 8)
+  return n === undefined ? undefined : Math.round(n)
+}
 
 // Serialize + clean a partial user-update payload for binding.
 // - JSON array / boolean fields are stringified/int-coerced (node-sqlite3-wasm
@@ -95,6 +117,8 @@ export function sanitizeUserUpdate(data: Record<string, unknown>): Record<string
     height_cm: clampHeightCm(data.height_cm),
     weight_kg: clampWeightKgField(data.weight_kg),
     training_frequency: clampTrainingFrequency(data.training_frequency),
+    exercises_per_session: clampExercisesPerSession(data.exercises_per_session),
+    sets_per_exercise: clampSetsPerExercise(data.sets_per_exercise),
   }
   return Object.fromEntries(
     Object.entries(serialized).filter(

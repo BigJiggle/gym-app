@@ -1,5 +1,84 @@
 # Change Agent Report
 
+## Run: 2026-10-17 (BUG FIX — the Settings "Edit profile" save path persists **`exercises_per_session` and `sets_per_exercise` unclamped**, so a typed extreme (e.g. "999") "Save & regenerate"s a training plan with **~1000 sets per exercise and dozens of exercises per session** — a nonsensical plan the Training tab renders verbatim while the live WorkoutSession silently clamps each exercise to 1–20, a DB↔UI desync. This is the exact hole the 2026-08-04 `training_frequency` fix closed, left open on its two sibling training fields.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 checked
+off). Proceeded to the bug hunt.
+
+### STEP 1 — Regression guard
+On a clean pull of `master` (`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (374 tests, 59 files)
+- `npx electron-vite build` → PASS
+
+No regressions in the specified STEP 1 gate. (Observation, not this run's fix:
+the root `tsconfig.json` has `files: []` + solution `references`, so bare
+`tsc --noEmit` type-checks nothing — a known vacuous gate noted in the 2026-08-01
+#2 run. Running the per-project checks surfaces **two PRE-EXISTING, type-only**
+errors unrelated to this fix — `src/pages/Diet/index.tsx:233` (`prefsCuisine` is
+`useState<string>` where `culture_pref` wants a union; the cuisine picker only
+emits valid union values, so it is runtime-safe) and
+`electron/ipc/showHandlers.ts:332` (an `unknown` binding type). Both predate this
+run and live in files this fix does not touch; left for a dedicated run under the
+one-fix-per-run rule.)
+
+### STEP 2 — Area audited: (b) training engine + workout/session flows
+Rotated off the last two runs' dashboard-widget focus (e). Traced the training
+engine (`trainingEngine.ts`), workout IPC handlers (`workoutHandlers.ts`), the
+live `WorkoutSession` / `WorkoutStats` render paths, the Settings profile-save
+seam (`userSanitize.ts`), and `showHandlers.ts`. Most SCOPE paths were already
+hardened by prior runs (set-count clamp, reps/weight write-seam clamp, freq/
+exercises/sets `<= 0`-&-non-finite guards in `generateTrainingPlan`, PR/rep-range
+NaN guards). The one unguarded reachable seam was the Settings → `user:update`
+write path for `exercises_per_session` / `sets_per_exercise`.
+
+### STEP 3 — Root cause & fix
+`sanitizeUserUpdate` (`electron/ipc/userSanitize.ts`) clamps `training_frequency`,
+`meal_count`, `snack_count`, `body_fat_pct`, `age`, `height_cm`, `weight_kg` — but
+**NOT** `exercises_per_session` or `sets_per_exercise`. The Settings "Edit profile"
+number inputs (`src/pages/Settings/index.tsx:429,431` — exercises `min=3 max=12`,
+sets `min=2 max=8`) only bound the spinner arrows; a *typed* value like `999`
+flows through `parseInt` → `user:update` → `sanitizeUserUpdate` unclamped and
+persists (schema default is 6/4; onboarding never sets these, so Settings is the
+sole entry point).
+
+`generateTrainingPlan` then honors the stored value with **no upper bound**:
+`getSets()` returns `userDefault` sets for isolations and `userDefault + 1` for
+compounds (a cap applies only when `max_sets_per_exercise` is set, which the
+rule-based path never sets), and the split builders request
+`exercises_per_session` exercises per muscle group. Reproduced directly:
+`generateTrainingPlan({ sets_per_exercise: 999, exercises_per_session: 999, … })`
+→ **max 1000 sets in an exercise, 33 exercises in the first session, 116 total.**
+"Save & regenerate" stores that plan; the Training tab renders it verbatim
+(`src/pages/Training/index.tsx:807` — `{ex.sets} × {ex.reps} @ RIR {ex.rir}` →
+"1000 × 8-12 @ RIR 2") while the live `WorkoutSession` clamps each exercise to
+`clampSetCount`'s 1–20 — a nonsensical plan and a DB↔UI desync.
+
+**Fix (minimum, at the write seam — mirrors `clampTrainingFrequency`):** added
+`clampExercisesPerSession` (3–12) and `clampSetsPerExercise` (2–8) to
+`userSanitize.ts` and wired both into `sanitizeUserUpdate`. Out-of-range typed
+values now clamp to the Settings ranges; a cleared field (NaN) still returns
+`undefined` and is dropped so the stored value is preserved (unchanged behavior).
+In-range values pass through untouched.
+
+### Tests
+`tests/unit/userSanitize.test.ts` — added two cases: clamps `999 → 12`/`8`,
+`0/-5 → 3`/`2`, rounds fractional; leaves in-range 6/4 untouched. Confirmed
+failing-first (reverting the fix → 1 failed), passing after.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (376 tests, +2 new)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `electron/ipc/userSanitize.ts` — two new clamp helpers + wired into `sanitizeUserUpdate`.
+- `tests/unit/userSanitize.test.ts` — 2 new tests.
+- `change-agent-report.md` — this entry.
+
+---
+
 ## Run: 2026-10-16 #2 (BUG FIX — the dashboard **Daily Weigh-In** widget crashes the whole dashboard tab on a corrupt/hand-edited `daily_weight_log` whose array contains a **`null` entry** (`null.date` → TypeError, no error boundary), and renders a **nonsense 7-day average** when an entry's `weight_kg` is a JSON string. The prior localStorage guard only validated the TOP-LEVEL array shape — never the individual entries.)
 
 ### STEP 0 — Requested changes
