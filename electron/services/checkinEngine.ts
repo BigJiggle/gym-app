@@ -25,6 +25,27 @@ export interface Adjustments {
   notes: string[]
 }
 
+// The STORED check-in weight (weekly_checkins.weight_kg) is read verbatim by the
+// Progress "Current Weight" tile + weight chart and folded raw into the smoothed
+// weight trend. The Check-In page's toKg only rejects <= 0 (no upper bound), so a
+// fat-fingered 850 (meant 85.0, or an lbs value typed into a kg field) persists an
+// 850 kg row that spikes the Progress chart and whipsaws the trend/calorie
+// adaptation. clampWeightKg already bounds the MACRO derivation (plan recalc), but
+// the stored/charted/trended weight itself was left unbounded — the 2026-07-30 run
+// closed the macro end and explicitly flagged this write-boundary gap as a lead.
+// Clamp to the same 30-300 kg range Onboarding/Settings (clampWeightKgField) use so
+// the displayed and trended weight agree with the plausible-weight invariant the
+// rest of the app enforces. Returns the clamped weight, or null when the value is
+// non-finite / <= 0 so the caller can reject it (weekly_checkins.weight_kg is NOT
+// NULL and the Check-In UI already blocks that case).
+export const CHECKIN_WEIGHT_MIN_KG = 30
+export const CHECKIN_WEIGHT_MAX_KG = 300
+export function clampCheckinWeightKg(value: unknown): number | null {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n <= 0) return null
+  return Math.max(CHECKIN_WEIGHT_MIN_KG, Math.min(CHECKIN_WEIGHT_MAX_KG, n))
+}
+
 // Elapsed weeks between two YYYY-MM-DD check-in dates. Returns null when either
 // date is missing/unparseable or the span is non-positive, so callers can fall
 // back to their prior cadence assumption. Parsed at local noon to stay immune to

@@ -1,5 +1,43 @@
 # Change Agent Report
 
+## Run: 2026-10-18 (BUG FIX — the STORED check-in weight was **unbounded at all three write seams**, so a fat-fingered extreme persisted verbatim into `weekly_checkins.weight_kg` — the value the Progress "Current Weight" tile + weight chart render directly and the smoothed weight trend folds in raw. The Check-In page's `toKg` rejects only `<= 0` (no upper bound), so a typed `850` — meant `85.0`, or an lbs value typed into a kg field — stored an 850 kg row that spikes the Progress chart and whipsaws the trend/calorie adaptation. The 2026-07-30 run bounded the MACRO derivation via `clampWeightKg` and **explicitly flagged this write-boundary gap as a lead for a future run**: "The stored check-in weight itself is still unbounded … feeds the raw trend/projection … A future (c)/(d) run could clamp the check-in weight at its input/write boundary (30–300, mirroring `clampWeightKgField`)." This run closes that gap.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all queued items are `- [x]`). Bug-hunt run.
+
+### STEP 1 — Regression guard (clean baseline on fresh rebased `master`)
+- `npx tsc --noEmit` (root, the routine's gate) → PASS (clean)
+- `npm test` → PASS (378 tests, 59 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.) **Note (not this run's fix):** `npx tsc -p tsconfig.web.json` surfaces one pre-existing, type-only error — `src/pages/Diet/index.tsx:233` passes `prefsCuisine` (`useState<string>`) into `updateUser`'s `culture_pref` union field. It has no runtime consequence (the value only ever holds a valid cuisine option, and an unknown culture resolves to `'any'` in the engine), predates this run (the `prefsCuisine` state dates to 2026-07-13), and is outside the routine's STEP 1 gate (root `tsc`). Left as a non-debugging annotation gap, recorded here for a future run to tidy.
+
+### STEP 2 — Area audited: (c)/(f) check-in write path + show/date logic
+Rotated off the last four runs' clusters — 10-17 #2 (c, adaptive `weightTrendPct`), 10-17 (b, Settings training clamps), 10-16 #2 and 10-16 (e, dashboard widgets). Deep-read `showHandlers.ts` (`syncPrimaryToNearest`/`setPrimaryShow`/add/update/delete/cancel — diet regen on every show-context change all present and correct), `showDates.ts` (`weeksUntilShow`/`localToday` — local-midnight math, no drift), `dates.ts` (`getShowCountdown` — `isPast` vs clamped-0 handled), and the `checkinHandlers.ts` write path (duplicate-day guard, week_number renumber-on-date-edit, non-finite→null map — all guarded). The Diet page's water/refeed/cardio localStorage reads and intake-bar divisions are all `isNaN`/`> 0` guarded. The one **real, reachable, still-open** defect was the 07-30 lead: the stored check-in weight is unbounded.
+
+### STEP 3 — Root cause + fix (minimum change, at the write seam)
+- **Root cause:** the Check-In UI bounds weight only at `> 0`, and the three backend write seams (`checkin:submit`, `checkin:submitMissed`, `checkin:update`) stored `data.weight_kg` verbatim (`...data` spread / the update's allowed-field map). `clampWeightKg` bounded only the macro math, not the stored/charted/trended value.
+- **Fix:** new pure helper `clampCheckinWeightKg(value)` (`electron/services/checkinEngine.ts`) → clamps a finite positive weight to the app's canonical **30–300 kg** range (same bounds as `clampWeightKgField` and Onboarding/Settings `validateStep`), returning `null` for non-finite/`<= 0` so the caller rejects it (`weekly_checkins.weight_kg` is `NOT NULL`; the UI already blocks that case). Applied once per handler and used for BOTH the stored row and the adjustment-math input so they agree:
+  - `checkin:submit` (`checkinHandlers.ts`) — clamp before the insert's `namedParams` and `calculateAdjustments`; the macro recalc now derives from the clamped weight.
+  - `checkin:submitMissed` — same clamp before its insert + adjustments.
+  - `checkin:update` — clamp only when the edit sets a finite weight (`editedWeightKg`); substituted into both the allowed-field update map and `calculateAdjustments`; a non-weight edit is unchanged.
+- A legacy/pre-existing out-of-range row is unaffected (no migration — mirrors how `clampWeightKgField` guards only new writes); the fix prevents future poisoning. Plausible weigh-ins are byte-for-byte unchanged.
+
+### Tests added — `tests/unit/checkinWeightClamp.test.ts` (8 tests)
+- `clampCheckinWeightKg` pure helper: `850`/`301`→`300`; `5`/`29`→`30` (floor); `85`/`120.5` pass through; `0`/`-10`/`NaN`/`Infinity`/`'abc'`→`null`.
+- REAL handlers vs in-memory `node-sqlite3-wasm` DB: `checkin:submit`, `checkin:submitMissed`, and `checkin:update` each clamp a stored `850` → `300`; plausible `92.5` stored unchanged; a `0` weigh-in throws `INVALID_WEIGHT`.
+- **Fail-first confirmed:** reverting the three seam clamps made the three handler assertions fail (`expected [ 850 ] to deeply equal [ 300 ]`); all pass with the fix.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (386 tests, +8 new)
+- `npx electron-vite build` → PASS
+
+### Lead for a future run
+The 07-30 lead is now fully closed on the weight write seams. One tidy-up remains (optional, non-debugging): the `src/pages/Diet/index.tsx:233` `culture_pref` type-only error under `tsconfig.web.json` (narrow `prefsCuisine`'s state type to the `culture_pref` union, or cast at the call site).
+
+---
+
 ## Run: 2026-10-17 #2 (BUG FIX — adaptive-nutrition `weightTrendPct` was a **2-point endpoint slope masquerading as a smoothed multi-check-in trend**: it read ONLY the newest and oldest weigh-ins in the window and ignored every intermediate prior, so a single noisy weigh-in on either endpoint — today's water/sodium day, or a dehydrated-low morning — whipsawed the stored calorie target the wrong way, the exact failure its name and docstring promised to prevent. This is the finding the previous run surfaced and DEFERRED in area (c).)
 
 ### STEP 0 — Requested changes

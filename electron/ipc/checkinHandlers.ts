@@ -1,6 +1,6 @@
 import { IpcMain } from 'electron'
 import { getDb, namedParams } from '../database/db'
-import { calculateAdjustments } from '../services/checkinEngine'
+import { calculateAdjustments, clampCheckinWeightKg } from '../services/checkinEngine'
 import { getNextCheckinDate, computeMissedSlots } from '../services/checkinSchedule'
 import { clampWeightKg, MIN_CALORIE_TARGET } from '../services/nutritionEngine'
 
@@ -29,6 +29,13 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
 
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(data.user_id) as Record<string, unknown>
     if (!user) throw new Error('User not found')
+
+    // Clamp the weigh-in to the app's plausible 30-300 kg range at the write seam so
+    // the STORED weight (charted in Progress + folded raw into the weight trend)
+    // can't be poisoned by a fat-fingered extreme the Check-In UI's >0-only guard
+    // lets through. Used for both the stored row and the adjustment math so they agree.
+    const weightKg = clampCheckinWeightKg(data.weight_kg)
+    if (weightKg === null) throw new Error('INVALID_WEIGHT')
 
     // Interval enforcement — ORDER BY check_in_date so retroactive inserts
     // (which have the highest id but an old date) don't break lock calculation.
@@ -82,7 +89,7 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
 
     const adjustments = calculateAdjustments(
       {
-        weight_kg: data.weight_kg,
+        weight_kg: weightKg,
         training_adherence: data.training_adherence,
         diet_adherence: data.diet_adherence,
         energy_level: data.energy_level,
@@ -117,6 +124,7 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
       )
       .run(namedParams({
         ...data,
+        weight_kg: weightKg,
         week_number: weekNumber,
         check_in_date: submitDate,
         adjustments: JSON.stringify(adjustments),
@@ -134,9 +142,9 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
       // weight on the user record — protein/fat targets must track the athlete's
       // actual weight as it changes week to week through their cut. Guard against a
       // 0/negative/non-finite weigh-in falling straight through to 0g protein/fat.
-      const weightKg = clampWeightKg(data.weight_kg as number, clampWeightKg(user.weight_kg as number))
-      const protein_g = Math.round(weightKg * 2.3)
-      const fat_g = Math.round(weightKg * 0.9)
+      const macroWeightKg = clampWeightKg(weightKg, clampWeightKg(user.weight_kg as number))
+      const protein_g = Math.round(macroWeightKg * 2.3)
+      const fat_g = Math.round(macroWeightKg * 0.9)
       const carbs_g = Math.max(0, Math.round((newCalories - protein_g * 4 - fat_g * 9) / 4))
       const currentPlanRow = db
         .prepare('SELECT meals FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1')
@@ -185,6 +193,11 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
       throw new Error('check_in_date (YYYY-MM-DD) is required for a missed check-in')
     }
 
+    // Same write-seam clamp as checkin:submit — keep the retroactive entry point
+    // from persisting an out-of-range weight into the chart/trend.
+    const weightKg = clampCheckinWeightKg(data.weight_kg)
+    if (weightKg === null) throw new Error('INVALID_WEIGHT')
+
     const s = readCheckinSettings(db)
 
     // Reject a duplicate check-in on a date that already has one. Two rows sharing
@@ -231,7 +244,7 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
 
     const adjustments = calculateAdjustments(
       {
-        weight_kg: data.weight_kg,
+        weight_kg: weightKg,
         training_adherence: data.training_adherence,
         diet_adherence: data.diet_adherence,
         energy_level: data.energy_level,
@@ -264,6 +277,7 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
       )
       .run(namedParams({
         ...data,
+        weight_kg: weightKg,
         week_number: weekNumber,
         adjustments: JSON.stringify(adjustments),
         schedule_type: s.scheduleType,
@@ -334,6 +348,17 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
       }
     }
 
+    // Clamp an edited weight to the plausible 30-300 kg range (same write-seam guard
+    // as submit/submitMissed) so an edit can't poison the stored/charted/trended
+    // weight either. Only applies when the edit actually sets a finite weight; an
+    // explicitly-provided non-finite/<=0 weight is rejected.
+    let editedWeightKg: number | undefined
+    if (data.weight_kg !== undefined && data.weight_kg !== null) {
+      const clamped = clampCheckinWeightKg(data.weight_kg)
+      if (clamped === null) throw new Error('INVALID_WEIGHT')
+      editedWeightKg = clamped
+    }
+
     const user = db.prepare('SELECT * FROM users WHERE id=?').get(existing.user_id as number) as Record<string, unknown>
     const dietPlan = db.prepare('SELECT calories_target FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1').get(existing.user_id as number) as { calories_target: number } | undefined
 
@@ -348,7 +373,7 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
 
     const adjustments = calculateAdjustments(
       {
-        weight_kg: (data.weight_kg ?? existing.weight_kg) as number,
+        weight_kg: (editedWeightKg ?? existing.weight_kg) as number,
         training_adherence: (data.training_adherence ?? existing.training_adherence) as number,
         diet_adherence: (data.diet_adherence ?? existing.diet_adherence) as number,
         energy_level: (data.energy_level ?? existing.energy_level) as number,
@@ -375,6 +400,7 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
       // NOT NULL constraint and silently discarding the weight/measurement changes.
       .filter(([k, v]) => allowed.has(k) && !(k === 'check_in_date' && (v == null || v === '')))
       .map(([k, v]) => {
+        if (k === 'weight_kg' && editedWeightKg !== undefined) return [k, editedWeightKg]
         if (v === undefined || v === null) return [k, null]
         if (typeof v === 'number' && isNaN(v)) return [k, null]
         return [k, v]
