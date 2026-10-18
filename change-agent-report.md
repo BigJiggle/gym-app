@@ -1,5 +1,39 @@
 # Change Agent Report
 
+## Run: 2026-10-18 #2 (BUG FIX — the weekly **grocery list over/under-counted a fixed-count food** that appears in more than one meal with DIFFERENT counts. `buildGroceryItems` reused the FIRST-seen `xN` for every occurrence of a food, so Pre-Workout "Rice Cakes x3" + Afternoon Snack "Rice Cakes x2" rendered `Rice Cakes x42/wk` (3 × 2 meals × 7) instead of the correct `x35/wk` ((3+2) × 7) — a plan→UI shopping-quantity mismatch reachable with a plain 4-meal + 2-snack omnivore config, and worse for vegan plans (3 snack slots carry rice cakes → x63/wk vs correct x49/wk).)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all queued items are `- [x]`). Bug-hunt run.
+
+### STEP 1 — Regression guard (clean baseline on fresh rebased `master`)
+- `npx tsc --noEmit` (root, the routine's gate) → PASS (clean)
+- `npm test` → PASS (386 tests, 60 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`. The repo-level `git remote set-url` with an embedded PAT in the SETUP block is refused by the harness credential filter; the existing `origin` already authenticates pushes, so setup proceeded without it.)
+
+### STEP 2 — Area audited: (a) nutrition engine + Diet flows
+Rotated off the last four runs' clusters — 10-18 (c/f check-in write path), 10-17 #2 (c adaptive nutrition), 10-17 (b Settings training), 10-16 (e dashboard widgets). Deep-read the nutrition engine (`generateNutritionPlan`/`buildMeals`/`getMealTemplates`/`calcPortionStr`/`applyRefeedToMeals` — calorie floor, weight clamp, snack-cal cap, non-finite meal/snack-count guards all present and correct), every diet IPC handler (`plan:generateDiet`, `recalculateMacros`, `refineDietWithPrompt`, `applyAIRequest`, `swapMeal`, `reorderMeals` — AI-output sanitizers, divisor floors, index-permutation completion remap, orphan purge all guarded), and the Diet page/`WeeklyMealView`/`swapAlternatives`/`recipeSteps`/`refeed` (every division and localStorage read is `isNaN`/`> 0`/`?.`-guarded, water target clamped `4..20`). The one **real, reachable** defect was in `GroceryList.buildGroceryItems`.
+
+### STEP 3 — Root cause + fix (minimum change, `src/pages/Diet/GroceryList.tsx`)
+- **Root cause:** for non-gram (fixed-count) foods the accumulator kept only the first-seen food string and a plain `count` of occurrences, then rendered `multiplyQty(food, count * 7)` — which multiplies the first-seen food's `xN` by the occurrence count. When two meals carry the SAME food with DIFFERENT `xN` (Rice Cakes x3 pre-workout vs x2 snack), that treats both as `x3` → `x42/wk`. Equal counts and plain/`ml` foods happened to come out right, which hid the bug.
+- **Fix:** accumulate `fixedUnitsPerDay` (sum of each occurrence's `xN`, or `1` for plain/`ml` notation) and an `anyFixedCount` flag. Render a fixed-count food as `${baseName} x${fixedUnitsPerDay * 7}/wk` (the true per-day sum × 7); plain/`ml` foods still go through `multiplyQty(food, count * 7)` unchanged, and gram foods still sum `totalGPerDay * 7`. Exported `buildGroceryItems` so it is unit-testable (was module-private).
+- Single-occurrence fixed foods, equal-count foods, plain names, `ml` notation, and gram foods all produce byte-identical output to before — only the differing-count case changes (and only toward the correct value).
+
+### Tests added — `tests/unit/groceryListQty.test.ts` (6 tests)
+- Differing counts (`x3` + `x2`) → `Rice Cakes x35/wk` (**fail-first confirmed:** old code returned `x42/wk`).
+- Equal counts (`x2` + `x2`) → `x28/wk`; single `x3` → `x21/wk`; plain `Banana` × 3 meals → `×21/wk`; gram foods `200g`+`150g` → `(2450g/wk)`; `(200ml)` → `Soy Milk (200ml) ×7/wk`. All five regression-guard cases pass on both old and new code, proving the fix is scoped to the bug.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (392 tests, +6 new)
+- `npx electron-vite build` → PASS
+
+### Lead for a future run
+`multiplyQty`'s first regex (`/\((\d+)\s*g\)/`) is now effectively dead (gram foods never reach it — they take the `totalGPerDay` branch; fixed foods take the new `xN` branch), and its `xN` branch is only reached via the plain/`ml` path where it never matches. Harmless, but a future (a) run could simplify `multiplyQty` down to the plain-name `×N/wk` case it actually still serves. Also still open (non-debugging annotation gap, noted by prior runs): the `src/pages/Diet/index.tsx:233` `culture_pref` type-only error under `tsconfig.web.json`.
+
+---
+
 ## Run: 2026-10-18 (BUG FIX — the STORED check-in weight was **unbounded at all three write seams**, so a fat-fingered extreme persisted verbatim into `weekly_checkins.weight_kg` — the value the Progress "Current Weight" tile + weight chart render directly and the smoothed weight trend folds in raw. The Check-In page's `toKg` rejects only `<= 0` (no upper bound), so a typed `850` — meant `85.0`, or an lbs value typed into a kg field — stored an 850 kg row that spikes the Progress chart and whipsaws the trend/calorie adaptation. The 2026-07-30 run bounded the MACRO derivation via `clampWeightKg` and **explicitly flagged this write-boundary gap as a lead for a future run**: "The stored check-in weight itself is still unbounded … feeds the raw trend/projection … A future (c)/(d) run could clamp the check-in weight at its input/write boundary (30–300, mirroring `clampWeightKgField`)." This run closes that gap.)
 
 ### STEP 0 — Requested changes

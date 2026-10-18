@@ -50,12 +50,19 @@ function multiplyQty(foodStr: string, days = 7): string {
   return matched ? result : `${result} ×${days}/wk`
 }
 
-function buildGroceryItems(meals: Meal[]): GroceryItem[] {
+export function buildGroceryItems(meals: Meal[]): GroceryItem[] {
   interface AccumEntry {
     food: string
     baseName: string
     totalGPerDay: number  // -1 means no gram info available
     count: number
+    // Sum of per-day fixed-count units across occurrences: "xN" contributes N, any
+    // other non-gram notation (plain name, "(200ml)", …) contributes 1. Summing per
+    // occurrence — rather than reusing the first-seen "xN" — is what keeps the weekly
+    // quantity correct when the same food appears with DIFFERENT fixed counts across
+    // meals (e.g. Pre-Workout "Rice Cakes x3" + Afternoon Snack "Rice Cakes x2").
+    fixedUnitsPerDay: number
+    anyFixedCount: boolean  // at least one occurrence carried explicit "xN" notation
     category: GroceryItem['category']
   }
   const map = new Map<string, AccumEntry>()
@@ -66,23 +73,36 @@ function buildGroceryItems(meals: Meal[]): GroceryItem[] {
       // Match gram amounts like "(150g)" or "(200g cooked)"
       const gramsMatch = food.match(/\((\d+(?:\.\d+)?)\s*g(?:[^)]*)\)/)
       const grams = gramsMatch ? parseFloat(gramsMatch[1]) : -1
+      // Explicit "xN" count on a fixed-label food ("Rice Cakes x3", "Whole Eggs x3").
+      const countMatch = food.match(/x(\d+)/)
+      const unitsThisMeal = countMatch ? parseInt(countMatch[1], 10) : 1
       if (map.has(key)) {
         const entry = map.get(key)!
         entry.count++
+        entry.fixedUnitsPerDay += unitsThisMeal
+        if (countMatch) entry.anyFixedCount = true
         if (entry.totalGPerDay >= 0 && grams >= 0) {
           entry.totalGPerDay += grams
         } else {
           entry.totalGPerDay = -1  // mixed formats — fall back to count-based multiplier
         }
       } else {
-        map.set(key, { food, baseName, totalGPerDay: grams, count: 1, category: categorize(food) })
+        map.set(key, { food, baseName, totalGPerDay: grams, count: 1, fixedUnitsPerDay: unitsThisMeal, anyFixedCount: !!countMatch, category: categorize(food) })
       }
     }
   }
-  return Array.from(map.values()).map(({ food, baseName, totalGPerDay, count, category }) => {
-    const weeklyQty = totalGPerDay >= 0
-      ? `${baseName} (${Math.round(totalGPerDay * 7)}g/wk)`
-      : multiplyQty(food, count * 7)
+  return Array.from(map.values()).map(({ food, baseName, totalGPerDay, count, fixedUnitsPerDay, anyFixedCount, category }) => {
+    let weeklyQty: string
+    if (totalGPerDay >= 0) {
+      weeklyQty = `${baseName} (${Math.round(totalGPerDay * 7)}g/wk)`
+    } else if (anyFixedCount) {
+      // Sum the actual per-occurrence counts, then multiply by 7 days — correct even
+      // when the counts differ across meals.
+      weeklyQty = `${baseName} x${fixedUnitsPerDay * 7}/wk`
+    } else {
+      // Plain names / "(200ml)" etc.: each occurrence is one unit, so count × 7 days.
+      weeklyQty = multiplyQty(food, count * 7)
+    }
     return { food, baseName, weeklyQty, category, checked: false }
   })
 }
