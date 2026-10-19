@@ -1,5 +1,38 @@
 # Change Agent Report
 
+## Run: 2026-10-19 #2 (BUG FIX — the onboarding **ft/in height seed produced an impossible "5 ft 12 in"** for a range of metric heights, and that bad inches value could then **corrupt the stored height**. When the user enters height in cm and toggles the Personal step's unit switch to "ft / in", `Step1Personal.handleHeightUnit` seeded the two inputs with `feet = Math.floor(cm / 30.48)` and `inches = Math.round((cm % 30.48) / 2.54)` computed INDEPENDENTLY. Those two roundings disagree near a foot boundary: 182 cm → feet 5, inches `round(29.6/2.54)=round(11.65)=12` → the UI shows "5 ft 12 in". The project already knew this exact failure — `units.ts:displayHeight` carries a comment and a dedicated test for the "5'12\"" case and round-then-splits correctly — but the onboarding seed used the buggy independent-rounding pattern. Worse than a cosmetic glitch: the seeded `ftInches` state is NOT clamped (only the inches input's own onChange clamps 0–11), and `handleFeetChange` reads that stale state, so editing the feet field while inches sits at 12 computes `cm = feet*30.48 + 12*2.54` — e.g. bumping to 6 ft yields 213.4 cm, a corrupted height that passes `validateStep` (< 250) and persists into the profile → BMR/TDEE/macro math.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all queued items are `- [x]`). Bug-hunt run.
+
+### STEP 1 — Regression guard (clean baseline on fresh rebased `master`)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (395 tests, 62 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`. The repo-level `git remote set-url` with an embedded PAT in the SETUP block is refused by the harness credential filter; the existing `origin` already authenticates pushes, so setup proceeded without it.)
+
+### STEP 2 — Area audited: (d) onboarding + Settings + reset + data lifecycle
+Rotated off the last several runs' clusters — 10-19 (b, training/session), 10-18 #2 (a, nutrition/Diet grocery), 10-18 (c/f, check-in write path), 10-17 #2 (c, adaptive), 10-17 (b, Settings training), 10-16 (e, dashboard widgets). Deep-read: `userHandlers.ts` + `userSanitize.ts` (every numeric profile field clamped at the `user:update` seam; `user:create` clamps meal/snack/bodyfat and is otherwise fed only by onboarding's `validateStep`), `settingsHandlers.ts` (global key/value, no user scope), `resetData.ts` + `userHandlers:resetAll` (weigh-in snapshot → `mergeWeighIns` fold, preserved-key filter — all guarded; **verified empirically that `node-sqlite3-wasm` defaults `PRAGMA foreign_keys=ON`**, so the reset's `DELETE FROM users` cascade is real despite no explicit pragma in `db.ts`), `schema.ts`/`db.ts` migrations, `DailyWeighInWidget`/`useWaterLog`/`water.ts`/`WaterWidget` (parse/bounds/clamps present), `showHandlers.ts` (syncPrimaryToNearest + diet-regen on every show-context change, past-show guard), `checkinSchedule.ts` (infinite-loop/`interval<=0` guard), Onboarding steps + `Settings` edit-profile (meal/snack steppers clamped, imperial weight/height conversions). The one **real, reachable** defect was the ft/in height seed in `Step1Personal`.
+
+### STEP 3 — Root cause + fix (minimum change, reuse the existing correct pattern)
+- **Root cause:** `Step1Personal.handleHeightUnit` split cm→ft/in with two independent roundings (`floor` feet + `round` inch-remainder), which can emit inches = 12. `displayHeight` already solved this by rounding to whole inches FIRST then splitting, but the logic was inlined there and not shared.
+- **Fix:** extracted a pure helper `cmToFeetInches(cm) → { feet, inches }` in `src/utils/units.ts` (round-to-inches-first, then `floor(/12)` + `%12`), routed `displayHeight` through it (output byte-identical — its existing tests still pass), and used it in `Step1Personal.handleHeightUnit`. Now 182 cm seeds "6 ft 0 in" and the feet-edit corruption path can no longer see a 12 in the inches state.
+
+### Tests added — `tests/unit/units.test.ts` (+3 for `cmToFeetInches`)
+- `152.4 → {5,0}` (exact foot); `182 → {6,0}` and `181.9 → {6,0}` (**carry case — the bug**; old independent-rounding gave `{5,12}`, verified by direct arithmetic); `170 → {5,7}` (typical, no carry). `displayHeight`'s pre-existing "5'12\"" regression test still passes through the shared helper.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (398 tests, +3 new)
+- `npx electron-vite build` → PASS
+
+### Leads for a future run
+- **Profile "Show Date" desync (noted, not fixed — needs an owner call).** The Settings "Edit Profile" form has Goal/Division/**Show Date** fields that write `users.show_date` directly via `user:update`, bypassing the `shows` table. "Save & Regenerate" does rebuild the diet from the new `users.show_date` (correct macros), but (a) the `shows` list is left inconsistent, and (b) the next `shows` add/delete/setPrimary runs `syncPrimaryToNearest`, which silently overwrites the profile-edited `show_date` from the shows table. The clean fix is architectural (route the field through the shows table, or drop it in favor of the "My Shows" section) — a UI change, out of this routine's debugging scope.
+- Still open (non-debugging annotation gap, noted by prior runs): the `src/pages/Diet/index.tsx:233` `culture_pref` type-only error under `tsconfig.web.json` (outside the root-`tsc` STEP 1 gate).
+
+---
+
 ## Run: 2026-10-19 (BUG FIX — a training session could be saved with **ZERO exercises** via the plan editor, producing a dead, uncompletable workout. `SessionEditor` lets the user remove every exercise (`removeExercise` has no minimum guard) and tap Save — the Save button was only disabled while saving — and `plan:updateSession` persisted the empty array verbatim. The engine (`generateTrainingPlan`) and both AI paths (`planHandlers:65`, `showHandlers:135`) already guarantee every session carries ≥1 exercise, so an empty session is an invariant violation reachable ONLY through this editor seam. A persisted empty session renders an enabled "▶ Start Workout" button that opens a `WorkoutSession` which can NEVER be completed — `canComplete` is always false with no sets — and whose progress bar divides by zero (`doneCount / session.exercises.length` → `0/0` → `width: "NaN%"`); the only escape is Abandon.)
 
 ### STEP 0 — Requested changes

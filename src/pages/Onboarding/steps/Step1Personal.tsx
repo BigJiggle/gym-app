@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Input, Select } from '../../../components/ui'
+import { cmToFeetInches } from '../../../utils/units'
 import type { OnboardingData } from '../useOnboarding'
 
 interface Props {
@@ -49,8 +50,12 @@ export default function Step1Personal({ data, update }: Props) {
   function handleHeightUnit(unit: string) {
     const u = unit as HeightUnit
     if (u === 'ft' && data.height_cm) {
-      setFtFeet(String(Math.floor(data.height_cm / 30.48)))
-      setFtInches(String(Math.round((data.height_cm % 30.48) / 2.54)))
+      // Round-then-split so a remainder that rounds up to 12" rolls into the next
+      // foot (e.g. 182 cm → 6'0", never the impossible "5 ft 12 in" that also fed
+      // a corrupted height_cm once the feet field was edited).
+      const { feet, inches } = cmToFeetInches(data.height_cm)
+      setFtFeet(String(feet))
+      setFtInches(String(inches))
     }
     setHeightUnit(u)
   }
