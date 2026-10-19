@@ -251,6 +251,18 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle('plan:updateSession', (_event, sessionId: number, exercises: unknown[]) => {
     const db = getDb()
+    // Reject a save that would leave the session with zero exercises. The engine
+    // and AI paths both guarantee every session carries >= 1 exercise
+    // (generateTrainingPlan never emits an empty session; the Claude path filters
+    // `exercises.length > 0`), but the SessionEditor lets the user remove every
+    // exercise and tap Save. A persisted empty session renders an enabled "Start
+    // Workout" that opens a WorkoutSession which can never be completed
+    // (canComplete is false with no sets) and whose progress bar divides by zero
+    // (doneCount / 0 -> NaN% width). Guard the write seam so no entry point can
+    // violate the invariant; the prior exercises are left untouched on rejection.
+    if (!Array.isArray(exercises) || exercises.length === 0) {
+      throw new Error('EMPTY_SESSION')
+    }
     db.prepare('UPDATE training_sessions SET exercises=? WHERE id=?')
       .run([JSON.stringify(exercises), sessionId])
     // Mark the parent plan as user-modified so show cancellation preserves it

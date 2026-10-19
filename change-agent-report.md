@@ -1,5 +1,40 @@
 # Change Agent Report
 
+## Run: 2026-10-19 (BUG FIX — a training session could be saved with **ZERO exercises** via the plan editor, producing a dead, uncompletable workout. `SessionEditor` lets the user remove every exercise (`removeExercise` has no minimum guard) and tap Save — the Save button was only disabled while saving — and `plan:updateSession` persisted the empty array verbatim. The engine (`generateTrainingPlan`) and both AI paths (`planHandlers:65`, `showHandlers:135`) already guarantee every session carries ≥1 exercise, so an empty session is an invariant violation reachable ONLY through this editor seam. A persisted empty session renders an enabled "▶ Start Workout" button that opens a `WorkoutSession` which can NEVER be completed — `canComplete` is always false with no sets — and whose progress bar divides by zero (`doneCount / session.exercises.length` → `0/0` → `width: "NaN%"`); the only escape is Abandon.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all queued items are `- [x]`). Bug-hunt run.
+
+### STEP 1 — Regression guard (clean baseline on fresh rebased `master`)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (392 tests, 61 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`. The repo-level `git remote set-url` with an embedded PAT in the SETUP block is refused by the harness credential filter; the existing `origin` already authenticates pushes, so setup proceeded without it.)
+
+### STEP 2 — Area audited: (b) training engine + workout/session flows (+ data-lifecycle seams)
+Rotated off the last five runs' clusters — 10-18 #2 (a, nutrition/Diet grocery), 10-18 (c/f, check-in write path), 10-17 #2 (c, adaptive `weightTrendPct`), 10-17 (b, Settings training clamps), 10-16 (e, dashboard widgets). Deep-read `trainingEngine.ts` (freq/exPerSession/setsPerEx/maxSets non-finite guards, empty-session guards via `rotateOne`/`.filter(Boolean)`, phase/rep/set math — all present and correct), `workoutHandlers.ts` (`sanitizeReps`/`sanitizeWeightKg` at every write seam), `WorkoutSession.tsx` + `WorkoutStats.tsx` + `WorkoutLogEditor.tsx` (clampSetCount, parseRepMidpoint, detectNewPRs, all divisions guarded), `planHandlers.ts` training paths (AI sessions filtered to `exercises.length > 0`; `plan:recalculateMacros` divisor floored), `checkinEngine.ts`/`checkinHandlers.ts`, `showHandlers.ts`/`showDates.ts`, `userHandlers.ts`/`userSanitize.ts`, `schema.ts`/`db.ts`, Onboarding/Settings validation, and Progress/Diet (water/refeed/intake) — all remarkably well-guarded. The one **real, reachable, still-open** defect was the editor's empty-session save path.
+
+### STEP 3 — Root cause + fix (minimum change, at the write seam + UI feedback)
+- **Root cause:** `plan:updateSession` (`electron/ipc/planHandlers.ts`) wrote `exercises` to the row with no validation, and `SessionEditor`'s Save button (`src/pages/Training/SessionEditor.tsx`) was disabled only while `saving`. So removing all exercises and tapping Save persisted `[]`.
+- **Fix (backend seam — authoritative):** `plan:updateSession` now throws `EMPTY_SESSION` when `!Array.isArray(exercises) || exercises.length === 0`, leaving the previously-stored exercises untouched. This mirrors the invariant the engine and AI paths already enforce, so NO entry point can persist an empty session.
+- **Fix (frontend — feedback):** the Save button is disabled (with a `title` hint) when `exercises.length === 0`, and `handleSave` early-returns in that state, so the user sees the existing "No exercises. Tap + Add Exercise…" empty state instead of a silent backend rejection. Valid (≥1 exercise) saves are byte-for-byte unchanged.
+
+### Tests added — `tests/unit/updateSessionEmpty.test.ts` (3 tests, REAL `plan:updateSession` vs in-memory `node-sqlite3-wasm`)
+- Non-empty edit (2 exercises) → persists both (normal path unchanged).
+- Empty array `[]` → **throws** and the prior stored exercise survives (not wiped). **Fail-first confirmed:** before the fix the handler persisted `[]` and did not throw.
+- Non-array payload (`null`, renderer-bug guard) → throws, prior exercise intact (also fail-first: previously stored `null`).
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (395 tests, +3 new)
+- `npx electron-vite build` → PASS
+
+### Lead for a future run
+Still open (non-debugging annotation gap, noted by prior runs): the `src/pages/Diet/index.tsx:233` `culture_pref` type-only error under `tsconfig.web.json` (outside the routine's root-`tsc` STEP 1 gate). Also the `multiplyQty` dead-regex simplification lead from 10-18 #2 remains (cosmetic/refactor, out of debugging scope).
+
+---
+
 ## Run: 2026-10-18 #2 (BUG FIX — the weekly **grocery list over/under-counted a fixed-count food** that appears in more than one meal with DIFFERENT counts. `buildGroceryItems` reused the FIRST-seen `xN` for every occurrence of a food, so Pre-Workout "Rice Cakes x3" + Afternoon Snack "Rice Cakes x2" rendered `Rice Cakes x42/wk` (3 × 2 meals × 7) instead of the correct `x35/wk` ((3+2) × 7) — a plan→UI shopping-quantity mismatch reachable with a plain 4-meal + 2-snack omnivore config, and worse for vegan plans (3 snack slots carry rice cakes → x63/wk vs correct x49/wk).)
 
 ### STEP 0 — Requested changes

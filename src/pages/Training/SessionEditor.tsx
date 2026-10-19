@@ -63,6 +63,10 @@ export default function SessionEditor({ sessionId, sessionName, initialExercises
   }
 
   async function handleSave() {
+    // A session must keep at least one exercise — an empty session is uncompletable
+    // in WorkoutSession (and rejected by the backend). The Save button is disabled
+    // in this state; this guard is a belt-and-suspenders no-op if invoked anyway.
+    if (exercises.length === 0) return
     setSaving(true)
     try {
       await window.api.updateSession(sessionId, exercises)
@@ -85,8 +89,9 @@ export default function SessionEditor({ sessionId, sessionName, initialExercises
         </div>
         <button
           onClick={handleSave}
-          disabled={saving}
-          className="text-brand-400 hover:text-brand-300 text-sm font-semibold disabled:opacity-50"
+          disabled={saving || exercises.length === 0}
+          title={exercises.length === 0 ? 'Add at least one exercise to save' : undefined}
+          className="text-brand-400 hover:text-brand-300 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {saving ? 'Saving...' : 'Save'}
         </button>
