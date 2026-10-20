@@ -3,7 +3,7 @@ import { getDb, namedParams } from '../database/db'
 import { generateTrainingPlan, getExerciseLibraryForUI, determinePhase } from '../services/trainingEngine'
 import { generateNutritionPlan, buildMealsPublic, calcBMR, getPhaseAwareDeficit, ACTIVITY_MULTIPLIERS, clampWeightKg, clampMealCount, sanitizeCalorieTarget, sanitizeMacroGrams, MIN_CALORIE_TARGET } from '../services/nutritionEngine'
 import { generateDietWithClaude, generateWorkoutWithClaude, refineDietPlan, refineWorkoutWithClaude, processAIRequest, refineWorkoutForSafety } from '../services/claudeService'
-import { regenerateDietForGoal } from './showHandlers'
+import { regenerateDietForGoal, persistProfileShowDate } from './showHandlers'
 import { weeksUntilShow, localToday } from '../services/showDates'
 import { clearOrphanedMealCompletions } from './mealCompletionHandlers'
 
@@ -801,6 +801,20 @@ Ensure every exercise respects the constraints above while maintaining phase-app
         const fields = Object.keys(changes).map(k => `${k} = @${k}`).join(', ')
         db.prepare(`UPDATE users SET ${fields}, updated_at = datetime('now') WHERE id = @id`)
           .run(namedParams({ ...changes, id: userId }))
+      }
+      // A show_date set by the AI was just written to the users row above, but shows
+      // live in the `shows` table — the source of truth plan:startupRefresh rebuilds
+      // users.show_date from on every launch. Without a matching shows row the date is
+      // silently wiped next launch (data loss) and misreported as "your show has
+      // passed". Route it through the shows table like shows:add so it persists; the
+      // re-read of updatedUser below then reflects the synced value.
+      if (typeof changes.show_date === 'string') {
+        persistProfileShowDate(
+          db,
+          userId,
+          changes.show_date,
+          typeof changes.division === 'string' ? changes.division : null,
+        )
       }
     }
 

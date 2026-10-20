@@ -35,6 +35,43 @@ export function syncPrimaryToNearest(
   }
 }
 
+// Persist a show_date that was set OUTSIDE the "My Shows" UI — currently the AI
+// assistant's plan:applyAIRequest, whose settingChanges can carry a show_date
+// ("my show is in 8 weeks"). Shows are stored in the `shows` table, which is the
+// single source of truth that syncPrimaryToNearest and plan:startupRefresh rebuild
+// users.show_date from on EVERY launch. Writing show_date to the users row ALONE
+// (as plan:applyAIRequest did) is therefore silently reverted on the next launch —
+// the shows query finds nothing, so users.show_date is nulled — which both loses the
+// date and misfires the "your show has passed" off-season transition (showTransitioned
+// true → plans regenerated to off-season) even though the show is in the future.
+// Route it through the shows table exactly like shows:add so it survives, then
+// re-sync the primary. `today` is forwarded to syncPrimaryToNearest (undefined keeps
+// its local-date default); it exists only for deterministic tests. A malformed or
+// empty date is ignored (no show row) so a bad AI value can't corrupt the table.
+export function persistProfileShowDate(
+  db: ReturnType<typeof getDb>,
+  userId: number,
+  showDate: string,
+  division: string | null = null,
+  today?: string,
+): void {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(showDate)) return
+  const existing = db.prepare(
+    'SELECT id FROM shows WHERE user_id=? AND show_date=?'
+  ).get([userId, showDate]) as { id: number } | undefined
+  if (existing) {
+    // Same date already tracked — only attach/refresh the division if one was given.
+    if (division !== null) {
+      db.prepare('UPDATE shows SET division=? WHERE id=?').run([division, existing.id])
+    }
+  } else {
+    db.prepare(
+      "INSERT INTO shows (user_id, name, show_date, division, federation, notes, is_primary) VALUES (?, 'Competition', ?, ?, NULL, NULL, 0)"
+    ).run([userId, showDate, division])
+  }
+  syncPrimaryToNearest(db, userId, today)
+}
+
 // Computes weeks_out from a show_date string. Returns undefined if no date.
 // Delegates to the shared local-midnight helper so the generated plan's weeks-out
 // matches the UI countdown (see weeksUntilShow) instead of drifting with time of day.
