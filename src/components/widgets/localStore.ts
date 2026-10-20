@@ -4,7 +4,17 @@ import { useSyncExternalStore } from 'react'
 // mounts the returned hook — same external-store shape as useWidgets, so a
 // widget writing a log and the Dashboard scorecard reading it stay in sync
 // without a full page reload.
-export function createLocalStore<T>(key: string, fallback: () => T) {
+export function createLocalStore<T>(
+  key: string,
+  fallback: () => T,
+  // Optional per-value sanitizer applied AFTER the top-level shape check. For an
+  // array store it should drop/repair malformed ENTRIES: the top-level guard only
+  // rejects a non-array, so a valid array holding a corrupt entry (`[null]`, an
+  // object missing required fields) otherwise passes straight through and crashes
+  // consumers that call `.date`/`.tags`/`.taken` on it (there is no error boundary,
+  // so one bad entry takes down the whole dashboard). Mirrors parseDailyWeightLog.
+  sanitize?: (parsed: T) => T,
+) {
   const listeners = new Set<() => void>()
   let cache: T
   let hasCache = false
@@ -21,7 +31,7 @@ export function createLocalStore<T>(key: string, fallback: () => T) {
       // consumers calling .map/.filter/.find on it. Fall back when the top-level
       // shape doesn't match the fallback (mirrors createWidgetStore/useWidgets).
       if (parsed == null || Array.isArray(parsed) !== Array.isArray(fb)) return fb
-      return parsed as T
+      return sanitize ? sanitize(parsed as T) : (parsed as T)
     } catch {
       return fallback()
     }

@@ -1,5 +1,38 @@
 # Change Agent Report
 
+## Run: 2026-10-20 (BUG FIX — the four **competition-only widgets crash the whole dashboard on a corrupt log ENTRY**. Posing / Sleep / Condition / Supplement widgets persist their logs through the shared `localStore` (`src/components/widgets/localStore.ts`), whose corruption guard only checks the **top-level** shape — array vs non-array. A valid JSON array that holds a malformed ENTRY — a `null` (`posing_log = '[null]'`), or an object missing a required field (a sleep entry with no `hours`, a condition entry with no `tags`, a supplement-day with no `taken`) — slips straight past that guard, and the widget then does `posingLog.filter(e => e.date …)` / `todayEntry.tags.includes(…)` / `entry.taken.includes(…)` on it → `TypeError: Cannot read properties of null/undefined`. There is **no error boundary**, so one bad entry takes down the entire Dashboard tab, not just the widget. This is the SAME class of defect a prior run fixed for `daily_weight_log` via `parseDailyWeightLog` (whose comment explicitly calls out `[null]` crashing `.find(e => e.date)`), but the shared competition-log store was never given per-entry validation; the existing `localStoreCorrupted.test.tsx` only exercised top-level corruption, hiding the gap. In-scope: "corrupted or hand-edited localStorage" + NaN/undefined propagation.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all queued items are `- [x]`). Bug-hunt run.
+
+### STEP 1 — Regression guard (clean baseline on fresh rebased `master`)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (398 tests, 62 files)
+- `npx electron-vite build` → PASS
+
+(`npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`. The repo-level `git remote set-url` with the embedded PAT in SETUP is accepted but the pre-existing `origin` already authenticates pushes.)
+
+### STEP 2 — Area audited: (e) widgets (dashboard + Training/Nutrition tabs) + localStorage stores
+Rotated off the last several runs' clusters — 10-19 #2 (d, onboarding/Settings/reset), 10-19 (b, training/session), 10-18 #2 (a, nutrition/Diet grocery), 10-18 (c/f, check-in write path), 10-17 #2 (c, adaptive), 10-16 (e, dashboard widgets). Deep-read every widget in `src/components/widgets/` (QuickStats / TodaysMacros / NextMeal / DailyWeighIn / PrepPace / PeakWeek / WeeklyScorecard / TrainingVolume / MuscleCoverage / WeeklyVolume / SessionsWeek / CheckinFeedback / Cardio / Water / Posing / Sleep / Supplement / Condition), the store machinery (`useWidgets`, `createWidgetStore`, `localStore`, `competitionLogs`, `useWaterLog`, `cardioStore`), and the reorder/gating zones (`WidgetZone`, `TabWidgetZone`, `TabWidgetControls`, `tabWidgets`). Divisions are `> 0`-guarded, percentages `Math.min(100,…)`-capped, `createWidgetStore`/`useWidgets` drop unknown ids + de-dupe, and `DailyWeighInWidget` already validates every entry via `parseDailyWeightLog`. The one **real, reachable** defect was the unvalidated-entry gap in the shared `localStore` used by the four competition logs. (Noted, not fixed — out of scope: the `Date.now() - daysFromMon*86400000` week-start math in Posing/Cardio/TrainingVolume/MuscleCoverage widgets is DST-fragile vs the `setDate`-based form in SessionsWeek/WeeklyVolume, but with US DST transitions on Sundays and a Monday-based week it does not produce a wrong Monday in practice — cosmetic at most, deferred.)
+
+### STEP 3 — Root cause + fix (minimum change, at the data seam — reuse the existing pattern)
+- **Root cause:** `createLocalStore.read()` validated only the top-level array/non-array shape, then returned the parsed value verbatim. Object-array logs (posing/sleep/condition/supplement) therefore handed corrupt entries straight to the widgets.
+- **Fix (seam — authoritative):** added an optional third `sanitize?: (parsed: T) => T` argument to `createLocalStore`, applied right after the top-level shape check (in both `read()` and, implicitly, every snapshot). In `competitionLogs.ts` each object-array store now passes an entry validator that `.filter()`s to well-formed entries (`validPosing` / `validSleep` / `validCondition` / `validSupplementDay`, each requiring a string `date` plus its own finite number / string-array fields); `supplement_list` filters to string members. Corrupt entries are dropped so widgets always see the declared shape; well-formed logs pass through unchanged. No widget code changed — the guard lives once, at the boundary.
+
+### Tests added — `tests/unit/localStoreCorrupted.test.tsx` (+2, now 5)
+- **Corrupt entries inside a valid array** (`[null]` posing, `hours`-less sleep, `tags`-less condition, `taken`-less supplement-day, mixed-junk list) → all four widgets render without throwing; the snapshots are the empty array (list keeps its one valid `"Creatine"`). **Fail-first confirmed:** before the fix each of the four threw `TypeError: Cannot read properties of null/undefined` during render.
+- **Regression guard:** well-formed entries alongside bad ones → the valid ones survive byte-identical, only the malformed entry is dropped (sanitizer never over-rejects real logs).
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (400 tests, +2 new)
+- `npx electron-vite build` → PASS
+
+### Lead for a future run
+Still open (non-debugging annotation gap, noted by prior runs): the `src/pages/Diet/index.tsx:233` `culture_pref` type-only error under `tsconfig.web.json` (outside the routine's root-`tsc` STEP 1 gate). Also the DST week-start inconsistency noted above (Posing/Cardio/TrainingVolume/MuscleCoverage use ms arithmetic; SessionsWeek/WeeklyVolume use `setDate`) — harmless today but a one-line consistency fix a future (e)/(f) run could unify.
+
+---
+
 ## Run: 2026-10-19 #2 (BUG FIX — the onboarding **ft/in height seed produced an impossible "5 ft 12 in"** for a range of metric heights, and that bad inches value could then **corrupt the stored height**. When the user enters height in cm and toggles the Personal step's unit switch to "ft / in", `Step1Personal.handleHeightUnit` seeded the two inputs with `feet = Math.floor(cm / 30.48)` and `inches = Math.round((cm % 30.48) / 2.54)` computed INDEPENDENTLY. Those two roundings disagree near a foot boundary: 182 cm → feet 5, inches `round(29.6/2.54)=round(11.65)=12` → the UI shows "5 ft 12 in". The project already knew this exact failure — `units.ts:displayHeight` carries a comment and a dedicated test for the "5'12\"" case and round-then-splits correctly — but the onboarding seed used the buggy independent-rounding pattern. Worse than a cosmetic glitch: the seeded `ftInches` state is NOT clamped (only the inches input's own onChange clamps 0–11), and `handleFeetChange` reads that stale state, so editing the feet field while inches sits at 12 computes `cm = feet*30.48 + 12*2.54` — e.g. bumping to 6 ft yields 213.4 cm, a corrupted height that passes `validateStep` (< 250) and persists into the profile → BMR/TDEE/macro math.)
 
 ### STEP 0 — Requested changes

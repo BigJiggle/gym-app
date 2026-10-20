@@ -61,4 +61,46 @@ describe('createLocalStore — corrupted / hand-edited localStorage', () => {
     expect(screen.getByText('Supplements')).toBeTruthy()
     expect(screen.getByText('Daily Condition')).toBeTruthy()
   })
+
+  // The top-level guard above only rejects a non-array. A VALID array can still
+  // carry a corrupt ENTRY (a `null`, or an object missing a required field) which
+  // previously slipped through and crashed the widget's `.date`/`.tags`/`.taken`
+  // access — killing the whole dashboard (no error boundary). The per-store entry
+  // sanitizers drop those so the widgets always see the declared shape.
+  it('competition widgets survive corrupt ENTRIES inside a valid array (no crash)', () => {
+    localStorage.setItem('posing_log', '[null]')
+    localStorage.setItem('sleep_log', '[{"date":"2026-10-20"}]')          // missing hours
+    localStorage.setItem('condition_log', '[{"date":"2026-10-20"}]')      // missing tags/note
+    localStorage.setItem('supplement_log', '[{"date":"2026-10-20"}]')     // missing taken
+    localStorage.setItem('supplement_list', '[null, "Creatine", 5]')      // mixed junk
+    posingStore.reset(); sleepStore.reset(); conditionStore.reset()
+    supplementListStore.reset(); supplementLogStore.reset()
+
+    expect(() => render(<PosingWidget />)).not.toThrow()
+    expect(() => render(<SleepWidget />)).not.toThrow()
+    expect(() => render(<SupplementWidget />)).not.toThrow()
+    expect(() => render(<ConditionWidget />)).not.toThrow()
+    // Corrupt entries are dropped; the one valid string in the list survives.
+    expect(posingStore.getSnapshot()).toEqual([])
+    expect(sleepStore.getSnapshot()).toEqual([])
+    expect(conditionStore.getSnapshot()).toEqual([])
+    expect(supplementLogStore.getSnapshot()).toEqual([])
+    expect(supplementListStore.getSnapshot()).toEqual(['Creatine'])
+  })
+
+  // Well-formed entries pass through the sanitizer unchanged (regression guard so
+  // the filter never over-rejects real logs).
+  it('keeps well-formed entries, dropping only the bad ones', () => {
+    localStorage.setItem('posing_log', JSON.stringify([
+      { date: '2026-10-19', focus: 'Full Routine', minutes: 15 },  // valid
+      { date: '2026-10-20', focus: 'QT' },                          // missing minutes → dropped
+    ]))
+    localStorage.setItem('sleep_log', JSON.stringify([
+      { date: '2026-10-19', hours: 7.5 },                          // valid
+      null,                                                        // dropped
+    ]))
+    posingStore.reset(); sleepStore.reset()
+    expect(posingStore.getSnapshot()).toEqual([{ date: '2026-10-19', focus: 'Full Routine', minutes: 15 }])
+    expect(sleepStore.getSnapshot()).toEqual([{ date: '2026-10-19', hours: 7.5 }])
+  })
 })
