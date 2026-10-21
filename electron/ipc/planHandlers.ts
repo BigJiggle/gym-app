@@ -954,9 +954,20 @@ Ensure every exercise respects the constraints above while maintaining phase-app
                           carb: acc.carb + (m.carbs_g ?? 0), fat: acc.fat + (m.fat_g ?? 0) }),
           { cal: 0, pro: 0, carb: 0, fat: 0 }
         )
+        // A settings-change regen can change the meal count (e.g. the AI applied
+        // meal_count/snack_count changes from "give me 3 meals instead of 6"), so the
+        // rebuilt `meals` array length may differ from the stored meal_count. Persist
+        // meal_count alongside the meals so the stored column matches what's actually in
+        // `meals`, and purge now-orphaned today/future meal completions (keyed by
+        // positional meal_index) — a shrunk count would otherwise leave completions at
+        // index >= the new count counting as "meals eaten" (inflating adherence above
+        // 100% / "6/3 logged"). Mirrors every other diet-write path (generateDiet,
+        // refineDietWithPrompt, refine_diet, startupRefresh, regenerateAll).
+        const rebuiltMealCount = (meals as any[]).length
         db.prepare(
-          'UPDATE diet_plans SET meals=?, calories_target=?, protein_g=?, carbs_g=?, fat_g=? WHERE user_id=? AND id=(SELECT id FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1)'
-        ).run([JSON.stringify(meals), totals.cal, totals.pro, totals.carb, totals.fat, userId, userId])
+          'UPDATE diet_plans SET meals=?, calories_target=?, protein_g=?, carbs_g=?, fat_g=?, meal_count=? WHERE user_id=? AND id=(SELECT id FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1)'
+        ).run([JSON.stringify(meals), totals.cal, totals.pro, totals.carb, totals.fat, rebuiltMealCount, userId, userId])
+        clearOrphanedMealCompletions(db, userId, rebuiltMealCount)
         const saved = db.prepare('SELECT * FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1').get(userId) as Record<string,unknown>
         dietPlan = { ...saved, meals: JSON.parse(saved.meals as string) }
       }
