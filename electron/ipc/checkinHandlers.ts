@@ -1,6 +1,6 @@
 import { IpcMain } from 'electron'
 import { getDb, namedParams } from '../database/db'
-import { calculateAdjustments, clampCheckinWeightKg } from '../services/checkinEngine'
+import { calculateAdjustments, clampCheckinWeightKg, parseAdjustments } from '../services/checkinEngine'
 import { getNextCheckinDate, computeMissedSlots } from '../services/checkinSchedule'
 import { clampWeightKg, MIN_CALORIE_TARGET } from '../services/nutritionEngine'
 
@@ -179,7 +179,7 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
     const saved = db
       .prepare('SELECT * FROM weekly_checkins WHERE id = ?')
       .get(result.lastInsertRowid) as Record<string, unknown>
-    return { ...saved, adjustments: JSON.parse(saved.adjustments as string) }
+    return { ...saved, adjustments: parseAdjustments(saved.adjustments) }
   })
 
   // ── Retroactive "fill in a missed slot" ────────────────────────────────
@@ -287,7 +287,7 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
     const saved = db
       .prepare('SELECT * FROM weekly_checkins WHERE id = ?')
       .get(result.lastInsertRowid) as Record<string, unknown>
-    return { ...saved, adjustments: JSON.parse(saved.adjustments as string) }
+    return { ...saved, adjustments: parseAdjustments(saved.adjustments) }
   })
 
   ipcMain.handle('checkin:nextAllowed', (_event, userId: number) => {
@@ -312,7 +312,7 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
     const rows = db
       .prepare('SELECT * FROM weekly_checkins WHERE user_id = ? ORDER BY check_in_date DESC')
       .all(userId) as Record<string, unknown>[]
-    return rows.map((r) => ({ ...r, adjustments: JSON.parse(r.adjustments as string) }))
+    return rows.map((r) => ({ ...r, adjustments: parseAdjustments(r.adjustments) }))
   })
 
   ipcMain.handle('checkin:latest', (_event, userId: number) => {
@@ -321,7 +321,7 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
       .prepare('SELECT * FROM weekly_checkins WHERE user_id = ? ORDER BY check_in_date DESC LIMIT 1')
       .get(userId) as Record<string, unknown> | undefined
     if (!row) return null
-    return { ...row, adjustments: JSON.parse(row.adjustments as string) }
+    return { ...row, adjustments: parseAdjustments(row.adjustments) }
   })
 
   ipcMain.handle('checkin:update', (_event, checkinId: number, data: Record<string, unknown>) => {
@@ -426,6 +426,6 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
     }
 
     const saved = db.prepare('SELECT * FROM weekly_checkins WHERE id=?').get(checkinId) as Record<string, unknown>
-    return { ...saved, adjustments: JSON.parse(saved.adjustments as string) }
+    return { ...saved, adjustments: parseAdjustments(saved.adjustments) }
   })
 }

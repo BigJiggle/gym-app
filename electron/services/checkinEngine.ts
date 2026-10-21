@@ -25,6 +25,36 @@ export interface Adjustments {
   notes: string[]
 }
 
+// Defensively parse a stored `weekly_checkins.adjustments` cell into a well-formed
+// Adjustments. The column is `TEXT NOT NULL DEFAULT '{}'`, so a row written without
+// an explicit value — or a legacy / hand-edited / corrupt cell — can hold '{}' or
+// non-JSON text. Every consumer reads `adjustments.notes` (CheckinFeedbackWidget and
+// the Check-In success screen call `.notes.map(...)`) and `adjustments.calories_delta`.
+// A raw `JSON.parse` yields `{}` whose `.notes` is undefined → `.notes.map(...)`
+// crashes the Dashboard (no error boundary) and the success screen; a non-JSON cell
+// makes `JSON.parse` THROW and takes down the whole checkin:history/latest handler, so
+// Progress and Check-In can't load any check-in data. Normalizing here (the single
+// read seam) guarantees the shape so no downstream consumer can crash on a bad cell.
+export function parseAdjustments(raw: unknown): Adjustments {
+  let obj: Record<string, unknown> = {}
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object') obj = parsed as Record<string, unknown>
+    } catch { /* malformed JSON — fall through to safe defaults */ }
+  } else if (raw && typeof raw === 'object') {
+    obj = raw as Record<string, unknown>
+  }
+  return {
+    calories_delta:
+      typeof obj.calories_delta === 'number' && Number.isFinite(obj.calories_delta) ? obj.calories_delta : 0,
+    cardio_change: typeof obj.cardio_change === 'string' ? obj.cardio_change : 'no change',
+    training_volume_change:
+      typeof obj.training_volume_change === 'string' ? obj.training_volume_change : 'no change',
+    notes: Array.isArray(obj.notes) ? obj.notes.filter((n): n is string => typeof n === 'string') : [],
+  }
+}
+
 // The STORED check-in weight (weekly_checkins.weight_kg) is read verbatim by the
 // Progress "Current Weight" tile + weight chart and folded raw into the smoothed
 // weight trend. The Check-In page's toKg only rejects <= 0 (no upper bound), so a
