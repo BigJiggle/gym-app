@@ -1,5 +1,47 @@
 # Change Agent Report
 
+## Run: 2026-10-22 #2 (NO REAL BUG FOUND — audited area (d) onboarding + Settings + reset + data lifecycle, rotating off the prior run's (b) training. Read deeply and traced the SCOPE error paths; every suspicious seam resolved to correct or intended behaviour on inspection/empirical test, so — per the routine's rule — NO fix was fabricated. Baseline was GREEN before and after: root `tsc` clean, 415 tests pass, `electron-vite build` OK.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 queued items checked off; last was AI-tailored onboarding, 2026-07-07). Nothing to implement → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard
+- `npx tsc --noEmit` (root) → PASS (clean)
+- `npm test` → PASS (415 tests, 65 files)
+- `npx electron-vite build` → PASS
+- (`npm ci` run with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.)
+
+**Noted (pre-existing, benign, NOT a reachable defect — left as-is):** `npx tsc -p tsconfig.web.json` reports one error — `src/pages/Diet/index.tsx:233` assigns `prefsCuisine` (typed `useState<string>`) to `culture_pref` (a cuisine union). The root `tsconfig.json` (`files: []` + solution refs) type-checks nothing, so it's hidden there, and `electron-vite build`/esbuild doesn't typecheck, so no project script (`build`/`test`) and neither STEP-1 gate is red. At runtime `prefsCuisine` only ever holds one of the 9 valid cuisine option values (line 188 seeds it from the stored `culture_pref`, line 1634 sets it from the option list), so the value written is always valid — this is a type-widening nit present since 2026-07-18 (commit a843059), not a runtime bug. Flagging for visibility; a pure type-cleanliness cast (`as User['culture_pref']`) would silence it but changes no behaviour, so it's out of this debugging routine's scope.
+
+### STEP 2 — Area audited: (d) onboarding + Settings + reset + data lifecycle
+Traced every SCOPE error path in the area and verified each is already guarded:
+
+- **Reset / data lifecycle (`user:resetAll`, `resetData.ts`).** The handler relies on `DELETE FROM users` cascading to all child tables (the comment claims it does). I suspected FK cascade might be a no-op (SQLite defaults `foreign_keys=OFF`, and the only `PRAGMA foreign_keys=ON` is inside migration v9, which is per-connection and not re-run on normal opens — `initDb`/`openFresh` never set it). **Empirically tested** with node-sqlite3-wasm directly: it defaults to `foreign_keys=1` (ON), so `DELETE FROM users` DOES cascade (orphan child rows = 0 after delete). The comment is accurate; reset works. `users.id` is `AUTOINCREMENT` so ids are never reused after reset either (belt-and-suspenders). No bug.
+- **`resetLocalData` / `mergeWeighIns`** — preserved-key logic, per-entry weigh-in validation (bad date / non-finite / ≤0 dropped), JSON.parse wrapped in try/catch. The Settings reset-card text ("app settings … are kept") matches reality: the `settings` table has no `user_id` FK so it survives the cascade. No bug.
+- **Settings "Edit profile" write path** — all numeric fields funnel through `sanitizeUserUpdate` → per-field clamps (`clampAge` 16–80, `clampHeightCm` 100–250, `clampWeightKgField` 30–300, `clampTrainingFrequency` 2–6, `clampExercisesPerSession` 3–12, `clampSetsPerExercise` 2–8, `clampBodyFatPct` 3–60, meal 1–20 / snack 0–20) with non-finite (cleared field → NaN) dropped so required columns are never NULLed. These are the exact holes earlier runs closed. No bug.
+- **Onboarding wizard** — `validateStep` (age/height/weight/experience ranges), Step1 ft/in round-then-split via `cmToFeetInches` (the "5 ft 12 in" fix from 2026-10-19 #2), Step4 meal/snack `clamp`+`Math.round`, the shared `Stepper` (reverts empty/NaN, clamps to [min,max], commits only finite ints), Step2/3/6 all use constrained Selects/sliders/option buttons. Show-date on submit is written to the `shows` table (authoritative) as well as `users`. No bug.
+- **Migrations (`schema.ts`)** — v9 users-table rebuild correctly brackets the `DROP TABLE users` with `foreign_keys OFF`→`ON` (run as separate statements, so the pragma takes effect) and preserves ids via `INSERT … SELECT id,…`; append-only, already applied. No bug.
+- **`ui_zoom` / theme / check-in schedule settings** — persisted as strings, applied via `document.documentElement.style.zoom`/class toggles; the degenerate `interval=0` renderer hang was already fixed (`countMissedBetween` guard). No bug.
+
+### Adjacent seams spot-checked (defensive, to be sure the area's data flows are clean)
+- `checkinEngine.weightTrend` — `weeksBetweenDates` returns `null` for a non-positive gap (duplicate same-day / out-of-order check-ins) → `?? 1`, and bodyweight ≤0/non-finite short-circuits to 0. No divide-by-zero.
+- `computeWeeksTracked` / `computeWeeklyWeightRate` (`weeksTracked.ts`/`weeklyRate.ts`) — guard <2 finite entries, min-1-week span, non-finite rate → null. Solid.
+- `getShowCountdown` (`dates.ts`) — local-noon vs local-midnight math, DST-safe, `totalDays` floored at 0 with separate `isPast`. Correct.
+- `clearOrphanedMealCompletions` — purges today+future index≥newCount on every diet-write path; `WeeklyMealView` progress bar is inside an `overflow-hidden` track so a historical ">100%" day is visually clipped (and the retained "6/3" count on past days is the documented, intended history record). No visible defect.
+- `applyRefeedToMeals`, `parseRepMidpoint`, `TrainingVolumeWidget` (div-by-`thisWeekLogs.length` is guarded by an early return when length 0), `Progress` `toDisplay`/`parseFloat` display seams — all finite-guarded.
+
+### Observation noted, deliberately NOT fixed (ambiguous feature semantics, not a clear defect)
+`TrainingVolumeWidget.tsx:79` labels `calories_target − totalKcalBurned / thisWeekLogs.length` as "net ~N kcal/**day**", but it divides the week's total training burn by the number of completed **sessions** (≈ per-training-day burn), not by 7. Whether that's a mislabel or an intentional "net on a training day" reading is a design call, not a reachable error (value is always finite; `thisWeekLogs.length` is guaranteed >0 here). Recording it so the owner / a future run can decide rather than imposing an interpretation.
+
+### STEP 4 — Verification (unchanged; all PASS)
+- `npx tsc --noEmit` → PASS
+- `npm test` → PASS (415)
+- `npx electron-vite build` → PASS
+
+No code changed this run (only this report). **Action for owner:** the backlog is empty — append new `- [ ]` items to `docs/change-backlog.md` to queue specific changes.
+
+---
+
 ## Run: 2026-10-22 (BUG FIX — the workout-set write seam clamps **negative and non-finite** reps/weight but leaves the **upper tail unguarded**, so a fat-fingered / pasted extreme value permanently poisons PRs, the tonnage charts, and last-performance pre-fill. `sanitizeReps`/`sanitizeWeightKg` (`electron/ipc/workoutHandlers.ts:14/20`) are the single seam every write path funnels through — `workout:logSet`, `workout:updateSet`, and the live session's `workout:saveSetsBatch`. Their existing comment is explicit that a bad value "poisons the permanent history: WorkoutStats charts, PR detection, and next-session 'last performance' pre-fill all read it back" — which is exactly why negatives are floored to 0 and NaN/Infinity map to null. But the guard was **asymmetric**: `Math.max(0, …)` has no ceiling, so any *finite, positive* extreme slips through verbatim. Reachability is high — the live `WorkoutSession` reps/weight inputs (`src/pages/Training/WorkoutSession.tsx:130`/`139`) carry **no `max`** at all, and even the `WorkoutLogEditor`'s `max="9999"` (`src/pages/Training/WorkoutLogEditor.tsx:272`/`286`) does NOT block a typed/pasted value (HTML `max`, like `min`, never blocks typed input — the same fact the negative-clamp comment already relies on). So a stray extra digit (e.g. `100000000`) or a mis-paste is stored as a 100-million-kg "lift" that (1) registers as a permanent PR in `computePRs`/`exercisePRs`, (2) blows out the 6-Week Volume Trend chart's auto-scaled Y-axis so every real bar collapses to ~0 px, and (3) pre-fills the next session's weight with garbage. In-scope: user-induced "invalid / extreme / boundary inputs (… huge …)" + backend NaN/Infinity-adjacent propagation + DB↔UI poisoning. **Root cause:** the sanitize seam bounded only the lower tail; the symmetric upper-bound guard the same code comment's rationale demands was never added. **Fix (minimum, same seam, mirrors the existing clamp):** add `MAX_REPS = MAX_WEIGHT_KG = 9999` and clamp both helpers with `Math.min(ceiling, Math.max(0, …))`. 9999 mirrors the `WorkoutLogEditor`'s own declared `max="9999"`, so it is a *safety* ceiling, not a domain restriction — 9999 kg ≈ 22,000 lb and a weight is always converted to kg before this seam, so no real set is ever rejected; the value just stays finite and bounded. No UI change; a no-op for every real-world entry.)
 
 ### STEP 0 — Requested changes
