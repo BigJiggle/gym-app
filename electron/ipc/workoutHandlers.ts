@@ -1,27 +1,44 @@
 import { IpcMain } from 'electron'
 import { getDb } from '../database/db'
 
-// A persisted set's reps/weight must never be negative or non-finite. The live
-// WorkoutSession's reps and weight inputs (and the WorkoutLogEditor's) have no
-// `min` — unlike the RIR input, which clamps to 0–5 — so the browser does NOT
-// block a typed negative (e.g. a stray "-" before a number). A stored negative
-// `reps_actual` inverts the post-workout Total Volume (weight × reps) and, once
-// in `exercise_logs`, poisons the permanent history: WorkoutStats charts, PR
-// detection, and next-session "last performance" pre-fill all read it back.
+// A persisted set's reps/weight must never be negative, non-finite, or absurdly
+// huge. The live WorkoutSession's reps and weight inputs (and the
+// WorkoutLogEditor's) have no `min` — unlike the RIR input, which clamps to 0–5 —
+// so the browser does NOT block a typed negative (e.g. a stray "-" before a
+// number). A stored negative `reps_actual` inverts the post-workout Total Volume
+// (weight × reps) and, once in `exercise_logs`, poisons the permanent history:
+// WorkoutStats charts, PR detection, and next-session "last performance" pre-fill
+// all read it back.
+//
+// The SAME poisoning happens on the UPPER tail, which was left unguarded: a
+// fat-fingered or pasted extreme value (e.g. an extra digit — "100000000", or a
+// stray exponent) reaches the write seam. The live WorkoutSession's weight/reps
+// inputs carry no `max` at all, and even the WorkoutLogEditor's `max="9999"`
+// doesn't block a typed/pasted value (HTML `max`, like `min`, never blocks typed
+// input). A stored 100-million-kg "lift" then permanently registers as a PR,
+// blows out the 6-week tonnage chart's Y-axis (hiding every real bar), and
+// pre-fills the next session with a garbage weight. Cap at a safety ceiling that
+// no human entry can legitimately reach — mirroring the WorkoutLogEditor's own
+// declared `max="9999"`, so the clamp never rejects a real set (9999 kg ≈ 22,000
+// lb; a weight is always converted to kg before this seam) while keeping the
+// stored value finite and bounded.
+//
 // Clamp at the write seam so every entry point (live session saveSetsBatch, log
 // editor updateSet, single logSet) agrees. A null/undefined/absent value stays
 // null — an emptied field means "clear this column", which is exactly NULL.
+const MAX_REPS = 9999
+const MAX_WEIGHT_KG = 9999
 export function sanitizeReps(v: unknown): number | null {
   if (v === null || v === undefined) return null
   const n = Number(v)
   if (!Number.isFinite(n)) return null
-  return Math.max(0, Math.round(n))
+  return Math.min(MAX_REPS, Math.max(0, Math.round(n)))
 }
 export function sanitizeWeightKg(v: unknown): number | null {
   if (v === null || v === undefined) return null
   const n = Number(v)
   if (!Number.isFinite(n)) return null
-  return Math.max(0, n)
+  return Math.min(MAX_WEIGHT_KG, Math.max(0, n))
 }
 
 export function registerWorkoutHandlers(ipcMain: IpcMain): void {

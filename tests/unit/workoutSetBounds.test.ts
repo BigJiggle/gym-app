@@ -63,6 +63,19 @@ describe('sanitizeReps / sanitizeWeightKg (pure)', () => {
     expect(sanitizeWeightKg(-Infinity)).toBeNull()
     expect(sanitizeWeightKg(undefined)).toBeNull()
   })
+  it('caps an absurdly huge reps/weight at the 9999 safety ceiling', () => {
+    // A fat-fingered / pasted extreme value (e.g. an extra digit) is finite and
+    // positive, so it slips past the negative/NaN guards. Before the upper clamp
+    // it persisted verbatim and permanently poisoned PRs, the tonnage charts, and
+    // last-performance pre-fill. It must now be bounded, not stored raw.
+    expect(sanitizeReps(100000000)).toBe(9999)
+    expect(sanitizeReps(10000)).toBe(9999)
+    expect(sanitizeWeightKg(100000000)).toBe(9999)
+    expect(sanitizeWeightKg(50000)).toBe(9999)
+    // A legitimate heavy lift (far under the ceiling) is untouched.
+    expect(sanitizeWeightKg(455)).toBe(455)
+    expect(sanitizeReps(30)).toBe(30)
+  })
 })
 
 describe('workout set write handlers — negative reps/weight are clamped', () => {
@@ -101,6 +114,18 @@ describe('workout set write handlers — negative reps/weight are clamped', () =
     const row = testDb.prepare('SELECT * FROM exercise_logs WHERE workout_log_id=1').get([]) as Record<string, unknown>
     expect(row.weight_kg).toBe(0)
     expect(row.reps_actual).toBe(5)
+  })
+
+  it('saveSetsBatch: a fat-fingered huge weight is capped, not stored raw', () => {
+    const save = handlers.get('workout:saveSetsBatch')!
+    save({}, 1, [
+      { exercise_name: 'Leg Press', set_number: 1, reps_prescribed: '10', reps_actual: 10, weight_kg: 100000000, rir_actual: 2, skipped: false, notes: null },
+    ])
+    const row = testDb.prepare('SELECT * FROM exercise_logs WHERE workout_log_id=1').get([]) as Record<string, unknown>
+    // Before the fix this stored 100000000, which registers as a permanent PR and
+    // blows out the tonnage chart Y-axis.
+    expect(row.weight_kg).toBe(9999)
+    expect(row.reps_actual).toBe(10)
   })
 
   it('logSet + updateSet: a negative reps edit clamps to 0', () => {
