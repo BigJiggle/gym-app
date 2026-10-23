@@ -1,5 +1,42 @@
 # Change Agent Report
 
+## Run: 2026-10-23 #2 (BUG FIX — area (c) check-in/Progress/adaptive nutrition; closed the AI diet-refine macro-sanitization gap the prior run flagged as a lead: `plan:refineDietWithPrompt` persisted the model's top-level macros via `r.x ?? currentPlan.x`, so a 0 persists a nonsensical 0-gram target and a non-finite value (NaN / a stray string) binds as NULL → NOT NULL constraint throws the whole refine)
+
+Rotated to area **(c) check-in + Progress + adaptive nutrition**, off the prior run's (f) and the (d)/(b) before it. I read the check-in engine (`checkinEngine.ts`: `parseAdjustments`, `clampCheckinWeightKg`, `weightTrend`/`weightTrendPct` Theil–Sen smoothing, `calculateAdjustments`), all four check-in handlers (`submit`/`submitMissed`/`update`/`nextAllowed`), the Progress page (weekly-rate/projection/required-rate math, YMCA body-fat estimate, diet-consistency and wellness aggregates), `progressHandlers`, the CheckIn page's auto-fill adherence and input guards, and the shared rate/weeks utils — all already well-guarded (divisions floored, weights clamped at every seam, NaN/Infinity guarded). The one genuine, reachable defect sits on the **adaptive-nutrition write seam** that the 2026-10-23 run explicitly deferred.
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (GREEN before changes)
+- `npx tsc --noEmit` (root) → PASS (clean)
+- `npm test` → PASS (421 tests, 66 files)
+- `npx electron-vite build` → PASS
+- (`npm ci` run with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.)
+
+### STEP 2 — Bug found (area c → adaptive-nutrition / AI diet-refine seam)
+**Root cause.** `plan:refineDietWithPrompt` (`electron/ipc/planHandlers.ts`) stored the model's top-level macro targets with `r.protein_g ?? currentPlan.protein_g` (same for `carbs_g` / `fat_g`). `??` only falls back on null/undefined, so a model that returns a macro as:
+- **0** → persists `0` verbatim as the stored target. A 0-gram protein/fat goal is nonsensical and dangerous: the Diet page then shows the athlete a "0g" target and the macro-adherence widgets read back "0% of goal" even after they log protein. (The sibling write seam `plan:generateDiet` already routes the identical fields through `sanitizeMacroGrams`; refine didn't — the gap flagged as a lead.)
+- **NaN / non-finite / a stray string** → `?? currentPlan` keeps the bad value, which node-sqlite3-wasm binds as NULL → **`NOT NULL constraint failed: diet_plans.carbs_g`** throws, aborting the whole refine (the user's "swap X for Y" request fails outright with no plan change). Confirmed by the reproduction test's second case.
+
+This is reachable: the AI diet-refine path is a first-class feature (API-key capture is onboarding step 1), and the model's top-level macro fields are untrusted.
+
+### STEP 3 — Fix (minimum, at the write seam; mirrors plan:generateDiet)
+- **`electron/ipc/planHandlers.ts`** — `plan:refineDietWithPrompt` now computes `safeProtein`/`safeCarbs`/`safeFat` via `sanitizeMacroGrams(r.x, refinedMeals.reduce(sum))` (model value → summed per-meal grams), with a final `|| keepPrev(currentPlan.x)` that restores the prior valid target only when both the model value AND the summed meals are 0. A 0 / negative / non-finite / string model macro can no longer persist as the stored target or throw the handler. No new exports; reuses the existing `sanitizeMacroGrams` already imported for the sibling seam.
+
+### Files changed
+- `electron/ipc/planHandlers.ts` — refine seam routes the three macros through `sanitizeMacroGrams` + previous-target fallback (was `?? currentPlan`).
+- `tests/unit/refineDietMacroSanitize.test.ts` — 3 new tests exercising the REAL handler against an in-memory DB: model returns 0 → falls back to summed grams (not 0); model returns negative/NaN/string → summed grams (no NULL-constraint throw); model returns valid macros → honored verbatim.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (424 tests, +3 new)
+- `npx electron-vite build` → PASS
+
+### Deferred / not done
+- Nothing outstanding on this seam. The AI refine path's macro handling is now consistent with `plan:generateDiet`. (Both now guarantee a finite, non-zero macro target or a safe fallback.)
+
+---
+
 ## Run: 2026-10-23 (BUG FIX — AI-generated diet plan persisted with an unvalidated meal shape: a non-array `meals` throws in the handler's per-meal `.reduce` (bypassing the rule-based fallback), and a meal missing `foods`/with non-finite macros crashes the Diet page + NextMealWidget with no error boundary)
 
 Rotated to area **(f) shows/competition + date/week logic**, off the prior run's (d) and the (b) before it. The default (rule-based, no-API-key) paths in that area — `showDates`/`showHandlers`, `dates.ts`, `competitionPrep` (`getShowCountdown`/`buildPrepTimeline`), `weeksTracked`, `weeklyRate`, `checkinSchedule`, `checkinHandlers`, the competition widgets, Progress projection, WeeklyMealView, Education timeline — were all audited deeply and are already well-guarded (no reachable defect). The one genuine, reachable gap found sits on the **AI diet seam**, which is now a first-class path (API-key capture is onboarding step 1).

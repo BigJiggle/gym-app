@@ -613,9 +613,25 @@ Ensure every exercise respects the constraints above while maintaining phase-app
     // index >= the new count would otherwise inflate "meals eaten"/adherence and can't
     // be rendered. Mirrors every other diet-write path (see lines ~179/220/312/482).
     const refinedMealCount = refinedMeals.length
+    // Sanitize the model's top-level macro targets exactly like plan:generateDiet
+    // instead of `r.x ?? currentPlan.x`: `??` only guards null/undefined, so a model
+    // that returns protein_g / carbs_g / fat_g as 0 (or a negative value) would persist
+    // a 0-gram — nonsensical, dangerous — macro target (a 0g goal shown to the athlete +
+    // a "0% of goal" readback even after they eat), and a non-finite one (NaN / a stray
+    // string) binds as NULL under node-sqlite3-wasm, failing the NOT NULL constraint and
+    // throwing the whole refine. sanitizeMacroGrams falls back to the summed per-meal
+    // grams the refined meals carry; the final `|| previous` keeps the prior valid target
+    // when even the meals sum to 0, so a bad model macro can never poison the stored plan.
+    const keepPrev = (v: unknown): number => {
+      const p = Math.round(Number(v))
+      return Number.isFinite(p) && p > 0 ? p : 0
+    }
+    const safeProtein = sanitizeMacroGrams(r.protein_g, refinedMeals.reduce((s, m) => s + m.protein_g, 0)) || keepPrev(currentPlan.protein_g)
+    const safeCarbs = sanitizeMacroGrams(r.carbs_g, refinedMeals.reduce((s, m) => s + m.carbs_g, 0)) || keepPrev(currentPlan.carbs_g)
+    const safeFat = sanitizeMacroGrams(r.fat_g, refinedMeals.reduce((s, m) => s + m.fat_g, 0)) || keepPrev(currentPlan.fat_g)
     db.prepare(
       'UPDATE diet_plans SET protein_g=?, carbs_g=?, fat_g=?, meals=?, meal_count=? WHERE user_id=? AND id=(SELECT id FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1)'
-    ).run([r.protein_g ?? currentPlan.protein_g, r.carbs_g ?? currentPlan.carbs_g, r.fat_g ?? currentPlan.fat_g, JSON.stringify(refinedMeals), refinedMealCount, userId, userId])
+    ).run([safeProtein, safeCarbs, safeFat, JSON.stringify(refinedMeals), refinedMealCount, userId, userId])
     clearOrphanedMealCompletions(db, userId, refinedMealCount)
     const saved = db.prepare('SELECT * FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1').get(userId) as Record<string,unknown>
     return { ...saved, meals: JSON.parse(saved.meals as string) }
