@@ -1,7 +1,7 @@
 import { IpcMain } from 'electron'
 import { getDb, namedParams } from '../database/db'
 import { generateTrainingPlan, getExerciseLibraryForUI, determinePhase } from '../services/trainingEngine'
-import { generateNutritionPlan, buildMealsPublic, calcBMR, getPhaseAwareDeficit, ACTIVITY_MULTIPLIERS, clampWeightKg, clampMealCount, sanitizeCalorieTarget, sanitizeMacroGrams, MIN_CALORIE_TARGET } from '../services/nutritionEngine'
+import { generateNutritionPlan, buildMealsPublic, calcBMR, getPhaseAwareDeficit, ACTIVITY_MULTIPLIERS, clampWeightKg, clampMealCount, sanitizeCalorieTarget, sanitizeMacroGrams, normalizeMeals, MIN_CALORIE_TARGET } from '../services/nutritionEngine'
 import { generateDietWithClaude, generateWorkoutWithClaude, refineDietPlan, refineWorkoutWithClaude, processAIRequest, refineWorkoutForSafety } from '../services/claudeService'
 import { regenerateDietForGoal, persistProfileShowDate } from './showHandlers'
 import { weeksUntilShow, localToday } from '../services/showDates'
@@ -175,11 +175,19 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
         weeks_out: dietWeeksOutClaude,
       }
       const claudeResult = await generateDietWithClaude(claudeApiKey, userProfile)
-      if (claudeResult && (claudeResult as any).meals) {
+      // Normalize the untrusted model `meals` to a well-formed Meal[] BEFORE any
+      // use. A non-array `meals` (object/string) would otherwise throw in the
+      // per-meal `.reduce` below — bypassing the rule-based fallback — and an entry
+      // missing `foods`/with non-finite macros would persist and later crash the
+      // Diet page / NextMealWidget (no error boundary). An empty result (model
+      // returned no usable meals) falls through to the rule-based engine rather
+      // than storing an empty plan.
+      const aiMeals = normalizeMeals((claudeResult as any)?.meals)
+      if (claudeResult && aiMeals.length > 0) {
         const cr = claudeResult as any
         const planName = `AI Nutrition Plan (${cr.phase ?? 'deficit'})`
         db.prepare('DELETE FROM diet_plans WHERE user_id = ?').run(userId)
-        clearOrphanedMealCompletions(db, userId, (cr.meals ?? []).length)
+        clearOrphanedMealCompletions(db, userId, aiMeals.length)
         const result = db.prepare(
           `INSERT INTO diet_plans (user_id, name, calories_target, protein_g, carbs_g, fat_g, meal_count, meals, phase, engine_version)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -188,15 +196,15 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
           // calories_target AND per-meal calories (summing to 0), which later
           // divides by zero in the macro-recalc / check-in-scaling paths. Floor
           // to MIN_CALORIE_TARGET exactly as the rule-based engine does.
-          sanitizeCalorieTarget(cr.calories_target, (cr.meals ?? []).reduce((s: number, m: any) => s + (Number(m.calories) || 0), 0)),
+          sanitizeCalorieTarget(cr.calories_target, aiMeals.reduce((s, m) => s + m.calories, 0)),
           // Macros get the same treatment as calories: the model may omit protein_g /
           // carbs_g / fat_g, which `?? 0` would persist as a 0-gram target (a 0g protein
           // goal + a divide-by-zero in the meal-adherence widgets). Fall back to the
           // summed per-meal grams the model DID return.
-          sanitizeMacroGrams(cr.protein_g, (cr.meals ?? []).reduce((s: number, m: any) => s + (Number(m.protein_g) || 0), 0)),
-          sanitizeMacroGrams(cr.carbs_g, (cr.meals ?? []).reduce((s: number, m: any) => s + (Number(m.carbs_g) || 0), 0)),
-          sanitizeMacroGrams(cr.fat_g, (cr.meals ?? []).reduce((s: number, m: any) => s + (Number(m.fat_g) || 0), 0)),
-          (cr.meals ?? []).length, JSON.stringify(cr.meals ?? []),
+          sanitizeMacroGrams(cr.protein_g, aiMeals.reduce((s, m) => s + m.protein_g, 0)),
+          sanitizeMacroGrams(cr.carbs_g, aiMeals.reduce((s, m) => s + m.carbs_g, 0)),
+          sanitizeMacroGrams(cr.fat_g, aiMeals.reduce((s, m) => s + m.fat_g, 0)),
+          aiMeals.length, JSON.stringify(aiMeals),
           cr.phase ?? 'deficit', 3
         ])
         const saved = db.prepare('SELECT * FROM diet_plans WHERE id = ?').get(result.lastInsertRowid) as Record<string, unknown>
@@ -588,8 +596,14 @@ Ensure every exercise respects the constraints above while maintaining phase-app
       userProfile: { dietary_preference: user.dietary_preference, culture_pref: user.culture_pref },
       userRequest: userPrompt,
     })
-    if (!refined || !(refined as any).meals) throw new Error('Claude did not return a valid plan')
     const r = refined as any
+    // Normalize the untrusted model `meals` to a well-formed Meal[] before storing.
+    // The previous truthy `(refined as any).meals` check let a non-array meals blob
+    // (object/string) through to be persisted, then crash the Diet page's
+    // `meal.foods.map(...)` / NextMealWidget (no error boundary); an entry missing
+    // `foods` did the same. Treat an empty normalized result as "no valid plan".
+    const refinedMeals = normalizeMeals(r.meals)
+    if (!refined || refinedMeals.length === 0) throw new Error('Claude did not return a valid plan')
     // A refine can return a DIFFERENT meal count than the current plan — the LLM is
     // only asked to keep the count, never forced to, and a user request like "give me
     // 3 meals instead of 5" legitimately changes it. Persist meal_count alongside the
@@ -598,10 +612,10 @@ Ensure every exercise respects the constraints above while maintaining phase-app
     // — they're keyed by positional meal_index, so any today/future completion at an
     // index >= the new count would otherwise inflate "meals eaten"/adherence and can't
     // be rendered. Mirrors every other diet-write path (see lines ~179/220/312/482).
-    const refinedMealCount = Array.isArray(r.meals) ? r.meals.length : (currentPlan.meal_count as number)
+    const refinedMealCount = refinedMeals.length
     db.prepare(
       'UPDATE diet_plans SET protein_g=?, carbs_g=?, fat_g=?, meals=?, meal_count=? WHERE user_id=? AND id=(SELECT id FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1)'
-    ).run([r.protein_g ?? currentPlan.protein_g, r.carbs_g ?? currentPlan.carbs_g, r.fat_g ?? currentPlan.fat_g, JSON.stringify(r.meals), refinedMealCount, userId, userId])
+    ).run([r.protein_g ?? currentPlan.protein_g, r.carbs_g ?? currentPlan.carbs_g, r.fat_g ?? currentPlan.fat_g, JSON.stringify(refinedMeals), refinedMealCount, userId, userId])
     clearOrphanedMealCompletions(db, userId, refinedMealCount)
     const saved = db.prepare('SELECT * FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1').get(userId) as Record<string,unknown>
     return { ...saved, meals: JSON.parse(saved.meals as string) }

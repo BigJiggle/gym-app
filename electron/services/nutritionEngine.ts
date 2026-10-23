@@ -872,6 +872,38 @@ export function sanitizeMacroGrams(raw: unknown, mealsMacroSum = 0): number {
   return 0
 }
 
+// Coerce an untrusted (AI-supplied) `meals` value into a well-formed Meal[]. The
+// rule-based engine always emits valid meals, but the Claude diet paths
+// (plan:generateDiet / plan:refineDietWithPrompt) persist the model's `meals`
+// verbatim. A model can return `meals` as a non-array (object/string), omit
+// `foods` on an entry, send `foods` as a non-array, or return non-finite numeric
+// fields. Each then crashes the renderer, which assumes the shape: NextMealWidget
+// reads `meal.foods.length`, the Diet page and WeeklyMealView call
+// `meal.foods.map(...)`, and GroceryList does `for (const food of meal.foods)` —
+// all with no error boundary (white screen). A non-array `meals` also throws in
+// the handler's per-meal `.reduce` BEFORE the rule-based fallback can run. The AI
+// WORKOUT path already filters invalid sessions (`exercises.length > 0`); this is
+// the matching guard for the diet path. Returns [] for a non-array input so the
+// caller can fall back to the rule-based engine instead of storing an empty plan.
+export function normalizeMeals(raw: unknown): Meal[] {
+  if (!Array.isArray(raw)) return []
+  const num = (v: unknown): number => {
+    const n = Math.round(Number(v))
+    return Number.isFinite(n) ? n : 0
+  }
+  return raw
+    .filter((m): m is Record<string, unknown> => !!m && typeof m === 'object')
+    .map((m) => ({
+      name: typeof m.name === 'string' && m.name.trim() ? m.name : 'Meal',
+      time: typeof m.time === 'string' && /^\d{1,2}:\d{2}$/.test(m.time) ? m.time : '12:00',
+      calories: num(m.calories),
+      protein_g: num(m.protein_g),
+      carbs_g: num(m.carbs_g),
+      fat_g: num(m.fat_g),
+      foods: Array.isArray(m.foods) ? m.foods.filter((f): f is string => typeof f === 'string') : [],
+    }))
+}
+
 // Supported main-meal range (1–20) shared by onboarding, Settings, and the
 // engine. Every path that turns a meal_count into a plan must clamp identically —
 // a mismatched clamp (e.g. the AI-request handler's old 3–6 cap) silently drops a

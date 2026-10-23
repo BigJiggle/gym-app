@@ -1,5 +1,50 @@
 # Change Agent Report
 
+## Run: 2026-10-23 (BUG FIX — AI-generated diet plan persisted with an unvalidated meal shape: a non-array `meals` throws in the handler's per-meal `.reduce` (bypassing the rule-based fallback), and a meal missing `foods`/with non-finite macros crashes the Diet page + NextMealWidget with no error boundary)
+
+Rotated to area **(f) shows/competition + date/week logic**, off the prior run's (d) and the (b) before it. The default (rule-based, no-API-key) paths in that area — `showDates`/`showHandlers`, `dates.ts`, `competitionPrep` (`getShowCountdown`/`buildPrepTimeline`), `weeksTracked`, `weeklyRate`, `checkinSchedule`, `checkinHandlers`, the competition widgets, Progress projection, WeeklyMealView, Education timeline — were all audited deeply and are already well-guarded (no reachable defect). The one genuine, reachable gap found sits on the **AI diet seam**, which is now a first-class path (API-key capture is onboarding step 1).
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (GREEN before changes)
+- `npx tsc --noEmit` (root) → PASS (clean)
+- `npm test` → PASS (415 tests, 65 files)
+- `npx electron-vite build` → PASS
+- (`npm ci` run with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.)
+
+### STEP 2 — Bug found (area f → AI diet seam)
+**Root cause.** The rule-based nutrition engine always emits well-formed meals, and the AI *workout* path already filters invalid sessions (`result.sessions.filter(s => Array.isArray(s.exercises) && s.exercises.length > 0)`). But the two AI **diet** write seams persist the model's `meals` verbatim with no equivalent guard:
+
+1. `plan:generateDiet` (`electron/ipc/planHandlers.ts`): gated only on truthy `cr.meals`, then calls `(cr.meals ?? []).reduce(...)` four times. If the model returns `meals` as a non-array (object/string — e.g. `{"meals": {...}}` or a stray wrapper), `.reduce` is `undefined` → **TypeError thrown**, which aborts the handler *before* the rule-based fallback block below it can run. The user's diet generation fails outright instead of degrading.
+2. `plan:refineDietWithPrompt` (same file): gated only on truthy `(refined as any).meals`, then stores `JSON.stringify(r.meals)` directly (it even already knew `r.meals` might not be an array — it guarded `meal_count` with `Array.isArray(r.meals) ? … : …` but still persisted the non-array blob).
+
+Either way, a persisted meal that is a non-array, or an entry missing `foods` / with `foods` as a non-array / with non-finite numeric fields, then reaches the renderer, which assumes the `Meal` shape with **no error boundary**:
+- `NextMealWidget` → `meal.foods.length` (crashes the **Dashboard**),
+- Diet page `src/pages/Diet/index.tsx` + `WeeklyMealView` → `meal.foods.map(...)`,
+- `GroceryList` → `for (const food of meal.foods)` (not iterable).
+Result: white screen with no recovery until the plan is regenerated.
+
+### STEP 3 — Fix (minimum, at the write seam)
+- **`electron/services/nutritionEngine.ts`** — new exported `normalizeMeals(raw: unknown): Meal[]`, living beside the existing `sanitizeCalorieTarget`/`sanitizeMacroGrams` AI-output guards. Returns `[]` for a non-array input (so the caller can fall back to the rule-based engine), drops non-object entries, and for each valid entry guarantees the declared shape: `foods` → string[] (empty if missing/invalid, non-string members dropped), `name`/`time` → sane defaults, and `calories`/`protein_g`/`carbs_g`/`fat_g` → finite integers (non-finite → 0).
+- **`electron/ipc/planHandlers.ts`** — `plan:generateDiet` now computes `const aiMeals = normalizeMeals((claudeResult as any)?.meals)` and gates the AI block on `aiMeals.length > 0` (empty → falls through to the rule-based engine), using `aiMeals` for the `.reduce` sums, the stored `meals`, `meal_count`, and orphan-completion purge. `plan:refineDietWithPrompt` computes `const refinedMeals = normalizeMeals(r.meals)`, treats an empty result as "no valid plan" (throws, same as before), and stores `refinedMeals` + `refinedMeals.length`. (Macro `?? currentPlan` handling left unchanged — that is a separate concern, kept out of this focused fix.)
+
+### Files changed
+- `electron/services/nutritionEngine.ts` — new `normalizeMeals` export.
+- `electron/ipc/planHandlers.ts` — both AI diet seams routed through `normalizeMeals`.
+- `tests/unit/normalizeMeals.test.ts` — 6 new tests (non-array → []; missing/invalid `foods` → []; non-string foods members dropped; non-finite macros → 0; non-object entries dropped; default name/time).
+- `change-agent-report.md` — this entry.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (421 tests, +6 new)
+- `npx electron-vite build` → PASS
+
+### Deferred / not done
+- The AI *refine* path still uses `r.protein_g ?? currentPlan.protein_g` for top-level macros (a `0` from the model would persist), unlike `generateDiet` which uses `sanitizeMacroGrams`. That is a separate divide-by-zero-in-adherence concern, left for a future run to keep this fix single-purpose.
+
+---
+
 ## Run: 2026-10-22 #2 (NO REAL BUG FOUND — audited area (d) onboarding + Settings + reset + data lifecycle, rotating off the prior run's (b) training. Read deeply and traced the SCOPE error paths; every suspicious seam resolved to correct or intended behaviour on inspection/empirical test, so — per the routine's rule — NO fix was fabricated. Baseline was GREEN before and after: root `tsc` clean, 415 tests pass, `electron-vite build` OK.)
 
 ### STEP 0 — Requested changes
