@@ -17,6 +17,7 @@ import { NUTRITION_WIDGET_META, nutritionWidgetStore } from '../../components/wi
 import { FOODS } from '../../data/foods'
 import { localDateStr } from '../../utils/dates'
 import { nextWaterMl } from '../../utils/water'
+import { foodLabelToExclusionId } from '../../utils/foodId'
 import { applyRefeedToMeals } from '../../utils/refeed'
 import type { Meal, MealCompletion } from '../../types'
 
@@ -196,13 +197,7 @@ export default function Diet() {
   if (!user) return null
 
   async function handleExcludeFood(foodLabel: string) {
-    const foodId = foodLabel
-      .replace(/\s*\(.*?\)/g, '')   // Remove (portions) FIRST before any other replacement
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, '_')
-      .replace(/_+/g, '_')
-      .replace(/^_|_$/g, '')
-      .trim()
+    const foodId = foodLabelToExclusionId(foodLabel)
     const current = user!.food_exclusions ?? []
     if (current.includes(foodId)) return
     const updated = [...current, foodId]

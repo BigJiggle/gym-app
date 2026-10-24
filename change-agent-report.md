@@ -1,5 +1,36 @@
 # Change Agent Report
 
+## Run: 2026-10-24 (BUG FIX — area (a) nutrition engine + Diet flows; the Diet page's "exclude this food" ✕ action **silently does nothing for any fixed-count food** (Rice Cakes x3/x2, Corn Tortilla x2). `handleExcludeFood` normalized a food's DISPLAY label into an exclusion ID by stripping only the `(portions)` suffix, so "Rice Cakes x3" became `rice_cakes_x3` — which matches no food ID in `isExcluded` — and the engine kept serving rice cakes in every regenerated plan despite the confirm dialog and the on-page note both promising "exclude this food from future plans". `GroceryList.buildGroceryItems` already strips the `xN` count token for its `baseName`; the exclude path was the one seam missing that same strip.)
+
+### STEP 1 — Regression guard (GREEN before and after)
+On a clean `master` + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (424 tests) → PASS (429 tests, +5) after the fix
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (a) nutrition engine + Diet flows
+Rotated to **(a)** off the recent cluster (10-23 #2 (c), 10-23 (f), 10-22 #2 (d), 10-22 (b)). Deep-read: `nutritionEngine.ts` (`getPhaseAwareDeficit`, `buildMeals` snack/main calorie split + macro ratios, `getMealTemplates` main/snack index selection + cycling, `calcPortionStr`/`applyCookingStyle`/`applyPrepStyle`, `getFood`/`isExcluded`/`getCultureFood`, and the `clampWeightKg`/`sanitizeCalorieTarget`/`sanitizeMacroGrams`/`normalizeMeals`/`clampMealCount` guard seams — all already hardened), the diet IPC paths in `planHandlers.ts` (`generateDiet`, `refineDietWithPrompt`, `applyAIRequest` regen, `recalculateMacros`, `reorderMeals` permutation remap, `previewGoalCalories`), `mealCompletionHandlers.ts` (`clearOrphanedMealCompletions` + log/unlog/get), and the Diet UI (`Diet/index.tsx` intake/refeed/weekly-totals math — all division-guarded; `GroceryList.tsx` quantity accumulation; `WeeklyMealView.tsx`; `swapAlternatives.ts`; `refeed.ts`). The weekly/intake/portion math and the AI write seams are all well-guarded. The one genuine, reachable defect was the **exclude-by-label normalization** below.
+
+### The bug (file:line)
+- `src/pages/Diet/index.tsx:198` `handleExcludeFood` — took a meal food's display string (passed verbatim from the ✕ button, `index.tsx:1205`) and slug-cased it to an exclusion ID after stripping only `(…)`. For a `fixedLabel` food that carries an `xN` count — Pre-Workout/snack **Rice Cakes x3 / x2** (id `rice_cakes`), Mexican **Corn Tortilla x2** (id `corn_tortilla`) — the `x3`/`x2` survived and the ID came out `rice_cakes_x3` / `corn_tortilla_x2`. `isExcluded` (`nutritionEngine.ts:259`) compares against the real IDs and their `EXCLUSION_ALIASES`; neither the direct nor the alias path has a `..._xN` key, so the exclusion was a no-op and the food reappeared on the next `generateDietPlan`. Reachable by any user tapping ✕ on a rice-cakes/tortilla chip — a plain omnivore or vegan default plan. In-scope: a frontend user-induced action that silently fails (UI-vs-stored/intent desync).
+
+### Root cause
+The display-label → exclusion-ID normalization stripped the `(portions)` suffix but not the fixed-count `xN` token, so counted foods normalized to an ID that matches nothing. `GroceryList.buildGroceryItems` (`GroceryList.tsx:71`) already does both strips for its `baseName` (`.replace(/\s*\(.*?\)/g,'').replace(/\s*x\d+/g,'')`); the exclude path diverged.
+
+### Fix (minimum, single seam)
+- New pure helper `src/utils/foodId.ts` → `foodLabelToExclusionId(label)`: strips `(…)` THEN `\s*x\d+`, then lower/underscore-slugs (exactly mirroring the grocery `baseName` derivation). `Diet/index.tsx` imports it and `handleExcludeFood` now calls it instead of the inline regex chain. "Rice Cakes x3" → `rice_cakes`, "Corn Tortilla x2" → `corn_tortilla`; scalable foods ("White Rice (150g cooked)" → `white_rice`) are unchanged. No engine/DB/UI-shape change.
+- Note (left as-is, out of this fix's scope): display names that differ from their ID beyond the count token — e.g. "Whole Eggs" (id `eggs`) — still don't map through this normalizer, but that is a distinct display-name≠id class, not the count-suffix bug, and no such label is offered with a count that the `xN` strip would otherwise rescue.
+
+### Tests added
+- `tests/unit/foodId.test.ts` (5 tests): unit asserts `foodLabelToExclusionId` strips the count token (`Rice Cakes x3`→`rice_cakes`, `Corn Tortilla x2`→`corn_tortilla`) and the portion suffix, and both together; plus an end-to-end pair through `buildMealsPublic('vegan', exclude)` showing the OLD id `rice_cakes_x3` leaves rice cakes in the regenerated meals (reproduces the bug) while the fixed id removes them. Verified failing-first: removing the `xN` strip makes 3/5 fail (`rice_cakes` vs `rice_cakes_x3`).
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (429 tests, +5)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-10-23 #2 (BUG FIX — area (c) check-in/Progress/adaptive nutrition; closed the AI diet-refine macro-sanitization gap the prior run flagged as a lead: `plan:refineDietWithPrompt` persisted the model's top-level macros via `r.x ?? currentPlan.x`, so a 0 persists a nonsensical 0-gram target and a non-finite value (NaN / a stray string) binds as NULL → NOT NULL constraint throws the whole refine)
 
 Rotated to area **(c) check-in + Progress + adaptive nutrition**, off the prior run's (f) and the (d)/(b) before it. I read the check-in engine (`checkinEngine.ts`: `parseAdjustments`, `clampCheckinWeightKg`, `weightTrend`/`weightTrendPct` Theil–Sen smoothing, `calculateAdjustments`), all four check-in handlers (`submit`/`submitMissed`/`update`/`nextAllowed`), the Progress page (weekly-rate/projection/required-rate math, YMCA body-fat estimate, diet-consistency and wellness aggregates), `progressHandlers`, the CheckIn page's auto-fill adherence and input guards, and the shared rate/weeks utils — all already well-guarded (divisions floored, weights clamped at every seam, NaN/Infinity guarded). The one genuine, reachable defect sits on the **adaptive-nutrition write seam** that the 2026-10-23 run explicitly deferred.
