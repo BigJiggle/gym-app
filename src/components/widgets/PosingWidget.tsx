@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { posingStore } from './competitionLogs'
+import { weekStartMondayStr } from '../../utils/dates'
 
 const POSING_FOCUSES = ['Full Routine', 'Quarter Turns', 'Front Double', 'Side Poses', 'Symmetry Round', 'Mandatory Poses']
 const QUICK_PRESETS: [string, number][] = [['Full Routine', 15], ['Full Routine', 20], ['Quarter Turns', 15], ['Mandatory Poses', 20]]
@@ -16,9 +17,7 @@ export default function PosingWidget() {
   const [focus, setFocus] = useState('Full Routine')
   const [minutes, setMinutes] = useState('')
 
-  const jsDay = new Date().getDay()
-  const daysFromMon = jsDay === 0 ? 6 : jsDay - 1
-  const weekStart = new Date(Date.now() - daysFromMon * 86400000).toLocaleDateString('en-CA')
+  const weekStart = weekStartMondayStr()
   const weekEntries = posingLog.filter((e) => e.date >= weekStart && e.date <= todayStr)
   const todayEntry = posingLog.find((e) => e.date === todayStr)
   const weekMins = weekEntries.reduce((s, e) => s + e.minutes, 0)

@@ -12,7 +12,7 @@ import WorkoutStats from './WorkoutStats'
 import TabWidgetZone from '../../components/widgets/TabWidgetZone'
 import { TRAINING_WIDGET_META, trainingWidgetStore } from '../../components/widgets/tabWidgets'
 import type { TrainingSession, ExerciseLibraryItem } from '../../types'
-import { parseLocalDate } from '../../utils/dates'
+import { parseLocalDate, weekStartMondayStr } from '../../utils/dates'
 
 const DAY_NAMES = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const PHASE_COLOR: Record<string, string> = {
@@ -461,10 +461,7 @@ export default function Training() {
 
               /* Weekly sessions completion tracker */
               'sessions-week': (() => {
-            const today = new Date()
-            const jsDay = today.getDay()
-            const daysFromMon = jsDay === 0 ? 6 : jsDay - 1
-            const weekStartStr = new Date(today.getTime() - daysFromMon * 86400000).toLocaleDateString('en-CA')
+            const weekStartStr = weekStartMondayStr()
             const completedThisWeek = workoutHistory.filter(
               (log) => log.status === 'completed' && log.date >= weekStartStr && log.date <= todayDateStr
             )
@@ -529,10 +526,7 @@ export default function Training() {
 
               /* Weekly calorie burn estimate from completed workouts */
               'calorie-burn': (() => {
-            const today = new Date()
-            const jsDay = today.getDay()
-            const daysFromMon = jsDay === 0 ? 6 : jsDay - 1
-            const weekStartStr = new Date(today.getTime() - daysFromMon * 86400000).toLocaleDateString('en-CA')
+            const weekStartStr = weekStartMondayStr()
             const weekCompleted = workoutHistory.filter(
               (log) => log.status === 'completed' && log.date >= weekStartStr && log.date <= todayDateStr && log.started_at && log.ended_at
             )

@@ -1,5 +1,74 @@
 # Change Agent Report
 
+## Run: 2026-10-24 #2 (BUG FIX — area (e) widgets + localStorage stores; the "this week" window in every weekly widget was computed with DST-unsafe millisecond math, so on a DST-transition week it lands on the WRONG calendar Monday and silently drops a day's logged entries from the week's totals.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (GREEN before changes)
+On a clean `master` + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (429 tests) → PASS (434 tests, +5) after the fix
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (e) widgets + localStorage stores
+Rotated to **(e)** off the recent cluster (10-24 (a), 10-23 #2 (c), 10-23 (f), 10-22 #2 (d), 10-22 (b)). Deep-read every dashboard/tab widget and the local stores: `localStore.ts` (top-level shape guard + per-entry sanitize), `createWidgetStore.ts` / `useWidgets.ts` (unknown-id drop + de-dupe), `competitionLogs.ts` (posing/sleep/condition/supplement entry validators), `useWaterLog.ts`, `cardioStore.ts`, `tabWidgets.ts`, and the widgets' render/math (`WaterWidget`, `TodaysMacrosWidget`, `TrainingVolumeWidget`, `WeeklyVolumeWidget`, `MuscleCoverageWidget`, `SessionsWeekWidget`, `QuickStatsWidget`, `PrepPaceWidget`, `WeeklyScorecardWidget`, `RecentCheckinsWidget`, `CardioWidget`, `PosingWidget`, `SleepWidget`, `ConditionWidget`, `SupplementWidget`, `NextMealWidget`). The store layer and input guards are well-hardened. The one genuine, reachable (no-corruption-needed) defect was the **DST-unsafe week-start math** below.
+
+### The bug (file:line)
+The "Monday of this week" used to filter logs into "this week" was computed as
+`new Date(Date.now() - daysFromMon * 86400000).toLocaleDateString('en-CA')` in:
+- `src/components/widgets/CardioWidget.tsx:18`
+- `src/components/widgets/PosingWidget.tsx:21`
+- `src/components/widgets/TrainingVolumeWidget.tsx:20`
+- `src/components/widgets/MuscleCoverageWidget.tsx:34`
+- `src/pages/Training/index.tsx:467` (sessions-week card) and `:535` (calorie-burn card)
+- `src/pages/Progress/index.tsx:64` (+ the 8-week consistency loop at `:66,:72,:73`)
+
+Subtracting N fixed 24-hour blocks from the current INSTANT and then formatting in
+local time assumes every calendar day is exactly 86 400 000 ms. On a DST-transition
+week it is not, so the result lands on the wrong calendar date. Reproduced
+deterministically under `America/New_York`: on the fall-back Sunday **Nov 2 2025
+23:30**, the week began Monday **Oct 27**, but the old math returned **Oct 28** (a
+Tuesday, one day late). Effect: Monday Oct 27's cardio/posing sessions, training
+volume, muscle coverage, completed sessions, calorie burn, and meal-consistency
+are silently EXCLUDED from "this week" totals — a DB↔UI desync, reachable by any
+user simply opening the app on that Sunday (no corrupted storage needed). In scope:
+timezone / date-boundary / week-rollover.
+
+### Root cause
+Instant-minus-milliseconds date arithmetic across a non-24h (DST) calendar day.
+The codebase already had the correct calendar-arithmetic pattern elsewhere
+(`SessionsWeekWidget`, `WeeklyScorecardWidget`, `WeeklyVolumeWidget` use
+`date.setDate(date.getDate() - n)`); these six/seven sites diverged.
+
+### Fix (minimum, one shared helper, all sites routed through it)
+- **`src/utils/dates.ts`** — added `weekStartMonday(from?)` → local-midnight Monday
+  of `from`'s week via `new Date(y, m, d - daysFromMon)` (calendar arithmetic,
+  DST-immune), `weekStartMondayStr(from?)` → that formatted `YYYY-MM-DD`, and
+  `addDays(d, n)` → calendar-safe day step. Replaced the ms math at all sites above:
+  the four widgets and both Training cards now call `weekStartMondayStr()`; the
+  Progress 8-week consistency effect now anchors on `weekStartMonday(today)` and
+  steps weeks with `addDays`, so the whole window stays Monday-aligned across any
+  DST change inside it. No engine/DB/UI-shape change; in non-DST weeks the output
+  is identical to before, so no behavior change outside the bug.
+
+### Tests added
+- `tests/unit/weekStartDst.test.ts` (5 tests): TZ-independent correctness of
+  `weekStartMonday`/`weekStartMondayStr`/`addDays` (weekday→Monday mapping,
+  local-midnight Date, month/year rollover, Monday-anchored 8-week window); plus a
+  DST regression that runs the REAL `dates.ts` source (esbuild-transpiled) in a
+  child `node` process under `TZ=America/New_York` — ICU caches the TZ per vitest
+  worker and can't be switched in-process — asserting the fall-back Sunday resolves
+  to Oct 27 (fix) where the old ms math gave Oct 28 (bug). Verified failing-first:
+  reverting the helper to the ms math fails 2/5.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (434 tests, +5)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-10-24 (BUG FIX — area (a) nutrition engine + Diet flows; the Diet page's "exclude this food" ✕ action **silently does nothing for any fixed-count food** (Rice Cakes x3/x2, Corn Tortilla x2). `handleExcludeFood` normalized a food's DISPLAY label into an exclusion ID by stripping only the `(portions)` suffix, so "Rice Cakes x3" became `rice_cakes_x3` — which matches no food ID in `isExcluded` — and the engine kept serving rice cakes in every regenerated plan despite the confirm dialog and the on-page note both promising "exclude this food from future plans". `GroceryList.buildGroceryItems` already strips the `xN` count token for its `baseName`; the exclude path was the one seam missing that same strip.)
 
 ### STEP 1 — Regression guard (GREEN before and after)

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useCardioStore } from '../../store/cardioStore'
 import type { CardioEntry } from '../../store/cardioStore'
+import { weekStartMondayStr } from '../../utils/dates'
 
 const CARDIO_TYPES = ['LISS', 'HIIT', 'Stairs', 'Bike', 'Other']
 const QUICK_PRESETS: [string, number][] = [['LISS', 30], ['LISS', 45], ['HIIT', 20], ['HIIT', 25]]
@@ -13,9 +14,7 @@ export default function CardioWidget() {
   const [cardioType, setCardioType] = useState('LISS')
   const [cardioMinutes, setCardioMinutes] = useState('')
 
-  const jsDay = new Date().getDay()
-  const daysFromMon = jsDay === 0 ? 6 : jsDay - 1
-  const weekStart = new Date(Date.now() - daysFromMon * 86400000).toLocaleDateString('en-CA')
+  const weekStart = weekStartMondayStr()
   const weekEntries = cardioLog.filter((e) => e.date >= weekStart && e.date <= todayStr)
   const todayEntries = cardioLog.filter((e) => e.date === todayStr)
   const weekMins = weekEntries.reduce((s, e) => s + e.minutes, 0)

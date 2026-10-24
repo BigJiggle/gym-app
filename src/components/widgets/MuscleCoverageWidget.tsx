@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { usePlanStore } from '../../store/planStore'
-import { localDateStr } from '../../utils/dates'
+import { localDateStr, weekStartMondayStr } from '../../utils/dates'
 import type { ExerciseLibraryItem } from '../../types'
 
 const MUSCLE_GROUPS = ['chest', 'back', 'shoulders', 'triceps', 'biceps', 'quads', 'hamstrings', 'glutes', 'calves', 'core']
@@ -29,9 +29,7 @@ export default function MuscleCoverageWidget() {
       </div>
     )
   }
-  const jsDay2 = new Date().getDay()
-  const daysFromMon2 = jsDay2 === 0 ? 6 : jsDay2 - 1
-  const weekStartStr = new Date(Date.now() - daysFromMon2 * 86400000).toLocaleDateString('en-CA')
+  const weekStartStr = weekStartMondayStr()
   const nameToGroup = new Map(exerciseLibrary.map((e) => [e.name, e.muscleGroup]))
   const setsPerGroup = new Map<string, number>()
   for (const log of workoutHistory) {

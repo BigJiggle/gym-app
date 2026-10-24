@@ -12,6 +12,7 @@ import { ratingTextClass } from '../../utils/ratingColor'
 import { computeWeeklyWeightRate } from '../../utils/weeklyRate'
 import { computeWeeksTracked } from '../../utils/weeksTracked'
 import { parseTargetWeightKg } from '../../utils/targetWeight'
+import { localDateStr, weekStartMonday, addDays } from '../../utils/dates'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LineChart, Line, CartesianGrid, Legend } from 'recharts'
 import type { ProgressPhoto } from '../../types'
 
@@ -61,18 +62,19 @@ export default function Progress() {
     const today = new Date()
     const jsDay = today.getDay()
     const daysFromMon = jsDay === 0 ? 6 : jsDay - 1
-    const thisMonday = new Date(today.getTime() - daysFromMon * 86400000)
-    thisMonday.setHours(0, 0, 0, 0)
-    const startMonday = new Date(thisMonday.getTime() - 7 * 7 * 86400000)
-    const startDate = startMonday.toLocaleDateString('en-CA')
-    const endDate = today.toLocaleDateString('en-CA')
+    // Calendar-day arithmetic (not n * 86400000 ms) so the 8-week window stays
+    // aligned to local Mondays across any DST transition inside it.
+    const thisMonday = weekStartMonday(today)
+    const startMonday = addDays(thisMonday, -7 * 7)
+    const startDate = localDateStr(startMonday)
+    const endDate = localDateStr(today)
     window.api.getMealCompletions(user.id, startDate, endDate).then((completions) => {
       const weeks: WeekConsistency[] = []
       for (let off = -7; off <= 0; off++) {
-        const weekMon = new Date(thisMonday.getTime() + off * 7 * 86400000)
-        const weekSun = new Date(weekMon.getTime() + 6 * 86400000)
-        const weekMonStr = weekMon.toLocaleDateString('en-CA')
-        const weekSunStr = weekSun.toLocaleDateString('en-CA')
+        const weekMon = addDays(thisMonday, off * 7)
+        const weekSun = addDays(weekMon, 6)
+        const weekMonStr = localDateStr(weekMon)
+        const weekSunStr = localDateStr(weekSun)
         const actualEnd = off === 0 ? endDate : weekSunStr
         const daysElapsed = off === 0 ? daysFromMon + 1 : 7
         const target = mealCount * daysElapsed

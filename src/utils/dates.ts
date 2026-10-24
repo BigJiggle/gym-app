@@ -10,6 +10,34 @@ export function parseLocalDate(dateStr: string): Date {
   return new Date(dateStr + 'T12:00:00')
 }
 
+// Adds (or subtracts) whole CALENDAR days to a date, returning a new date at the
+// same clock time. Uses the Date(year, month, day+n) constructor, which rolls
+// month/year boundaries over correctly, instead of adding n * 86400000 ms:
+// across a DST transition a calendar day is not exactly 24h, so ms arithmetic
+// drifts by an hour and can land on the wrong calendar date.
+export function addDays(d: Date, n: number): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n, d.getHours(), d.getMinutes(), d.getSeconds())
+}
+
+// Returns the Monday (local midnight) of the week containing `from`. Week starts
+// Monday per ISO: Sunday belongs to the week that began the previous Monday.
+// Built on calendar-day arithmetic so it is immune to DST — subtracting
+// daysFromMon * 86400000 ms from the current instant lands on the wrong calendar
+// date on a DST-transition week (e.g. on the US fall-back Sunday it returns the
+// Tuesday instead of the Monday), silently dropping that Monday's entries from
+// "this week" in every widget that filters by it.
+export function weekStartMonday(from: Date = new Date()): Date {
+  const jsDay = from.getDay() // 0=Sun…6=Sat
+  const daysFromMon = jsDay === 0 ? 6 : jsDay - 1
+  return new Date(from.getFullYear(), from.getMonth(), from.getDate() - daysFromMon)
+}
+
+// `weekStartMonday` formatted as YYYY-MM-DD in local time — the Monday-of-this-week
+// string the weekly widgets compare log dates against.
+export function weekStartMondayStr(from: Date = new Date()): string {
+  return localDateStr(weekStartMonday(from))
+}
+
 // Returns exact days, whole weeks, and remainder days until a show date.
 // Uses local midnight → local noon to stay immune to DST and UTC shifts.
 // `totalDays` is clamped at 0 (a past show reads as 0, same as today) — many

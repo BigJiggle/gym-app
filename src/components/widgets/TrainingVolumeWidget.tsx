@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { useUserStore } from '../../store/userStore'
 import { usePlanStore } from '../../store/planStore'
 import { useSettingsStore } from '../../store/settingsStore'
-import { localDateStr } from '../../utils/dates'
+import { localDateStr, weekStartMondayStr } from '../../utils/dates'
 
 // "This Week's Volume" — sets logged, total weight moved, and estimated training
 // kcal burned this week. (Distinct from the MEV-coverage 'weekly-volume' widget.)
@@ -15,9 +15,7 @@ export default function TrainingVolumeWidget() {
 
   const isImperial = settings.units === 'imperial'
   const wUnit = isImperial ? 'lbs' : 'kg'
-  const jsDay = new Date().getDay()
-  const daysFromMon = jsDay === 0 ? 6 : jsDay - 1
-  const weekStartStr = new Date(Date.now() - daysFromMon * 86400000).toLocaleDateString('en-CA')
+  const weekStartStr = weekStartMondayStr()
   const thisWeekLogs = workoutHistory.filter(
     (log) => log.status === 'completed' && log.date >= weekStartStr && log.date <= todayStr
   )
