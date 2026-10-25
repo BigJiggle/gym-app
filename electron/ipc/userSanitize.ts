@@ -100,6 +100,21 @@ export function clampSetsPerExercise(value: unknown): number | undefined {
 export function sanitizeUserUpdate(data: Record<string, unknown>): Record<string, unknown> {
   const serialized: Record<string, unknown> = {
     ...data,
+    // show_date / division are DERIVED columns, not independently editable here:
+    // plan:startupRefresh and syncPrimaryToNearest rebuild them from the `shows`
+    // table on every launch (and after every show add/update/delete/setPrimary),
+    // pointing users.show_date/division at the nearest upcoming show or nulling
+    // both when there is none. The Settings "Edit profile" form still exposes
+    // editable Show Date / Division inputs that save through user:update — that
+    // write is silently reverted on the next launch (data loss) and, until then,
+    // desyncs the UI: the Diet plan is NOT regenerated for the new weeks-out (only
+    // the shows:* paths do that), so the sidebar/Training/CheckIn/Progress read the
+    // just-written user.show_date while the Diet page still shows the old show's
+    // macros. Drop both so a profile edit can neither ghost-write nor desync them;
+    // shows are managed through "My Shows" / onboarding / the AI assistant, which
+    // all route through the shows table (and write users.show_date themselves).
+    show_date: undefined,
+    division: undefined,
     competition_history: data.competition_history !== undefined
       ? JSON.stringify(data.competition_history) : undefined,
     dietary_restrictions: data.dietary_restrictions !== undefined

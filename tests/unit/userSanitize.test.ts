@@ -120,6 +120,35 @@ describe('sanitizeUserUpdate — non-finite numeric guard', () => {
     expect(clean.sets_per_exercise).toBe(4)
   })
 
+  // show_date and division are NOT independent user-profile fields — they are
+  // DERIVED from the `shows` table and rebuilt from it on every launch:
+  // plan:startupRefresh (and syncPrimaryToNearest after every show add/update/
+  // delete/setPrimary) runs `UPDATE users SET show_date=?, division=?` from the
+  // nearest upcoming show, or `SET show_date=NULL, division=NULL` when there is
+  // none. The Settings "Edit profile" form nonetheless exposes editable "Show
+  // Date" and "Division" inputs that save straight through user:update to the
+  // users row. That write is silently reverted on the next launch (the edit is
+  // lost — data loss), and in the meantime it desyncs the app: the Diet plan is
+  // NOT regenerated for the new weeks-out (only shows:* paths do that), so the
+  // sidebar/Training/CheckIn/Progress read the just-written user.show_date while
+  // the Diet page keeps the old show's macros (a DB↔UI desync). Shows are managed
+  // exclusively through "My Shows" / onboarding / the AI assistant, all of which
+  // route through the shows table. sanitizeUserUpdate must therefore DROP these
+  // two derived columns so a profile edit can neither ghost-write nor desync them.
+  it('drops show_date and division (derived from the shows table, not editable here)', () => {
+    const clean = sanitizeUserUpdate({
+      id: 1,
+      show_date: '2026-11-15',
+      division: "Men's Physique",
+      weight_kg: 82.5,
+    })
+    expect('show_date' in clean).toBe(false)
+    expect('division' in clean).toBe(false)
+    // Genuine profile fields in the same payload still go through.
+    expect(clean.weight_kg).toBe(82.5)
+    expect(clean.id).toBe(1)
+  })
+
   it('serializes array fields and clamps meal/snack counts', () => {
     const clean = sanitizeUserUpdate({
       id: 1,

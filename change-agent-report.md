@@ -1,5 +1,47 @@
 # Change Agent Report
 
+## Run: 2026-10-25 #2 (BUG FIX — area (d) onboarding + Settings + reset + data lifecycle; the Settings "Edit profile" form let the user edit **Show Date** and **Division**, saving them straight through `user:update` to the users row — but both are DERIVED columns that `plan:startupRefresh`/`syncPrimaryToNearest` rebuild from the `shows` table on EVERY launch, so the edit is silently reverted (data loss) and, until the next launch, desyncs the UI: the Diet plan is never regenerated for the new weeks-out, so the sidebar/Training/CheckIn/Progress read the just-written `user.show_date` while the Diet page still shows the OLD show's macros.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (GREEN before changes)
+Clean `master` + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (439 tests) → PASS (440 tests, +1) after the fix
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (d) onboarding + Settings + reset + data lifecycle
+Rotated to **(d)** (least-recent; recent runs were (b) 10-25, (e) 10-24#2, (a) 10-24, (c) 10-23#2, (f) 10-23, (d) 10-22#2). Deep-read: `electron/ipc/userHandlers.ts` + `userSanitize.ts` (create/update/resetAll seams), `electron/database/db.ts` + `schema.ts` (FK/cascade + migrations), `electron/ipc/settingsHandlers.ts`, `electron/ipc/showHandlers.ts` (`syncPrimaryToNearest`/`persistProfileShowDate`/add/update/delete/cancel/setPrimary), `electron/ipc/planHandlers.ts` (`plan:startupRefresh`, `plan:applyAIRequest`), `src/utils/resetData.ts`, `src/store/userStore.ts`, `src/store/settingsStore.ts`, `src/pages/Onboarding/*` (wizard + all step inputs + imperial conversions) and `src/pages/Settings/index.tsx`.
+
+Ruled out (not bugs):
+- **Reset cascade.** `user:resetAll` relies on `DELETE FROM users` cascading to every child table. Empirically verified `node-sqlite3-wasm` defaults `PRAGMA foreign_keys = 1` (unlike the SQLite CLI), so the cascade fires on a fresh connection — the reset works as documented. `resetLocalData`/`mergeWeighIns` weigh-in preservation + hard-reload lifecycle are sound.
+- **Numeric input seams.** `sanitizeUserUpdate` already clamps/drops every out-of-range or non-finite profile number (age/height/weight/training_frequency/exercises/sets/meal/snack/body_fat) at the write seam (prior runs); onboarding `validateStep` + sliders + `parseFloat(...)||0` guards cover the entry side.
+
+The one genuine, reachable (no-corruption-needed) defect was the derived-column ghost-write below.
+
+### The bug (file:line)
+`src/pages/Settings/index.tsx:396` renders an editable `<input type="date" value={editForm.show_date}>` (and `:384` a Division `<select>`); `handleSaveProfile` (`:109`) spreads `...editForm` into `updateUser(...)` → `user:update` → writes `show_date`/`division` to the **users** row. But those columns are rebuilt from the `shows` table on every launch:
+- `electron/ipc/planHandlers.ts:360-369` (`plan:startupRefresh`, runs on every `loadUser`) and `electron/ipc/showHandlers.ts:syncPrimaryToNearest` both run `UPDATE users SET show_date=?, division=?` from the nearest upcoming show, or `SET show_date=NULL, division=NULL` when there is none.
+
+So any profile-editor edit to Show Date / Division is **unconditionally overwritten on the next launch** (the edit is lost). In the meantime it is a **DB↔UI desync**: `shows:*` are the only paths that regenerate the diet for the new weeks-out, so after a profile "save" the sidebar is unaffected (NavSidebar deliberately reads the shows array, `src/components/Layout/NavSidebar.tsx:27`) while Training/CheckIn/Progress read the freshly-written `user.show_date` and the Diet page keeps the old show's macros. Blast radius is exactly one call site: the Settings profile editor is the ONLY caller that sends `show_date`/`division` through `user:update` (the Diet page sends only food/restriction arrays; the AI path uses its own `UPDATE` + `persistProfileShowDate`, never `user:update`). In scope: DB↔UI desync, data lifecycle.
+
+### Root cause
+A derived column (owned by the `shows` subsystem, which is the single source of truth and writes `users.show_date`/`division` itself) was also writable through the generic profile-update seam, so a profile edit could ghost-write a value that the shows subsystem then reverts.
+
+### Fix (minimum, one seam)
+- **`electron/ipc/userSanitize.ts`** — `sanitizeUserUpdate` now sets `show_date: undefined` and `division: undefined`, so the final `undefined` filter drops them from every `user:update` payload. A profile edit can no longer ghost-write or transiently desync these columns; shows remain managed exclusively through "My Shows" / onboarding / the AI assistant (all of which route through the `shows` table and update `users.show_date` themselves). No UI/engine/schema change; every other profile field is unaffected.
+
+### Tests added
+- `tests/unit/userSanitize.test.ts` (+1, now 12) — asserts `show_date` and `division` are dropped from a sanitized payload while a genuine field (`weight_kg`) and `id` pass through. Verified failing-first: before the fix `'show_date' in clean` was `true` (1 failed / 11 passed); after, all 12 pass.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (440 tests, +1)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-10-25 (BUG FIX — area (b) training engine + workout/session flows; the workout-history progression arrows (↑/↓) silently compared each log against an UNRELATED workout after any plan regeneration. Plan regen nulls `session_id` on every historical completed log, so the "previous same-session log" lookup's `h.session_id === log.session_id` degraded to `null === null` → true, matching the nearest earlier workout of ANY session type and drawing wrong strength-trend arrows for any recurring exercise.)
 
 ### STEP 0 — Requested changes
