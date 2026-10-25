@@ -1,5 +1,47 @@
 # Change Agent Report
 
+## Run: 2026-10-25 (BUG FIX — area (b) training engine + workout/session flows; the workout-history progression arrows (↑/↓) silently compared each log against an UNRELATED workout after any plan regeneration. Plan regen nulls `session_id` on every historical completed log, so the "previous same-session log" lookup's `h.session_id === log.session_id` degraded to `null === null` → true, matching the nearest earlier workout of ANY session type and drawing wrong strength-trend arrows for any recurring exercise.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (GREEN before changes)
+Clean `master` + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (434 tests) → PASS (439 tests, +5) after the fix
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (b) training engine + workout/session flows
+Rotated to **(b)** (least-recent; recent runs were (e), (a), (c), (f), (d)). Deep-read:
+`electron/services/trainingEngine.ts` (all split builders, getSets/getExercises guards, phase/weeks math), `electron/ipc/workoutHandlers.ts` (sanitizeReps/WeightKg clamps on every write seam), `electron/ipc/planHandlers.ts` (rule-based + startup-refresh plan persistence/regeneration) and `electron/services/showDates.ts` (`weeksUntilShow` non-negative, midnight-based, matches UI), plus the full UI flow: `WorkoutSession.tsx`, `WorkoutStats.tsx`, `WorkoutLogEditor.tsx`, `SessionEditor.tsx`, `Training/index.tsx`, `TodaysSessionWidget.tsx`, `SessionsWeekWidget.tsx`, and utils `detectNewPRs`/`parseRepMidpoint`/`clampSetCount`. The engine, write seams, and week/DST math are well-hardened by prior runs (set-count/exPerSession/sets-per-ex/max-sets clamps, calendar-arithmetic week starts, consistent UTC duration math). The one genuine, reachable (no-corruption-needed) defect was the progression-arrow false-match below.
+
+### The bug (file:line)
+`src/pages/Training/index.tsx:895` — the workout-history "previous completed log for the same session" lookup used:
+```
+workoutHistory.find(h => h.id !== log.id && h.status === 'completed'
+  && h.session_id === log.session_id && h.date < log.date)
+```
+On every training-plan regeneration the app runs
+`UPDATE workout_logs SET session_id = NULL WHERE session_id IN (SELECT id FROM training_sessions WHERE plan_id = ?)`
+(`electron/ipc/planHandlers.ts:100` and `:464`) before deleting the old sessions — required because `workout_logs.session_id` has a plain FK (`REFERENCES training_sessions(id)`, no `ON DELETE` action, `electron/database/schema.ts:124`). Regeneration is **automatic**: the startup-refresh regenerates training whenever the prep phase boundary is crossed (hypertrophy→strength→peak→deload) or the show context changes (`planHandlers.ts:399`), and the manual/rule path does the same. So after the first phase transition, **every historical completed log has `session_id === null`**, and `h.session_id === log.session_id` becomes `null === null` → true. `prevLog` then resolves to the nearest earlier completed workout of ANY session type, and every exercise name shared with that unrelated workout gets a wrong green-↑/red-↓ progression arrow in the History list (a DB↔UI desync — the arrow asserts "vs your last SAME session" but compares across sessions). In scope: DB↔UI desync, missing-data/first-run (`session_id` null) handling.
+
+### Root cause
+A NULL-sentinel compared with `===`: two logs whose session is *unknown* (null) were treated as the *same* session. A log with no known session has no determinable same-session predecessor, so it must yield none rather than a cross-session match.
+
+### Fix (minimum, one pure helper, one call site)
+- **`src/utils/prevSessionLog.ts`** (new) — `findPrevSessionLog(history, log)` returns the newest earlier completed same-session log, but **returns `undefined` when `log.session_id == null`** (guards the null-sentinel) so the UI simply omits the arrow instead of drawing a misleading one. Behavior for real (non-null) session ids is identical to before.
+- **`src/pages/Training/index.tsx`** — replaced the inline `.find(...)` with `findPrevSessionLog(workoutHistory, log)` (+ import). No schema/engine change; non-regenerated plans are unaffected.
+
+### Tests added
+- `tests/unit/prevSessionLog.test.ts` (5 tests): newest earlier same-session match; ignores a more-recent *different*-session log; undefined when no earlier same-session log; **regression — two different null-session logs must NOT match** (`null === null`); and strict-earlier / completed-only filtering. Verified failing-first: removing the `log.session_id == null` guard fails exactly the null-session regression test (1 failed / 4 passed), restoring it passes all 5.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (439 tests, +5)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-10-24 #2 (BUG FIX — area (e) widgets + localStorage stores; the "this week" window in every weekly widget was computed with DST-unsafe millisecond math, so on a DST-transition week it lands on the WRONG calendar Monday and silently drops a day's logged entries from the week's totals.)
 
 ### STEP 0 — Requested changes

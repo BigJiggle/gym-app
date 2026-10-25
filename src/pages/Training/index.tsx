@@ -13,6 +13,7 @@ import TabWidgetZone from '../../components/widgets/TabWidgetZone'
 import { TRAINING_WIDGET_META, trainingWidgetStore } from '../../components/widgets/tabWidgets'
 import type { TrainingSession, ExerciseLibraryItem } from '../../types'
 import { parseLocalDate, weekStartMondayStr } from '../../utils/dates'
+import { findPrevSessionLog } from '../../utils/prevSessionLog'
 
 const DAY_NAMES = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const PHASE_COLOR: Record<string, string> = {
@@ -892,9 +893,7 @@ export default function Training() {
                     }
                   }
                   // Previous completed log for the same session (for progression arrows)
-                  const prevLog = workoutHistory.find(
-                    (h) => h.id !== log.id && h.status === 'completed' && h.session_id === log.session_id && h.date < log.date
-                  )
+                  const prevLog = findPrevSessionLog(workoutHistory, log)
                   const prevTopSets = new Map<string, number>()
                   if (prevLog) {
                     for (const s of prevLog.sets ?? []) {
