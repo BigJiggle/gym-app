@@ -12,9 +12,15 @@ export default function PeakWeekWidget() {
   // show, so `totalDays < 0` never fires and the widget would otherwise render the
   // peak-week protocol with "SHOW DAY!" indefinitely if the app is left open past
   // the show day (until the next launch repoints show_date).
-  if (showCountdown === null || showCountdown.isPast || showCountdown.totalDays > 7) return null
+  if (showCountdown === null || showCountdown.isPast || showCountdown.totalDays > 6) return null
 
-  const daysOut = Math.max(1, showCountdown.totalDays)
+  // PEAK_WEEK_PROTOCOL keys each day by `daysOut` counting the SHOW DAY as day 1
+  // (an inclusive countdown: Monday depletion is "Day 7", the Thu/Fri/Sat carb
+  // load is "Days 4, 3, 2 before the show"). getShowCountdown's `totalDays` counts
+  // the show day as 0, so the protocol day is totalDays + 1 — NOT max(1, totalDays),
+  // which only lined up on show day and showed the NEXT day's protocol on every
+  // other peak-week day (e.g. the day before the show displayed the show-day plan).
+  const daysOut = showCountdown.totalDays + 1
   const todayProtocol = PEAK_WEEK_PROTOCOL.days.find(d => d.daysOut === daysOut)
   if (!todayProtocol) return null
   const isShowDay = showCountdown.totalDays === 0

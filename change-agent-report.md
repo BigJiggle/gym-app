@@ -1,5 +1,43 @@
 # Change Agent Report
 
+## Run: 2026-10-26 (BUG FIX — area (f) shows/competition + date/week logic; the Dashboard **PeakWeekWidget** mapped days-until-show to the wrong peak-week protocol day. `PEAK_WEEK_PROTOCOL.days` keys each day by `daysOut` counting the SHOW DAY as day 1 — an inclusive countdown ("Depletion workout on Day 7 (Mon)"; carb loading on "Days 4, 3, and 2 before the show" = Thu/Fri/Sat). But `getShowCountdown().totalDays` counts the show day as 0, so the correct map is `daysOut = totalDays + 1`. The widget used `Math.max(1, totalDays)`, which lined up ONLY on show day and showed the NEXT day's protocol on every other peak-week day — the day before the show (1 day out) displayed the backstage/show-day plan instead of Saturday's "Final Load & Tan Day", and 6 days out showed "Tuesday — Carb Reduction" instead of "Monday — Depletion". The athlete got the wrong water/sodium/carb/training instructions in the one week precision matters most.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (GREEN before changes)
+Clean `master` + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (440 tests) → PASS (443 tests, +3) after the fix
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (f) shows/competition + date/week logic
+Rotated to **(f)** (least-recent; recent runs were (d) 10-25#2, (b) 10-25, (e) 10-24#2, (a) 10-24, (c) 10-23#2, (f) 10-23). Deep-read: `electron/services/showDates.ts` (`weeksUntilShow`/`localToday`), `electron/ipc/showHandlers.ts` (`syncPrimaryToNearest`/`persistProfileShowDate`/`regenerateDietForGoal`/add/update/delete/cancel/`setPrimaryShow`/`transitionTrainingToOffSeason`), `src/utils/dates.ts` (`getShowCountdown`/`weekStartMonday`/`addDays`), `src/data/competitionPrep.ts` (`buildPrepTimeline`/`getWeekGuidance`/`PEAK_WEEK_PROTOCOL`), `src/utils/checkinSchedule.ts`, and the competition widgets (`PeakWeekWidget`, `PrepGuidanceWidget`, `QuickStatsWidget`, `NavSidebar`) + the Education prep-timeline page.
+
+Ruled out (not bugs):
+- **"nearest upcoming show" selection** is consistent across NavSidebar / Education / PrepGuidanceWidget (all `shows.filter(s => s.show_date >= localToday).sort(...)[0]`), matching the backend `syncPrimaryToNearest` query.
+- **Countdown/week math** (`getShowCountdown`, `weeksUntilShow`, `buildPrepTimeline`, `weekStartMonday`) is local-midnight / calendar-day based and DST-safe (prior runs); `isPast` vs clamped `totalDays` correctly distinguishes a past show from show day.
+- **Missed-slot schedule logic** guards non-finite/≤0 intervals (no infinite loop) and uses the effective day-mode cadence (prior runs).
+
+### The bug (file:line)
+`src/components/widgets/PeakWeekWidget.tsx:17` — `const daysOut = Math.max(1, showCountdown.totalDays)` then `PEAK_WEEK_PROTOCOL.days.find(d => d.daysOut === daysOut)`. The protocol's `daysOut` is an inclusive countdown (show day = 1), but `totalDays` is exclusive (show day = 0), so for totalDays ≥ 1 the widget selected the protocol one day LATER than the real day. The `> 7` render guard also admitted totalDays=7 (literally the Sunday BEFORE the Mon–Sun peak week), which only rendered nothing by accident (no `daysOut` 8).
+
+### Root cause
+Two different day-numbering conventions (inclusive protocol `daysOut` vs. exclusive `totalDays`) were compared directly with a `max(1, …)` clamp that masked the off-by-one everywhere except show day.
+
+### Fix (minimum, one widget)
+- **`src/components/widgets/PeakWeekWidget.tsx`** — `daysOut = showCountdown.totalDays + 1` (correct inclusive→protocol map; `isPast` already guarantees totalDays ≥ 0 so no clamp needed), and tightened the render guard to `totalDays > 6` so the window is exactly the 7-day protocol (totalDays 0–6 → daysOut 1–7). The header's literal "N days out" and the `isShowDay = totalDays === 0` flag are unchanged. No schema/engine/data change.
+
+### Tests added
+- `tests/unit/peakWeekDayMapping.test.tsx` (+3): show day (0 out) → Show Day protocol; **1 day out → "Final Load & Tan Day", NOT Show Day** (the regression); 6 days out → "Depletion". Verified failing-first against the old `max(1, …)` (6-out rendered "Tuesday — Carb Reduction", 1-out rendered "Show Day"); all 3 pass after the fix. Existing `pastShowWidgets.test.tsx` (past-show hides / show-day renders) still passes.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (443 tests, +3)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-10-25 #2 (BUG FIX — area (d) onboarding + Settings + reset + data lifecycle; the Settings "Edit profile" form let the user edit **Show Date** and **Division**, saving them straight through `user:update` to the users row — but both are DERIVED columns that `plan:startupRefresh`/`syncPrimaryToNearest` rebuild from the `shows` table on EVERY launch, so the edit is silently reverted (data loss) and, until the next launch, desyncs the UI: the Diet plan is never regenerated for the new weeks-out, so the sidebar/Training/CheckIn/Progress read the just-written `user.show_date` while the Diet page still shows the OLD show's macros.)
 
 ### STEP 0 — Requested changes
