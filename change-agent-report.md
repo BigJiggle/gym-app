@@ -1,5 +1,45 @@
 # Change Agent Report
 
+## Run: 2026-10-26 #2 (BUG FIX — area (c) check-in + Progress + adaptive nutrition; editing a check-in recomputed its adaptive calorie adjustment against the wrong "previous" weigh-in. `checkin:update` selected both the `previous` check-in and the smoothed trend window by **insertion id** (`WHERE id < checkinId ORDER BY id DESC`), while `submit` (ORDER BY week_number DESC) and `submitMissed` (`WHERE check_in_date < ? ORDER BY check_in_date DESC`) both select the **chronologically** previous check-in. Insertion id only tracks date order when every check-in was logged live in sequence — but `submitMissed` (a first-class "fill in a missed slot" feature) back-fills a retroactive weigh-in with the HIGHEST id and an OLD date. Once such a row exists, id order ≠ date order, so editing a check-in could compare it against a chronologically-LATER weigh-in: the adaptive engine then reads a backwards weight-change signal and stores the wrong coach feedback + a wrong calorie delta on the edited check-in. Verified: with a live 07-01 80.0 kg + live 07-29 86.0 kg + back-filled 07-15 79.0 kg (highest id), editing the 07-15 row cut 100 kcal with a "stalling" note — it was compared to the LATER 86.0 kg row — instead of correctly reading the ~0.6 %/wk loss vs 07-01 80.0 kg as "on track", 0 kcal.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (GREEN before changes)
+Clean `master` + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (443 tests) → PASS (444 tests, +1) after the fix
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (c) check-in + Progress + adaptive nutrition
+Rotated to **(c)** (least-recent; recent runs were (f) 10-26, (d) 10-25#2, (b) 10-25, (e) 10-24#2, (a) 10-24, (c) 10-23#2). Deep-read: `electron/services/checkinEngine.ts` (`parseAdjustments`, `clampCheckinWeightKg`, `weightTrend`/`weightTrendPct` Theil–Sen, `calculateAdjustments`), `electron/ipc/checkinHandlers.ts` (`submit`/`submitMissed`/`update`/`history`/`latest`/`nextAllowed` + the per-check-in diet-plan macro recalc & meal scaling), `src/pages/Progress/index.tsx`, `src/pages/CheckIn/index.tsx` (open/locked/success/edit + auto-fill adherence), the charts `WeightChart.tsx` / `MeasurementsChart.tsx`, widgets `CheckinFeedbackWidget` / `RecentCheckinsWidget` / `PrepPaceWidget`, and utils `weeklyRate.ts`, `weeksTracked.ts`, `targetWeight.ts`, `checkinSchedule.ts`, `ratingColor.ts`.
+
+Ruled out (not bugs — hardened by prior runs):
+- **Write-seam weight clamps / adjustment parsing.** `clampCheckinWeightKg` (30–300 kg, rejects ≤0/non-finite) guards submit/submitMissed/update; `parseAdjustments` normalizes every read so no `.notes.map` / `calories_delta` consumer can crash on a '{}' or corrupt cell.
+- **Trend math.** `weightTrendPct` (Theil–Sen median, cadence-normalized by real dates, skips ≤0 x-gaps so same-day dupes can't divide by zero) and `computeWeeklyWeightRate` (≥1-week span floor, non-finite guards) are robust to a single noisy weigh-in on any slot.
+- **Macro recalc / meal scaling** floors the ratio divisor at `MIN_CALORIE_TARGET` and `newCalories` at 1200, uses the clamped weigh-in for protein/fat (same 2.3 g/kg · 0.9 g/kg as the initial `nutritionEngine` plan, so no first-check-in macro jump), and `max(0, …)` floors carbs.
+- **Missed-slot schedule** (`computeMissedSlots`) guards non-finite/≤0 intervals (no infinite loop) and the day-mode re-align has a `guard < 7` cap.
+- **Progress display math** (first→latest span, measurement deltas, YMCA body-fat clamp 3–60 %, diet-consistency `target>0` guard, DST-safe UTC-midnight date diffs) and `parseTargetWeightKg` (rejects NaN/≤0) all guard their divisions and render guards.
+
+### The bug (file:line)
+`electron/ipc/checkinHandlers.ts` — in `checkin:update`, `previous` and `recentCheckins` were queried with `WHERE user_id=? AND id<? ORDER BY id DESC` (insertion-id order), diverging from `submit`/`submitMissed` which use date/week ordering. A `submitMissed` back-fill (highest id, old date) breaks the assumption that id order == date order.
+
+### Root cause
+Two of the three check-in entry points pick the "previous"/trend window chronologically; the edit path picked it by insertion id, which only coincides with date order for strictly-in-order live logging — not once a retroactive fill exists.
+
+### Fix (minimum, one seam)
+- **`electron/ipc/checkinHandlers.ts`** — `checkin:update` now selects `previous` and `recentCheckins` with `AND id<>? AND check_in_date < ? ORDER BY check_in_date DESC`, scoped to the edited row's **effective** date (`data.check_in_date ?? existing.check_in_date`) so a date-correcting edit recomputes relative to the corrected chronological position, and excluding the edited row itself. This matches `submitMissed`'s semantics exactly. No schema/engine/UI change; week_number renumber-on-date-change is unaffected.
+
+### Tests added
+- `tests/unit/checkinUpdatePreviousByDate.test.ts` (+1) — exercises the real handler against an in-memory `node-sqlite3-wasm` DB: live 07-01 (80.0) + live 07-29 (86.0) + back-filled 07-15 (79.0, highest id); editing the 07-15 row must yield `calories_delta === 0` + an "on track" note (vs the buggy `-100` + "stalling"). Verified failing-first (`expected -100 to be +0`), passing after the fix. Existing `checkinUpdateRenumber`/`checkinUpdateDuplicate`/`checkinUpdateNullDate` still pass.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (444 tests, +1)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-10-26 (BUG FIX — area (f) shows/competition + date/week logic; the Dashboard **PeakWeekWidget** mapped days-until-show to the wrong peak-week protocol day. `PEAK_WEEK_PROTOCOL.days` keys each day by `daysOut` counting the SHOW DAY as day 1 — an inclusive countdown ("Depletion workout on Day 7 (Mon)"; carb loading on "Days 4, 3, and 2 before the show" = Thu/Fri/Sat). But `getShowCountdown().totalDays` counts the show day as 0, so the correct map is `daysOut = totalDays + 1`. The widget used `Math.max(1, totalDays)`, which lined up ONLY on show day and showed the NEXT day's protocol on every other peak-week day — the day before the show (1 day out) displayed the backstage/show-day plan instead of Saturday's "Final Load & Tan Day", and 6 days out showed "Tuesday — Carb Reduction" instead of "Monday — Depletion". The athlete got the wrong water/sodium/carb/training instructions in the one week precision matters most.)
 
 ### STEP 0 — Requested changes

@@ -362,14 +362,26 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
     const user = db.prepare('SELECT * FROM users WHERE id=?').get(existing.user_id as number) as Record<string, unknown>
     const dietPlan = db.prepare('SELECT calories_target FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1').get(existing.user_id as number) as { calories_target: number } | undefined
 
+    // Select the "previous" check-in and the trend window by DATE, not insertion
+    // id — matching submit (week_number == date order) and submitMissed
+    // (check_in_date < ?). Insertion id only tracks date order when every
+    // check-in was logged live in sequence; submitMissed back-fills a retroactive
+    // weigh-in with the HIGHEST id but an OLD date, so `id < checkinId` could pull
+    // a chronologically-LATER weigh-in as the "previous" and feed the adaptive
+    // engine a backwards weight-change signal (wrong feedback + wrong calorie
+    // delta stored on the edited check-in). Scope to the edited row's EFFECTIVE
+    // date (the new date when this edit changes it, else its current date) so a
+    // date-correcting edit recomputes relative to the corrected position, and
+    // exclude the row itself.
+    const effectiveDate = (data.check_in_date as string | undefined) ?? (existing.check_in_date as string)
     const previous = db.prepare(
-      'SELECT weight_kg, week_number, check_in_date FROM weekly_checkins WHERE user_id=? AND id<? ORDER BY id DESC LIMIT 1'
-    ).get([existing.user_id as number, checkinId]) as { weight_kg: number; week_number: number; check_in_date: string } | undefined
+      'SELECT weight_kg, week_number, check_in_date FROM weekly_checkins WHERE user_id=? AND id<>? AND check_in_date < ? ORDER BY check_in_date DESC LIMIT 1'
+    ).get([existing.user_id as number, checkinId, effectiveDate]) as { weight_kg: number; week_number: number; check_in_date: string } | undefined
 
-    // Trend window: the check-ins recorded before the one being edited.
+    // Trend window: the check-ins dated before the one being edited.
     const recentCheckins = db.prepare(
-      'SELECT weight_kg, week_number, check_in_date FROM weekly_checkins WHERE user_id=? AND id<? ORDER BY id DESC LIMIT 4'
-    ).all([existing.user_id as number, checkinId]) as { weight_kg: number; week_number: number; check_in_date: string }[]
+      'SELECT weight_kg, week_number, check_in_date FROM weekly_checkins WHERE user_id=? AND id<>? AND check_in_date < ? ORDER BY check_in_date DESC LIMIT 4'
+    ).all([existing.user_id as number, checkinId, effectiveDate]) as { weight_kg: number; week_number: number; check_in_date: string }[]
 
     const adjustments = calculateAdjustments(
       {
