@@ -1,5 +1,50 @@
 # Change Agent Report
 
+## Run: 2026-10-27 #2 (BUG FIX — area (e) widgets + localStorage stores; the Diet page's cardio stepper (`src/pages/Diet/index.tsx`) read/wrote the shared `cardio_log` localStorage key with a single-session-per-day model, while the dashboard Cardio widget (`cardioStore`/`CardioWidget`) logs MULTIPLE sessions per day and sums them. A prior run (2026-10-26 #2 note / report line ~1459) explicitly flagged this exact mismatch and deferred it as "a refactor, out of minimum-change scope" — but the analogous water-tracker bug was later fixed minimally by extracting a pure `nextWaterMl` helper, establishing the precedent followed here.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (GREEN before changes)
+Clean `master` + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (446 tests) → PASS (459 tests, +13) after the fix
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (e) widgets + localStorage stores
+Rotated to **(e)** (least-recent; recent runs were (a) 10-27, (c) 10-26#2, (f) 10-26, (d) 10-25#2, (b) 10-25, (e) 10-24#2). Deep-read every dashboard/tab widget and store: `localStore.ts`, `createWidgetStore.ts`, `useWidgets.ts`, `tabWidgets.ts`, `competitionLogs.ts`, `useWaterLog.ts`, `cardioStore.ts`, `WidgetZone.tsx` / `TabWidgetZone.tsx` (drag-reorder incl. hidden/competition-only widgets), and the content widgets (Water, Sleep, Posing, Supplement, Condition, Cardio, SessionsWeek, WeeklyVolume, MuscleCoverage, WeeklyScorecard, TrainingVolume, QuickStats, NextMeal, TodaysMacros, DailyWeighIn, PrepGuidance) plus the Training/Nutrition tab-widget content in `pages/Training/index.tsx` and `pages/Diet/index.tsx`.
+
+Ruled out (not bugs — hardened by prior runs):
+- **`localStore` / `createWidgetStore` / `useWidgets`** reject wrong-shape JSON, drop unknown ids, de-dupe, and run optional per-entry sanitizers; the `competitionLogs` stores sanitize every object-array entry; `parseDailyWeightLog` bounds-checks weigh-ins.
+- **Drag-reorder** in both zones keeps each widget's REAL stored index while filtering hidden/competition-only/unknown widgets, so `store.reorder(from,to)` stays correct with interspersed hidden widgets; long-press timers are cleared on unmount.
+- **Weekly date math** (`weekStartMondayStr`, Mon–Sun windows, last-week window in Training) uses `setDate` (DST-safe) and guards divisions.
+
+### The bug (file:line)
+`src/pages/Diet/index.tsx` — three reads of `cardio_log` used `log.find(e => e.date === day)?.minutes`, i.e. only the FIRST session of a day:
+- `cardioMin` initializer (~line 87) — today's total.
+- `weeklyCardio` (~line 663) — per-day sum feeding "X min this week".
+- `updateCardio` (~line 118) — on a +/- tap, rebuilt the day from that first-entry baseline and `log.filter(date !== today)` + one new entry, collapsing all same-day sessions.
+
+### Root cause
+The Diet stepper predates the dashboard's multi-session-per-day cardio model and never summed. So a day with e.g. [LISS 30, HIIT 20] displayed 30 (undercount), and a "+5" tap wrote a single 35-minute entry — **permanently losing 15 real logged minutes** and the second session. The week total undercounted identically.
+
+### Fix (minimum, one seam — mirrors the water precedent)
+- **New `src/utils/cardio.ts`** — two pure helpers: `cardioMinutesOn(log, date)` sums every session on a day (safe against non-array/corrupt logs and non-finite/≤0 minutes); `nextCardioLog(log, date, delta, maxMin=120)` applies the delta to the day's TRUE total (clamped 0–120), preserving every OTHER day verbatim and collapsing the target day into one entry carrying the correct new total (reusing an existing session's id/type, default LISS; a 0 total drops the day). Reads fresh storage so a dashboard session logged since mount isn't clobbered.
+- **`src/pages/Diet/index.tsx`** — `cardioMin` init and `weeklyCardio` now use `cardioMinutesOn`; `updateCardio` uses `nextCardioLog` reading fresh from storage (with a minimal catch fallback). No schema/engine/UI-layout change. The single-number stepper still consolidates a day's sessions on an explicit edit (inherent to a total control), but never silently loses minutes the way the old read did.
+
+### Tests added
+- `tests/unit/cardioLog.test.ts` (+13) — `cardioMinutesOn` sums multiple same-day sessions (30+20→50, not 30), ignores other days / corrupt logs / non-finite minutes; `nextCardioLog` bumps the true 50→55 on +5 (old code gave 35), preserves other days verbatim, subtracts from the correct total, clamps to [0,120], drops a day at 0 total, reuses id/type, and creates a fresh LISS entry for an empty day.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (459 tests, +13)
+- `npx electron-vite build` → PASS
+
+### Note
+The remaining known limitation (an explicit Diet-stepper edit consolidates that day's cardio sessions into one entry, losing the per-session type breakdown for today) is intrinsic to a single-number total control and is documented in `src/utils/cardio.ts`. Totals — the values the Cardio widget, Weekly Scorecard and this tracker all display — are now consistent and never lose minutes.
+
+---
+
 ## Run: 2026-10-27 (BUG FIX — area (a) nutrition engine + Diet flows; the AI Assistant's food-swap path (`plan:applyAIRequest` → `refine_diet` action) persisted the LLM's returned `meals` **raw** (`JSON.stringify(r.meals)`), unlike every other diet-write path. `refineDietPlan()` guarantees its result `meals` is a non-empty array but does NOT validate each entry — it passes the model's objects through verbatim. A model can realistically omit `foods` on an entry, return `foods` as a non-array string, or send non-finite numeric fields. Persisted raw, the next `plan:getDiet` round-trips it to the renderer where the Diet page / NextMealWidget / WeeklyMealView / GroceryList read `meal.foods.map(...)` / `meal.foods.length` with no error boundary → white screen, and a NaN macro propagates into every adherence calculation. The sibling handler `plan:refineDietWithPrompt` was already hardened to run model meals through `normalizeMeals` before storing; this path was the lone remaining gap.)
 
 ### STEP 0 — Requested changes

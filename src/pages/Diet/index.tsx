@@ -17,6 +17,7 @@ import { NUTRITION_WIDGET_META, nutritionWidgetStore } from '../../components/wi
 import { FOODS } from '../../data/foods'
 import { localDateStr } from '../../utils/dates'
 import { nextWaterMl } from '../../utils/water'
+import { cardioMinutesOn, nextCardioLog } from '../../utils/cardio'
 import { foodLabelToExclusionId } from '../../utils/foodId'
 import { applyRefeedToMeals } from '../../utils/refeed'
 import type { Meal, MealCompletion } from '../../types'
@@ -86,8 +87,9 @@ export default function Diet() {
   const CARDIO_STEP = 5
   const [cardioMin, setCardioMin] = useState<number>(() => {
     try {
-      const log: Array<{ date: string; minutes: number }> = JSON.parse(localStorage.getItem('cardio_log') ?? '[]')
-      return log.find(e => e.date === localDateStr())?.minutes ?? 0
+      // Sum ALL of today's sessions — the dashboard Cardio widget logs multiple
+      // per day, so reading only the first entry undercounts the day's total.
+      return cardioMinutesOn(JSON.parse(localStorage.getItem('cardio_log') ?? '[]'), localDateStr())
     } catch { return 0 }
   })
   const [cardioTarget, setCardioTarget] = useState<number>(() => {
@@ -116,19 +118,18 @@ export default function Diet() {
   }
 
   function updateCardio(delta: number) {
-    setCardioMin(prev => {
-      const next = Math.max(0, Math.min(120, prev + delta))
-      try {
-        const log: Array<{ date: string; type: string; minutes: number }> = JSON.parse(localStorage.getItem('cardio_log') ?? '[]')
-        const existing = log.find(e => e.date === todayStr)
-        const filtered = log.filter(e => e.date !== todayStr)
-        const updated = next > 0
-          ? [...filtered, { date: todayStr, type: existing?.type ?? 'LISS', minutes: next }]
-          : filtered
-        localStorage.setItem('cardio_log', JSON.stringify(updated))
-      } catch {}
-      return next
-    })
+    try {
+      // Apply the delta to today's TRUE stored total (summed across every session)
+      // and write back non-destructively — other days are preserved, today collapses
+      // to one entry carrying the correct new total. Reading fresh from storage (not
+      // the possibly-stale `cardioMin` state) keeps this correct even after the
+      // dashboard widget logged a session since mount. Mirrors updateWater.
+      const { log, total } = nextCardioLog(JSON.parse(localStorage.getItem('cardio_log') ?? '[]'), todayStr, delta, 120)
+      localStorage.setItem('cardio_log', JSON.stringify(log))
+      setCardioMin(total)
+    } catch {
+      setCardioMin(prev => Math.max(0, Math.min(120, prev + delta)))
+    }
   }
 
   function cycleCardioTarget() {
@@ -662,10 +663,12 @@ export default function Diet() {
             const cardioDone = cardioMin >= cardioTarget
             const weeklyCardio = (() => {
               try {
-                const log: Array<{ date: string; minutes: number }> = JSON.parse(localStorage.getItem('cardio_log') ?? '[]')
+                // Sum every session per day (the dashboard widget logs several per
+                // day) so the week total matches the Cardio widget / scorecard.
+                const log = JSON.parse(localStorage.getItem('cardio_log') ?? '[]')
                 return weekDays
                   .filter(({ dateStr }) => dateStr <= todayStr)
-                  .reduce((sum, { dateStr }) => sum + (log.find(e => e.date === dateStr)?.minutes ?? 0), 0)
+                  .reduce((sum, { dateStr }) => sum + cardioMinutesOn(log, dateStr), 0)
               } catch { return 0 }
             })()
             return (
