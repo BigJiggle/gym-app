@@ -1,5 +1,44 @@
 # Change Agent Report
 
+## Run: 2026-10-27 (BUG FIX — area (a) nutrition engine + Diet flows; the AI Assistant's food-swap path (`plan:applyAIRequest` → `refine_diet` action) persisted the LLM's returned `meals` **raw** (`JSON.stringify(r.meals)`), unlike every other diet-write path. `refineDietPlan()` guarantees its result `meals` is a non-empty array but does NOT validate each entry — it passes the model's objects through verbatim. A model can realistically omit `foods` on an entry, return `foods` as a non-array string, or send non-finite numeric fields. Persisted raw, the next `plan:getDiet` round-trips it to the renderer where the Diet page / NextMealWidget / WeeklyMealView / GroceryList read `meal.foods.map(...)` / `meal.foods.length` with no error boundary → white screen, and a NaN macro propagates into every adherence calculation. The sibling handler `plan:refineDietWithPrompt` was already hardened to run model meals through `normalizeMeals` before storing; this path was the lone remaining gap.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (GREEN before changes)
+Clean `master` + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (444 tests) → PASS (446 tests, +2) after the fix
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (a) nutrition engine + Diet flows
+Rotated to **(a)** (least-recent; recent runs were (c) 10-26#2, (f) 10-26, (d) 10-25#2, (b) 10-25, (e) 10-24#2, (a) 10-24). Deep-read: `electron/services/nutritionEngine.ts` (phase-aware deficit, `buildMeals`/`getMealTemplates`/portion math, `clampWeightKg`/`clampMealCount`/`sanitizeCalorieTarget`/`sanitizeMacroGrams`/`normalizeMeals`, culture/cook-time/prep styling), `electron/ipc/planHandlers.ts` (`generateDiet`, `getDiet`, `regenerateAll`, `startupRefresh` diet branch, `recalculateMacros`, `refineDietWithPrompt`, and the `plan:applyAIRequest` `refine_diet`/`refine_workout`/settingChanges branches), and `electron/services/claudeService.ts` (`refineDietPlan`).
+
+Ruled out (not bugs — hardened by prior runs):
+- **`plan:generateDiet` / `plan:refineDietWithPrompt`** both route model `meals` through `normalizeMeals` and macro targets through `sanitizeCalorieTarget`/`sanitizeMacroGrams`.
+- **Engine macro/portion math** floors `totalCal` to `MIN_CALORIE_TARGET` (no Infinity ratios), clamps weight (30–300 kg) and meal/snack counts (1–20 / 0–20), guards non-finite counts, and `max(0,…)` floors carbs.
+- **`recalculateMacros`** floors the calorie divisor, self-heals a legacy 0-target row, and uses the latest clamped check-in weight.
+- **`applyAIRequest` settingChanges** whitelists columns, clamps numeric bounds, and sanitizes `maxSetsOverride`.
+
+### The bug (file:line)
+`electron/ipc/planHandlers.ts` — `plan:applyAIRequest`, `refine_diet` branch (~line 766–778): guarded only `!refined || !(refined as any).meals` (a truthiness check) and then stored `JSON.stringify(r.meals)` directly, with `refinedMealCount` from the raw array length. No per-entry normalization.
+
+### Root cause
+`refineDietPlan`'s array-non-empty guarantee was mistaken for a well-formed-meals guarantee. The model's per-entry shape (foods array, finite macros) is never enforced on this write seam, so a malformed entry persists and crashes the renderer that assumes the `Meal` shape.
+
+### Fix (minimum, one seam)
+- **`electron/ipc/planHandlers.ts`** — the `refine_diet` branch now runs `const refinedMeals = normalizeMeals(r.meals)`, returns the existing "could not generate specific food swaps" explain message when the normalized result is empty, and persists `JSON.stringify(refinedMeals)` with `refinedMealCount = refinedMeals.length`. This mirrors `plan:refineDietWithPrompt` exactly. `normalizeMeals` was already imported. No schema/engine/UI change; the orphaned-completion purge and return shape are unchanged.
+
+### Tests added
+- `tests/unit/applyAIRequestRefineDietNormalize.test.ts` (+2) — exercises the real handler against an in-memory `node-sqlite3-wasm` DB with a stubbed `refineDietPlan`: (1) malformed model meals (one missing `foods`, one with `foods` as a string, one with a NaN calorie + a mixed `['salmon', 42, 'rice']` foods array) → every stored & returned meal has a `string[]` foods array and finite macros, and the mixed array drops the non-string element; (2) model meals that normalize to empty (`[null, 'x', 42]`) → handler returns `explain` and leaves the original 3-meal plan untouched. Verified failing-first against old `master` (test 1: `expected 'bar' to be 'str…'`/foods undefined; test 2: `expected 'update' to be 'explain'`), passing after the fix. Existing `applyAIRequestRefineDietOrphans` / `refineDietMacroSanitize` / `normalizeMeals` tests still pass.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (446 tests, +2)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-10-26 #2 (BUG FIX — area (c) check-in + Progress + adaptive nutrition; editing a check-in recomputed its adaptive calorie adjustment against the wrong "previous" weigh-in. `checkin:update` selected both the `previous` check-in and the smoothed trend window by **insertion id** (`WHERE id < checkinId ORDER BY id DESC`), while `submit` (ORDER BY week_number DESC) and `submitMissed` (`WHERE check_in_date < ? ORDER BY check_in_date DESC`) both select the **chronologically** previous check-in. Insertion id only tracks date order when every check-in was logged live in sequence — but `submitMissed` (a first-class "fill in a missed slot" feature) back-fills a retroactive weigh-in with the HIGHEST id and an OLD date. Once such a row exists, id order ≠ date order, so editing a check-in could compare it against a chronologically-LATER weigh-in: the adaptive engine then reads a backwards weight-change signal and stores the wrong coach feedback + a wrong calorie delta on the edited check-in. Verified: with a live 07-01 80.0 kg + live 07-29 86.0 kg + back-filled 07-15 79.0 kg (highest id), editing the 07-15 row cut 100 kcal with a "stalling" note — it was compared to the LATER 86.0 kg row — instead of correctly reading the ~0.6 %/wk loss vs 07-01 80.0 kg as "on track", 0 kcal.)
 
 ### STEP 0 — Requested changes

@@ -763,8 +763,17 @@ Ensure every exercise respects the constraints above while maintaining phase-app
         userProfile: { dietary_preference: user.dietary_preference, culture_pref: user.culture_pref },
         userRequest: userRequest,
       })
-      if (!refined || !(refined as any).meals) return { action: 'explain' as any, message: result.message + ' (Could not generate specific food swaps — try being more specific, e.g. "replace chicken in dinner with salmon".)' }
+      if (!refined) return { action: 'explain' as any, message: result.message + ' (Could not generate specific food swaps — try being more specific, e.g. "replace chicken in dinner with salmon".)' }
       const r = refined as any
+      // Normalize the untrusted model `meals` to a well-formed Meal[] before storing,
+      // exactly like plan:refineDietWithPrompt. refineDietPlan guarantees `meals` is a
+      // non-empty array but NOT that each entry is well-formed: the model can omit
+      // `foods` on an entry, return `foods` as a non-array, or send non-finite macros.
+      // Persisting that raw (the old `JSON.stringify(r.meals)`) then crashes the Diet
+      // page / NextMealWidget `meal.foods.map(...)` (no error boundary → white screen).
+      // Treat an empty normalized result as "no usable swaps" and leave the plan untouched.
+      const refinedMeals = normalizeMeals(r.meals)
+      if (refinedMeals.length === 0) return { action: 'explain' as any, message: result.message + ' (Could not generate specific food swaps — try being more specific, e.g. "replace chicken in dinner with salmon".)' }
       // A refine can return a DIFFERENT meal count than the current plan — the LLM is
       // asked to only swap foods, never forced to keep the count, and a request routed
       // here can legitimately change it. Persist meal_count alongside the meals so the
@@ -772,10 +781,10 @@ Ensure every exercise respects the constraints above while maintaining phase-app
       // (keyed by positional meal_index) so today/future completions at an index >= the
       // new count don't inflate "meals eaten"/adherence. Mirrors plan:refineDietWithPrompt
       // and every other diet-write path.
-      const refinedMealCount = Array.isArray(r.meals) ? r.meals.length : (currentPlan.meal_count as number)
+      const refinedMealCount = refinedMeals.length
       db.prepare(
         'UPDATE diet_plans SET meals=?, meal_count=? WHERE user_id=? AND id=(SELECT id FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1)'
-      ).run([JSON.stringify(r.meals), refinedMealCount, userId, userId])
+      ).run([JSON.stringify(refinedMeals), refinedMealCount, userId, userId])
       clearOrphanedMealCompletions(db, userId, refinedMealCount)
       const saved = db.prepare('SELECT * FROM diet_plans WHERE user_id=? ORDER BY id DESC LIMIT 1').get(userId) as Record<string,unknown>
       const dietPlan = { ...saved, meals: JSON.parse(saved.meals as string) }
