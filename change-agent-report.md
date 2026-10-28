@@ -1,5 +1,39 @@
 # Change Agent Report
 
+## Run: 2026-10-29 (BUG FIX — area (b) training engine + workout/session flows; a `null` / non-object entry in a session's stored `exercises` array **white-screens the entire Training tab** (and throws in the `plan:getTraining` IPC handler for a non-JSON cell). Every training-plan load funnels through `plan:getTraining`, which `JSON.parse`d the `training_sessions.exercises` TEXT cell and handed it verbatim to the renderer. The Training tab does `session.exercises.map(ex => ex.name)` and `WorkoutSession.buildInitialStates` does `for (const ex of session.exercises) clampSetCount(ex.sets)` — both with **no error boundary** — so a `[null]` entry throws "Cannot read properties of null (reading 'name')" the moment the tab mounts. Reachable from a hand-edited/corrupt cell **and** from the AI refine paths (`plan:refineWorkoutWithPrompt` / `applyAIRequest` `refine_workout`), which validate only the array **length** (`exercises.length > 0`), never each entry. This is the exact per-entry gap `normalizeMeals` already closes on the diet side — the training read path had no counterpart. Last run (`parseRepMidpoint`) hardened a single FIELD against a non-string; this hardens the ENTRY shape at the read seam.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** → proceeded to a bug hunt.
+
+### STEP 1 — Regression guard (all GREEN before changes)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (461 tests, 74 files)
+- `npx electron-vite build` → PASS
+(`npm ci` run with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`.)
+
+### STEP 2 — Bug hunt (rotated within/adjacent to prior area, new sub-path)
+Traced the AI/stored-exercise shape lead opened by the 2026-10-28 `parseRepMidpoint` run. That fix observed the AI training paths persist exercises **verbatim** (no `normalizeMeals` equivalent) and defended one FIELD (`reps`). Auditing the other consumers of that unvalidated shape surfaced the un-defended case: a malformed **entry** (not just a malformed field). The diet side filters null/non-object meal entries in `normalizeMeals` (`nutritionEngine.ts:888`, `.filter(m => !!m && typeof m === 'object')`); the training read path (`plan:getTraining`) did a raw `JSON.parse` with no per-entry filter. Confirmed the crash empirically: `JSON.parse('[null, {...}]').map(ex => ex.name)` → `TypeError: Cannot read properties of null (reading 'name')`.
+
+### STEP 3 — Fix (minimum, single read seam)
+- **New `normalizeExercises(raw)` in `electron/services/trainingEngine.ts`** (mirrors `normalizeMeals`): accepts a parsed array OR the raw JSON string; a non-array / unparseable input → `[]`; drops `null`/non-object entries; guarantees a string `name` (fallback `'Exercise'`); passes every other field through untouched (so valid plans are byte-identical, and the consumer's existing `clampSetCount`/`parseRepMidpoint` still coerce `sets`/`reps`).
+- **Applied at the read seam** `electron/ipc/planHandlers.ts`: `plan:getTraining` (line ~142) and `plan:getSessions` (line ~157) now call `normalizeExercises(s.exercises)` instead of `JSON.parse(s.exercises as string)`. This is the universal render path — the Training page mounts via `loadTrainingPlan` → `getTrainingPlan`, and the AI refine flow re-reads through the same handler (`handleRefineWorkout` → `loadTrainingPlan`) — so both the corrupt-cell and AI-persisted vectors are covered by one guard. No UI change; a no-op for every well-formed plan.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (467 tests, +6 new `tests/unit/normalizeExercises.test.ts`)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `electron/services/trainingEngine.ts` — new exported `normalizeExercises`.
+- `electron/ipc/planHandlers.ts` — import + apply at `plan:getTraining` / `plan:getSessions`.
+- `tests/unit/normalizeExercises.test.ts` — 6 new tests (non-array/unparseable → [], drops null/non-object entries incl. the `[null]` crash case, string-name fallback, valid plan unchanged).
+- `change-agent-report.md` — this entry.
+
+### Deferred (not done — out of minimum scope this run)
+The AI **generate** direct-return (`plan:generateTraining` Claude branch) and the refine handlers return sessions straight to the store before the next `getTraining` reload; a literal `null` exercise from the model during full generation is a narrower, more exotic vector than the corrupt-cell/refine read path fixed here. The read-seam guard covers every path the renderer loads through today; a write-seam normalize on the persist paths would close the theoretical generate-return window and is a candidate lead for a future run.
+
+---
+
 ## Run: 2026-10-28 (BUG FIX — area (b) training engine + workout/session flows; `parseRepMidpoint` (`src/utils/parseRepMidpoint.ts`) crashed with "repRange.split is not a function" on any non-string `reps`. `reps` is DECLARED a string on the `Exercise` type, but the AI training-plan paths persist the model's returned exercises **verbatim** — unlike the diet path, which runs `normalizeMeals` first — so a model emitting `"reps": 10` (a number, despite the prompt asking for the "8-12" string form) or omitting `reps` round-trips a non-string value into this seam. It is the single function every set-seed funnels through, so the crash fired the moment `WorkoutSession` mounted and white-screened the live workout.)
 
 ### STEP 0 — Requested changes

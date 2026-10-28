@@ -1,6 +1,6 @@
 import { IpcMain } from 'electron'
 import { getDb, namedParams } from '../database/db'
-import { generateTrainingPlan, getExerciseLibraryForUI, determinePhase } from '../services/trainingEngine'
+import { generateTrainingPlan, getExerciseLibraryForUI, determinePhase, normalizeExercises } from '../services/trainingEngine'
 import { generateNutritionPlan, buildMealsPublic, calcBMR, getPhaseAwareDeficit, ACTIVITY_MULTIPLIERS, clampWeightKg, clampMealCount, sanitizeCalorieTarget, sanitizeMacroGrams, normalizeMeals, MIN_CALORIE_TARGET } from '../services/nutritionEngine'
 import { generateDietWithClaude, generateWorkoutWithClaude, refineDietPlan, refineWorkoutWithClaude, processAIRequest, refineWorkoutForSafety } from '../services/claudeService'
 import { regenerateDietForGoal, persistProfileShowDate } from './showHandlers'
@@ -139,7 +139,10 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
       ...plan,
       sessions: sessions.map((s) => ({
         ...s,
-        exercises: JSON.parse(s.exercises as string)
+        // Normalize at the read seam so a corrupt/hand-edited cell or an AI-persisted
+        // null/non-object exercise entry (the refine paths only check array length)
+        // can't white-screen the Training tab or throw in this handler. See normalizeExercises.
+        exercises: normalizeExercises(s.exercises)
       }))
     }
   })
@@ -151,7 +154,7 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
         'SELECT * FROM training_sessions WHERE plan_id = ? AND week_number = ? ORDER BY day_of_week'
       )
       .all([planId, weekNumber]) as Record<string, unknown>[]
-    return sessions.map((s) => ({ ...s, exercises: JSON.parse(s.exercises as string) }))
+    return sessions.map((s) => ({ ...s, exercises: normalizeExercises(s.exercises) }))
   })
 
   ipcMain.handle('plan:generateDiet', async (_event, userId: number) => {

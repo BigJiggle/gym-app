@@ -33,6 +33,42 @@ export interface TrainingSession {
   exercises: Exercise[]
 }
 
+// Coerce an untrusted / possibly-corrupt stored `exercises` value — a parsed array
+// OR the raw JSON string from the training_sessions.exercises TEXT cell — into a
+// well-formed Exercise[]. Every training-plan load funnels through plan:getTraining,
+// which reads this cell and hands it straight to the renderer; the UI then assumes
+// each entry is an object — the Training tab does `session.exercises.map(ex => ex.name)`
+// and WorkoutSession's buildInitialStates does
+// `for (const ex of session.exercises) clampSetCount(ex.sets)` — both with NO error
+// boundary. A `null` / non-object entry therefore throws
+// "Cannot read properties of null (reading 'name')" and white-screens the whole
+// Training tab the moment it mounts; a non-JSON cell throws in the handler itself and
+// fails the entire load. Both are reachable from a hand-edited / corrupt cell, and the
+// null-entry case also from the AI refine paths (plan:refineWorkoutWithPrompt /
+// applyAIRequest refine_workout), which validate only the array LENGTH
+// (`exercises.length > 0`), never each entry — the exact gap normalizeMeals closes on
+// the diet side (which filters null/non-object meal entries). Field-level coercion
+// already lives at the consumer (clampSetCount for `sets`, parseRepMidpoint for
+// `reps`), so this only needs to parse safely, drop non-object entries, and guarantee
+// a string `name`; all other fields pass through untouched so a valid plan is
+// unchanged. A non-array / unparseable input yields [] so the session renders no
+// exercises instead of crashing.
+export function normalizeExercises(raw: unknown): Exercise[] {
+  let val: unknown = raw
+  if (typeof raw === 'string') {
+    try { val = JSON.parse(raw) } catch { return [] }
+  }
+  if (!Array.isArray(val)) return []
+  const out: Exercise[] = []
+  for (const e of val) {
+    if (!e || typeof e !== 'object') continue
+    const rec = e as Record<string, unknown>
+    const name = typeof rec.name === 'string' && rec.name.trim() ? rec.name : 'Exercise'
+    out.push({ ...rec, name } as Exercise)
+  }
+  return out
+}
+
 export interface TrainingPlan {
   name: string
   weeks_total: number
