@@ -16,7 +16,26 @@
 // This version extracts every numeric token, ignores non-numeric ones, and
 // falls back to 10 when none are present — so valid ranges behave exactly as
 // before while any malformed input yields a finite rep count.
-export function parseRepMidpoint(repRange: string): number {
+//
+// `reps` is DECLARED a string on the Exercise type, but the value reaching here
+// is not guaranteed to be one. The AI plan paths (`plan:generateTraining` Claude
+// branch, `refineWorkoutWithPrompt`, `applyAIRequest` refine_workout) persist the
+// model's returned exercises VERBATIM — unlike the diet path, which runs
+// `normalizeMeals` first — so a model that emits `"reps": 10` (a number, despite
+// the prompt asking for the "8-12" string form) or omits `reps` entirely has that
+// value round-tripped back through `plan:getTraining`. The old signature assumed a
+// string and called `.split` directly, so a numeric/absent `reps` threw
+// "repRange.split is not a function" the moment `WorkoutSession` mounted
+// (`buildInitialStates` → `parseRepMidpoint(ex.reps)`), white-screening the live
+// workout. A hand-edited DB reaches the same seam. Accept `unknown` and coerce at
+// this single boundary (every set-seed funnels through it) so no upstream path can
+// crash the session: a finite number is already a usable rep count, anything else
+// non-string falls back to 10.
+export function parseRepMidpoint(repRange: unknown): number {
+  if (typeof repRange === 'number') {
+    return Number.isFinite(repRange) ? Math.round(repRange) : 10
+  }
+  if (typeof repRange !== 'string') return 10
   const nums = repRange
     .split('-')
     .map((p) => parseInt(p, 10))

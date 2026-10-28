@@ -1,5 +1,47 @@
 # Change Agent Report
 
+## Run: 2026-10-28 (BUG FIX — area (b) training engine + workout/session flows; `parseRepMidpoint` (`src/utils/parseRepMidpoint.ts`) crashed with "repRange.split is not a function" on any non-string `reps`. `reps` is DECLARED a string on the `Exercise` type, but the AI training-plan paths persist the model's returned exercises **verbatim** — unlike the diet path, which runs `normalizeMeals` first — so a model emitting `"reps": 10` (a number, despite the prompt asking for the "8-12" string form) or omitting `reps` round-trips a non-string value into this seam. It is the single function every set-seed funnels through, so the crash fired the moment `WorkoutSession` mounted and white-screened the live workout.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (GREEN before changes)
+Clean `master` + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (459 tests) → PASS (461 tests, +2) after the fix
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (b) training engine + workout/session flows
+Rotated to **(b)** (least-recent; recent runs were (e) 10-27#2, (a) 10-27, (c) 10-26#2, (f) 10-26, (d) 10-25#2, (b) 10-25). Deep-read: `electron/services/trainingEngine.ts` (all split builders, `getExercises`/`getExercisesByMuscleGroup` compound/isolation distribution, `getSets`/`getRIR`/`getRepRange`, the freq/exPerSession/sets-per-ex/max-sets non-finite+non-positive guards, `determinePhase`/`weeksTotal`), `electron/ipc/workoutHandlers.ts` (all 11 handlers; `sanitizeReps`/`sanitizeWeightKg` symmetric clamps on every write seam), the training paths in `electron/ipc/planHandlers.ts` (rule-based + **Claude** generate, `refineWorkoutWithPrompt`, `applyAIRequest` refine_workout, `plan:updateSession` empty-session guard, `plan:getTraining`/`getSessions`), `electron/services/showDates.ts` (`weeksUntilShow` non-negative), and the full UI flow: `WorkoutSession.tsx`, `WorkoutLogEditor.tsx`, `SessionEditor.tsx`, `WorkoutStats.tsx`, `Training/index.tsx` (streak/trend/countdown/calorie-burn/sessions-week widgets), `TodaysSessionWidget.tsx`, `SessionsWeekWidget.tsx`, and utils `detectNewPRs`/`clampSetCount`/`parseRepMidpoint`/`prevSessionLog`.
+
+Ruled out (not bugs — hardened by prior runs): the engine's numeric seams (freq 2–6, exPerSession/sets-per-ex/max-sets all guarded, empty-session guards via `rotateOne`/`.filter(Boolean)`), the write-seam reps/weight clamps (lower + upper tail), `clampSetCount` (MAX 20, NaN/negative→1), week/DST date math (`setDate`-based, consistent en-CA strings), `plan:updateSession`'s empty-session rejection, and every division in `WorkoutStats`/`Training` (floored or empty-guarded).
+
+### The bug (file:line)
+`src/utils/parseRepMidpoint.ts` — the old body typed `repRange: string` and called `repRange.split('-')` directly. The sibling `clampSetCount(ex.sets)` seam already coerces `sets` via `Number(value)` (robust to anything), but the `reps` seam assumed a well-formed string. Callers: `WorkoutSession.tsx:210` (`buildInitialStates` → `parseRepMidpoint(ex.reps)`, runs at mount) and `:352` (`addSet`).
+
+### Root cause
+Unlike the diet write paths (hardened to run model output through `normalizeMeals`), the three Claude training-plan write seams persist the model's exercises raw:
+- `plan:generateTraining` Claude branch (`planHandlers.ts:82`) — `JSON.stringify(s.exercises ?? [])`.
+- `plan:refineWorkoutWithPrompt` (`planHandlers.ts:671`) — `JSON.stringify(s.exercises)`.
+- `plan:applyAIRequest` refine_workout branch — same.
+The prompt documents `"reps":"<e.g. 8-12>"`, but a model can return `reps` as a number or omit it; that value round-trips through `plan:getTraining` into `parseRepMidpoint`, which threw. A hand-edited DB reaches the same seam. (Confirmed at runtime: `(10).split` / `null.split` / `undefined.split` all throw.)
+
+### Fix (minimum, one seam — guards the boundary, mirrors the clampSetCount precedent)
+- **`src/utils/parseRepMidpoint.ts`** — signature now `repRange: unknown`. A finite `number` is already a usable rep count → `Math.round(repRange)` (non-finite number → 10). Any other non-string → 10. The existing string path (ranges, partial-dash, non-numeric → 10) is byte-for-byte unchanged, so every well-formed input behaves exactly as before. This is the single seam all set-seeding funnels through, so no upstream path (AI generate/refine, hand-edited DB, future callers) can crash `WorkoutSession` anymore. No schema/engine/persist-path change.
+
+### Tests added
+- `tests/unit/parseRepMidpoint.test.ts` (+2) — (1) a numeric `reps` (`10`, `8.4`) is coerced without throwing (`10`→10, `8.4`→8 rounded); (2) `null`/`undefined`/`NaN`/`Infinity`/`{}`/`[]`/`true` never throw and all fall back to 10. Both assert `.not.toThrow()`; verified failing-first against the old string-only body (`.split is not a function`). All 6 prior parseRepMidpoint tests unchanged and still pass.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (461 tests, +2)
+- `npx electron-vite build` → PASS
+
+### Note
+A broader hardening (a `normalizeExercises` pass on the three Claude training write seams, mirroring the diet path's `normalizeMeals`) would defend the `rir`/`sets`/`name` fields at the persist boundary too. Those fields don't currently crash (`clampSetCount` coerces `sets`; `rir`/`name` are only rendered/bound, never string-method-called), so it is out of this run's minimum-change scope — recorded here for a future (b) run. The `reps` crash was the one reachable defect this run.
+
+---
+
 ## Run: 2026-10-27 #2 (BUG FIX — area (e) widgets + localStorage stores; the Diet page's cardio stepper (`src/pages/Diet/index.tsx`) read/wrote the shared `cardio_log` localStorage key with a single-session-per-day model, while the dashboard Cardio widget (`cardioStore`/`CardioWidget`) logs MULTIPLE sessions per day and sums them. A prior run (2026-10-26 #2 note / report line ~1459) explicitly flagged this exact mismatch and deferred it as "a refactor, out of minimum-change scope" — but the analogous water-tracker bug was later fixed minimally by extracting a pure `nextWaterMl` helper, establishing the precedent followed here.)
 
 ### STEP 0 — Requested changes

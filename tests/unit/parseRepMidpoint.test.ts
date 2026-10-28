@@ -40,4 +40,23 @@ describe('parseRepMidpoint', () => {
       expect(Number.isNaN(parseRepMidpoint(s))).toBe(false)
     }
   })
+
+  // Regression: `reps` is DECLARED a string, but the AI plan paths persist the
+  // model's exercises verbatim (no normalizeMeals-style pass), so a model that
+  // emits `"reps": 10` (a number) or omits `reps` round-trips a non-string into
+  // this seam. The old `.split`-first body threw "repRange.split is not a
+  // function" at WorkoutSession mount, white-screening the live workout. Coerce
+  // at the boundary instead of crashing.
+  it('coerces a numeric reps value instead of throwing', () => {
+    expect(() => parseRepMidpoint(10 as unknown as string)).not.toThrow()
+    expect(parseRepMidpoint(10 as unknown as string)).toBe(10)
+    expect(parseRepMidpoint(8.4 as unknown as string)).toBe(8) // rounded
+  })
+
+  it('falls back to 10 (never throws) for null / undefined / non-string reps', () => {
+    for (const bad of [null, undefined, NaN, Infinity, {}, [], true]) {
+      expect(() => parseRepMidpoint(bad as unknown as string)).not.toThrow()
+      expect(parseRepMidpoint(bad as unknown as string)).toBe(10)
+    }
+  })
 })
