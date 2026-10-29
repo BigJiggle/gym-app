@@ -81,16 +81,39 @@ export function registerUserHandlers(ipcMain: IpcMain): void {
   })
 }
 
-function parseUser(user: Record<string, unknown>) {
+// Defensive JSON-array parse for the user's TEXT columns. These cells are always
+// WRITTEN as valid JSON (JSON.stringify in user:create / sanitizeUserUpdate), but a
+// corrupt, hand-edited or legacy cell (e.g. a bare `Dairy-free` instead of
+// `["Dairy-free"]`) makes a raw JSON.parse THROW. parseUser runs on every user:get —
+// the first call loadUser makes on launch — so one bad cell rejects user:get, which
+// loadUser catches into `error`, leaving user=null and the app unable to load (and
+// unable to escape, since user:get re-reads the same latest row and throws again).
+// This is the exact per-cell hole normalizeMeals (diet) / normalizeExercises (training)
+// already close at their read seams; the user read path had no counterpart. Fall back
+// to [] on any null / non-string / unparseable / non-array value so a corrupt cell
+// degrades to an empty list instead of bricking startup. A well-formed array/string
+// passes through unchanged.
+export function safeJsonArray(raw: unknown): unknown[] {
+  if (Array.isArray(raw)) return raw
+  if (typeof raw !== 'string') return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+export function parseUser(user: Record<string, unknown>) {
   return {
     ...user,
-    competition_history: JSON.parse((user.competition_history as string) ?? '[]'),
-    dietary_restrictions: JSON.parse((user.dietary_restrictions as string) ?? '[]'),
+    competition_history: safeJsonArray(user.competition_history),
+    dietary_restrictions: safeJsonArray(user.dietary_restrictions),
     is_natural: user.is_natural === 1,
     include_snacks: user.include_snacks === 1,
     snack_count: (user.snack_count as number) ?? 0,
-    food_preferences: JSON.parse((user.food_preferences as string) ?? '[]'),
-    food_exclusions: JSON.parse((user.food_exclusions as string) ?? '[]'),
+    food_preferences: safeJsonArray(user.food_preferences),
+    food_exclusions: safeJsonArray(user.food_exclusions),
     culture_pref: (user.culture_pref as string) ?? 'any',
     exercises_per_session: (user.exercises_per_session as number) ?? 6,
     sets_per_exercise: (user.sets_per_exercise as number) ?? 4

@@ -1,5 +1,46 @@
 # Change Agent Report
 
+## Run: 2026-10-29 #3 (BUG FIX — area (d) onboarding + Settings + reset + data lifecycle; one corrupt / hand-edited / legacy non-JSON **user** TEXT cell **bricks the entire app on launch**. `parseUser` in `electron/ipc/userHandlers.ts` runs on every `user:get` — the FIRST IPC call `loadUser` makes at startup — and did a raw `JSON.parse` on four array columns (`competition_history`, `dietary_restrictions`, `food_preferences`, `food_exclusions`) guarded only by `?? '[]'`. That covers NULL but not a corrupt cell (e.g. a bare `Dairy-free` instead of `["Dairy-free"]`), which makes `JSON.parse` THROW → `user:get` rejects → `loadUser` swallows it into `error`, leaving `user=null` so the app never loads and can't escape (`user:get` re-reads the same latest row and throws again). This is the exact per-cell hole `normalizeMeals` (diet) and `normalizeExercises` (training) already close at their read seams — the user read path had no counterpart.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN before changes)
+Clean `master` + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (467 tests, 75 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (d) onboarding + Settings + reset + data lifecycle
+Rotated to **(d)** (least-recent per prior run; recent runs: (c) 10-29#2, (b) 10-29, (b) 10-28, (e) 10-27#2, (a) 10-27, (c) 10-26#2). Deep-read the full SCOPE error paths:
+- **`electron/ipc/userHandlers.ts`** — `user:create` / `user:update` / `user:get` / `user:resetAll`, and the shared `parseUser` read helper. **← bug here.**
+- **`electron/ipc/userSanitize.ts`** — write-seam clamps (`clampMealCount`/`clampSnackCount` 1–20/0–20, `clampBodyFatPct` 3–60, `clampAge`/`clampHeightCm`/`clampWeightKgField`/`clampTrainingFrequency`/`clampExercisesPerSession`/`clampSetsPerExercise`, non-finite→undefined drop so a cleared field can't NULL a required column; `show_date`/`division` dropped to avoid ghost-writes). All sound.
+- **`electron/ipc/settingsHandlers.ts`** — `settings:get`/`set`/`getAll` (null-coalesced, INSERT OR REPLACE). Sound.
+- **`electron/database/db.ts` + `schema.ts`** — `initDb` lock-clear/retry + dev-wipe fallback, `runMigrations` (per-migration try/catch so a failed migration never wipes data; `INSERT OR IGNORE` schema_version seed), all 13 migrations incl. the v9 table rebuild (column list verified) and v11 meal/snack backfill. Sound.
+- **`src/pages/Onboarding/*`** — `useOnboarding` defaults + `validateStep` (age 16–80, height 100–250, weight 30–300), `Step1Personal` unit toggles (ft/in round-then-split, lbs→kg, `>0` guards), submit flow (key persisted before plan gen, show added as primary). Sound.
+- **`src/pages/Settings/index.tsx`** — Edit-profile re-sync on open, imperial↔metric height/weight conversions, `handleSaveProfile` (`body_fat_pct '' → undefined`), reset double-confirm, Stepper clamps, show add/cancel/delete. Sound.
+- **`src/store/userStore.ts` / `settingsStore.ts`** — `resetAllData` (DB reset → `resetLocalData` fold → hard reload so singletons re-init), `loadSettings`/`setSetting` (DEFAULTS merge, theme/zoom apply). Sound.
+- **`src/utils/resetData.ts` + `DailyWeighInWidget.tsx`** — `resetLocalData` preserved-key filter + `mergeWeighIns` (try/catch JSON, `isValidWeighIn` drops bad entries, same-date daily-wins), daily log stored in **kg** so the check-in fold is unit-consistent; `parseDailyWeightLog` per-entry sanitize + 30–300 kg write clamp. All sound.
+
+### STEP 3 — Fix (minimum, single read seam)
+- **New exported `safeJsonArray(raw)` in `electron/ipc/userHandlers.ts`** (mirrors `normalizeMeals`/`normalizeExercises`): an already-parsed array passes through; a non-string → `[]`; a string is `JSON.parse`d inside try/catch and returned only if it parses to an array, else `[]`. Well-formed data is byte-identical.
+- **`parseUser` now exported and routes all four array columns through `safeJsonArray`** instead of raw `JSON.parse(... ?? '[]')`. A corrupt/legacy cell degrades to an empty list instead of throwing and bricking `user:get`. No behaviour change for any well-formed row.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (474 tests, +7 new `tests/unit/parseUser.test.ts`)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `electron/ipc/userHandlers.ts` — new exported `safeJsonArray`; `parseUser` exported + hardened.
+- `tests/unit/parseUser.test.ts` — 7 new tests (safeJsonArray well-formed/array-passthrough/corrupt-string→[]/null/object→[]; parseUser no-throw on corrupt cell, correct parse of well-formed cells, boolean/number coercion + defaults). Empirically confirmed the pre-fix raw `JSON.parse('Dairy-free')` throws `SyntaxError`.
+- `change-agent-report.md` — this entry.
+
+### Deferred (not done — out of minimum scope this run)
+`parseUser` also reads scalar columns with `as`-casts (`snack_count`/`exercises_per_session`/`sets_per_exercise` default via `??`, `culture_pref` via `??`); those don't throw on a corrupt cell (a bad value just flows through to already-existing downstream clamps), so no guard was added there. The DB write seams already stringify every array column, so the corrupt-cell vector is hand-edit/legacy-only — the same class the diet/training read-seam guards target.
+
+---
+
 ## Run: 2026-10-29 #2 (NO BUG FOUND — area (c) check-in + Progress + adaptive nutrition; audited deeply and found it clean. Rotated off (b) which the two prior runs covered. Baseline green before and after; no code change — report-only commit.)
 
 ### STEP 0 — Requested changes
