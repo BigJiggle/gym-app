@@ -1,5 +1,36 @@
 # Change Agent Report
 
+## Run: 2026-10-29 #2 (NO BUG FOUND — area (c) check-in + Progress + adaptive nutrition; audited deeply and found it clean. Rotated off (b) which the two prior runs covered. Baseline green before and after; no code change — report-only commit.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN)
+Clean `master` + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (467 tests, 75 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (c) check-in + Progress + adaptive nutrition
+Rotated to **(c)** (recent runs: (b) 10-29, (b) 10-28, (e) 10-27#2, (a) 10-27, (c) 10-26#2, (f) 10-26). Read and traced the full SCOPE error paths across the area:
+
+- **`electron/services/checkinEngine.ts`** — `parseAdjustments` (guarantees `{calories_delta, cardio_change, training_volume_change, notes[]}` shape against `'{}'`/non-JSON/legacy cells), `clampCheckinWeightKg` (30–300 kg, rejects non-finite/≤0), `weeksBetweenDates` (null on missing/unparseable/non-positive span, parsed at local noon), `weightTrend` (single-week fallback; guards 0/non-finite bodyweight → 0), `weightTrendPct` (Theil–Sen median of pairwise per-week slopes; filters non-finite weights, skips non-positive x-gaps so a same-day duplicate can't divide by zero, falls back to interval-index x when dates unparseable, needs ≥2 priors), and `calculateAdjustments` cut/recomp thresholds + recovery/stress/adherence notes.
+- **`electron/ipc/checkinHandlers.ts`** — all five handlers: `checkin:submit` (write-seam weight clamp, duplicate-same-day reject, interval lock by date, diet-plan recalc with `MIN_CALORIE_TARGET`-floored ratio so a 0-target plan can't make meal scaling NaN/Infinity, `clampWeightKg` on macro weight), `checkin:submitMissed` (same clamp, dup reject, chronological `week_number` back-fill + shift), `checkin:update` (date-clash guard, null/empty `check_in_date` dropped so NOT-NULL isn't violated, previous/trend scoped by effective DATE not insertion id, `(date,id)` renumber on date change), `checkin:history`/`checkin:latest` (parse adjustments at read seam).
+- **`electron/services/checkinSchedule.ts`** ⇄ **`src/utils/checkinSchedule.ts`** — verified the shared logic is byte-identical (only trailing comments differ; `getNextCheckinDate` is main-process-only by design). `countMissedBetween` guards interval ≤0/non-finite (no infinite `addMissedFrom` loop), day-mode re-alignment is capped by a 7-iteration guard (immune to a NaN `checkinDay`), `effectiveInterval` uses 7/14 for day/biweekly so biweekly users get no phantom mid-gap slot.
+- **`src/pages/Progress/index.tsx`** — empty state (0 check-ins), `computeEstimatedBF` (weight clamped → denom >0, BF clamped 3–60), first→latest/`elapsedWeeks` ordering (progress:entries ASC vs checkinHistory DESC — consistent), measurement weekly-rate floored at ≥1 week, 8-week diet-consistency `target>0` guard, required-rate direction coloring, Show-Day projection.
+- **`src/pages/CheckIn/index.tsx`** — `toKg`/`toCm` (reject NaN/≤0), missed-slot panels, edit flow (`DUPLICATE_CHECKIN` handling), success-screen projection (`weeksToShow ≤ 0 → null`), locked-screen countdown.
+- **`src/utils/`** `weeklyRate.ts` (≥1-week span or null), `weeksTracked.ts` (calendar span, not row count), `targetWeight.ts` (NaN/≤0 → null), `dates.ts` (DST-safe calendar arithmetic, `getShowCountdown` clamps `totalDays≥0` + separate `isPast`).
+- **Charts/widgets** `WeightChart.tsx`, `MeasurementsChart.tsx` (≥2-point filter, empty guard), `CheckinFeedbackWidget.tsx`, `RecentCheckinsWidget.tsx` (`c.adjustments?.calories_delta ?? 0`).
+- **Spot-checked adjacent areas** for a reachable defect to fix instead: nutritionEngine `calcPortionStr` (bails when `calPer100g` falsy) / `normalizeMeals` (guarantees string `name`), `refeed.ts` (`idx.length ≥1`, receives normalized meals), `TrainingVolumeWidget`/`Diet` average divisions (all length-guarded), `competitionPrep.ts` + `PeakWeekWidget.tsx` (past-show guard, `daysOut` match-or-null). All guarded.
+
+### Conclusion — no real bug found
+Every SCOPE error class in this area (empty/first-run states, 0/negative/NaN/Infinity/huge inputs, div-by-zero, DST/timezone + week-rollover, duplicate same-day entries, corrupt/hand-edited cells, DB↔UI desync) is already defended — in most cases by an explicitly-commented prior-run fix — and a dedicated test suite covers it (`checkinEngine`, `checkinAdjustmentsParse`, `checkinSchedule`, `checkinWeightClamp`, `checkinUpdate*`, `checkinSuccessProjection`). The one design choice I considered — `checkin:update` recomputing/storing `adjustments` without re-applying them to the live diet plan (whereas `checkin:submit` does) — is a deliberate "don't double-adjust on an edit" decision, not a crash, and re-applying would risk double-counting the already-applied delta; left untouched per the "don't fix correct code" rule. Per the routine's rules I did **not** fabricate a fix. Coverage recorded so the next run rotates to a different area ((d) onboarding/Settings/reset/data-lifecycle is now least-recent).
+
+### STEP 4 — Verification (unchanged tree; re-confirmed GREEN)
+- `npx tsc --noEmit` → PASS · `npm test` → PASS (467) · `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-10-29 (BUG FIX — area (b) training engine + workout/session flows; a `null` / non-object entry in a session's stored `exercises` array **white-screens the entire Training tab** (and throws in the `plan:getTraining` IPC handler for a non-JSON cell). Every training-plan load funnels through `plan:getTraining`, which `JSON.parse`d the `training_sessions.exercises` TEXT cell and handed it verbatim to the renderer. The Training tab does `session.exercises.map(ex => ex.name)` and `WorkoutSession.buildInitialStates` does `for (const ex of session.exercises) clampSetCount(ex.sets)` — both with **no error boundary** — so a `[null]` entry throws "Cannot read properties of null (reading 'name')" the moment the tab mounts. Reachable from a hand-edited/corrupt cell **and** from the AI refine paths (`plan:refineWorkoutWithPrompt` / `applyAIRequest` `refine_workout`), which validate only the array **length** (`exercises.length > 0`), never each entry. This is the exact per-entry gap `normalizeMeals` already closes on the diet side — the training read path had no counterpart. Last run (`parseRepMidpoint`) hardened a single FIELD against a non-string; this hardens the ENTRY shape at the read seam.)
 
 ### STEP 0 — Requested changes
