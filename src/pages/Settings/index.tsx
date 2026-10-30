@@ -599,7 +599,14 @@ export default function Settings() {
           {shows.map((show: Show) => {
             const countdown = getShowCountdown(show.show_date)
             const isPrimary = show.is_primary === 1
-            const isPast = countdown.totalDays === 0 && new Date(show.show_date + 'T12:00:00') < new Date()
+            // Use getShowCountdown's purpose-built `isPast` (rawDays < 0) instead of a
+            // hand-rolled `totalDays === 0 && noon < now`: the latter flags a show
+            // happening TODAY as "Past" after local noon (today's noon anchor is < the
+            // afternoon clock), which wrongly hid the countdown and the Cancel Show
+            // button and showed a contradictory "Past" badge next to "Primary" on the
+            // athlete's actual show day. `isPast` is true only once the date is strictly
+            // before today — exactly the distinction this helper exists to make.
+            const isPast = countdown.isPast
             return (
               <div key={show.id} className={`border rounded-xl p-3 space-y-1 ${isPrimary ? 'border-brand-600/50 bg-brand-900/10' : 'border-gray-700'}`}>
                 <div className="flex items-start justify-between gap-2">

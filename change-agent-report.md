@@ -1,5 +1,44 @@
 # Change Agent Report
 
+## Run: 2026-10-30 (BUG FIX — area (f) shows/competition + date/week logic; the Settings "My Shows" list flags a show happening **TODAY** as **"Past"** after local noon, hiding its "Cancel Show" button and showing a contradictory "Past" badge next to "Primary" on the athlete's actual show day. Each show row recomputed `isPast` by hand as `countdown.totalDays === 0 && new Date(show.show_date + 'T12:00:00') < new Date()` — but on show day `totalDays` is 0 and the show's **noon** anchor (12:00) is earlier than any afternoon wall-clock, so `noon < now` flips true from 12:01pm onward → `isPast` true. `getShowCountdown` already exposes a correct `isPast` (`rawDays < 0`, true only once the date is strictly before today) precisely to distinguish "today" from "past"; this row reimplemented it wrongly instead of using it. `isPast` gates three things — the "Past" badge, the "weeks/days out" line, and the **Cancel Show** button — so the whole row's state was wrong for the back half of show day.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN before changes)
+Clean `master` + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (474 tests, 76 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (f) shows/competition + date/week logic
+Rotated to **(f)** (least-recent; recent runs: (d) 10-29#3, (c) 10-29#2, (b) 10-29, (b) 10-28, (e) 10-27#2, (a) 10-27, then (f) 10-26). Traced the full SCOPE date/week error paths:
+- **`src/utils/dates.ts`** — `localDateStr`/`parseLocalDate`/`addDays`/`weekStartMonday(Str)` (all calendar-day, DST-safe), and `getShowCountdown` (noon-vs-midnight 12h cushion + Math.floor → DST-robust; `isPast = rawDays < 0` separate from clamped `totalDays`). Sound.
+- **`electron/services/showDates.ts`** — `weeksUntilShow` (local-midnight, matches UI), `localToday` (local YYYY-MM-DD, not SQLite UTC). Sound.
+- **`electron/ipc/showHandlers.ts`** — `syncPrimaryToNearest` / `persistProfileShowDate` (regex-guarded) / `shows:add|update|delete|cancelShow` / `setPrimaryShow` (diet regen on every show-context change; past-show guard). Sound.
+- **`src/data/competitionPrep.ts`** — `getWeekGuidance` (0..∞ buckets), `buildPrepTimeline`, `PEAK_WEEK_PROTOCOL`. See Deferred for a far-out-show observation.
+- **Widgets** — `PeakWeekWidget` (daysOut = totalDays+1, fixed 10-26; verified correct), `PrepPaceWidget`, `PrepGuidanceWidget`, `WeeklyScorecardWidget`, `PosingWidget`/`SleepWidget`/`SupplementWidget`/`competitionLogs` (all localStorage-guarded, Sunday→7 day mapping consistent). Sound.
+- **`src/utils/weeklyRate.ts` / `weeksTracked.ts` / `targetWeight.ts`** — finite guards, min-span floor, parse-seam NaN guard. Sound.
+- **`src/pages/Settings/index.tsx`** (My Shows list) — **← bug here.** The add form validates `type="date"` + required, so a malformed date can't reach `shows:add`; the row-render `isPast` was the one date comparison that diverged from the canonical helper.
+
+### STEP 3 — Fix (minimum, one line + comment)
+- **`src/pages/Settings/index.tsx`** — replaced the hand-rolled `const isPast = countdown.totalDays === 0 && new Date(show.show_date + 'T12:00:00') < new Date()` with `const isPast = countdown.isPast`. `getShowCountdown` already returns the correct show-day-safe value; routing through it fixes the "Past" badge, the countdown line, and the Cancel Show button all at once, and removes the duplicated/divergent date logic.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (476 tests, +2 new `tests/unit/settingsShowDayNotPast.test.tsx`)
+- `npx electron-vite build` → PASS
+
+Empirically confirmed the repro: with the clock faked to show-day 15:30 and the fix reverted, the new "today is not Past" test FAILS (row shows a "Past" badge, Cancel Show hidden) and the yesterday-control still passes; with the fix it passes.
+
+### Files changed
+- `src/pages/Settings/index.tsx` — `isPast` now uses `getShowCountdown().isPast`.
+- `tests/unit/settingsShowDayNotPast.test.tsx` — 2 new jsdom tests rendering the real Settings "My Shows" list with `vi.setSystemTime` at show-day afternoon: a today show carries no "Past" badge and keeps "Cancel Show"; a yesterday show still shows "Past".
+- `change-agent-report.md` — this entry.
+
+### Deferred (not done — out of minimum scope this run)
+`buildPrepTimeline` caps the displayed window with `startWeek = Math.min(currentWeek + 2, 24)`. When `currentWeek > 24` (a show 25+ weeks / ~6 months out) the loop (`w = startWeek..0`) never includes the true `currentWeek`, so **no** row is flagged `isCurrentWeek` — which makes `PrepGuidanceWidget` ("This Week in Prep") self-hide and the Education timeline lose its current-week highlight/auto-expand for very-far-out shows. It's a real but lower-severity edge (all weeks >16 share identical "Hypertrophy / Off-Season" guidance anyway), and the correct fix (keep the current week flagged while still capping the list) trades off against the documented "cap the list length" intent — left for a dedicated run rather than bundled with this one-line fix.
+
 ## Run: 2026-10-29 #3 (BUG FIX — area (d) onboarding + Settings + reset + data lifecycle; one corrupt / hand-edited / legacy non-JSON **user** TEXT cell **bricks the entire app on launch**. `parseUser` in `electron/ipc/userHandlers.ts` runs on every `user:get` — the FIRST IPC call `loadUser` makes at startup — and did a raw `JSON.parse` on four array columns (`competition_history`, `dietary_restrictions`, `food_preferences`, `food_exclusions`) guarded only by `?? '[]'`. That covers NULL but not a corrupt cell (e.g. a bare `Dairy-free` instead of `["Dairy-free"]`), which makes `JSON.parse` THROW → `user:get` rejects → `loadUser` swallows it into `error`, leaving `user=null` so the app never loads and can't escape (`user:get` re-reads the same latest row and throws again). This is the exact per-cell hole `normalizeMeals` (diet) and `normalizeExercises` (training) already close at their read seams — the user read path had no counterpart.)
 
 ### STEP 0 — Requested changes
