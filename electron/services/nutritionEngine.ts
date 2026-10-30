@@ -320,7 +320,21 @@ function getFood(
 }
 
 export function calcBMR(weight_kg: number, height_cm: number, age: number, sex: string): number {
-  const base = 10 * weight_kg + 6.25 * height_cm - 5 * age
+  // Guard against non-finite inputs. A corrupt / hand-edited cell (SQLite is
+  // dynamically typed, so a required numeric column can read back as a string or
+  // NaN) makes this NaN, and an unguarded NaN propagates lethally downstream:
+  // tdee = Math.round(NaN) = NaN, and because `Math.max(1200, NaN) === NaN` the
+  // plan's calories_target AND carbs_g persist as NaN and render as "NaN kcal" /
+  // "NaN g" on the Diet page (while the per-meal macros self-heal via buildMeals'
+  // MIN_CALORIE_TARGET floor — a DB↔UI desync). It also makes plan:previewGoalCalories
+  // return NaN for every goal in the GoalPickerModal. `weight_kg` is already defended
+  // by clampWeightKg at its callers, but `height_cm` and `age` had no counterpart —
+  // this closes the same gap at the shared seam both call sites funnel through. Finite
+  // inputs (including out-of-range ones) are untouched, so no valid plan changes.
+  const w = Number.isFinite(weight_kg) ? weight_kg : 70
+  const h = Number.isFinite(height_cm) ? height_cm : 170
+  const a = Number.isFinite(age) ? age : 30
+  const base = 10 * w + 6.25 * h - 5 * a
   return sex === 'female' ? base - 161 : base + 5
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { generateNutritionPlan, clampWeightKg, clampMealCount, buildMealsPublic, sanitizeCalorieTarget, sanitizeMacroGrams, MIN_CALORIE_TARGET } from '../../electron/services/nutritionEngine'
+import { generateNutritionPlan, clampWeightKg, clampMealCount, buildMealsPublic, sanitizeCalorieTarget, sanitizeMacroGrams, calcBMR, MIN_CALORIE_TARGET } from '../../electron/services/nutritionEngine'
 
 const BASE_INPUT = {
   weight_kg: 80,
@@ -122,6 +122,52 @@ describe('nutritionEngine', () => {
       const avgMain = mains.reduce((s, m) => s + m.calories, 0) / mains.length
       expect(snack.calories).toBeLessThanOrEqual(Math.ceil(avgMain) + 5) // allow 5 kcal rounding
     }
+  })
+})
+
+// Regression: weight_kg is guarded by clampWeightKg, but a non-finite height_cm or
+// age (a corrupt / hand-edited numeric cell — SQLite is dynamically typed so it can
+// read back as a string or NaN) used to propagate NaN into the plan's stored
+// calories_target AND carbs_g (because Math.max(1200, NaN) === NaN), which rendered
+// as "NaN kcal" / "NaN g" on the Diet page while the per-meal macros self-healed.
+describe('nutritionEngine — non-finite BMR inputs (height/age/weight) never yield NaN targets', () => {
+  const finiteOk = (p: ReturnType<typeof generateNutritionPlan>) => {
+    expect(Number.isFinite(p.calories_target)).toBe(true)
+    expect(p.calories_target).toBeGreaterThanOrEqual(MIN_CALORIE_TARGET)
+    expect(Number.isFinite(p.protein_g)).toBe(true)
+    expect(Number.isFinite(p.carbs_g)).toBe(true)
+    expect(p.carbs_g).toBeGreaterThanOrEqual(0)
+    expect(Number.isFinite(p.fat_g)).toBe(true)
+    for (const m of p.meals) {
+      expect(Number.isFinite(m.calories)).toBe(true)
+      expect(Number.isFinite(m.protein_g)).toBe(true)
+      expect(Number.isFinite(m.carbs_g)).toBe(true)
+      expect(Number.isFinite(m.fat_g)).toBe(true)
+    }
+  }
+
+  it('NaN height_cm no longer produces a NaN calories_target / carbs_g', () => {
+    finiteOk(generateNutritionPlan({ ...BASE_INPUT, height_cm: NaN as any }))
+  })
+
+  it('NaN age no longer produces a NaN calories_target / carbs_g', () => {
+    finiteOk(generateNutritionPlan({ ...BASE_INPUT, age: NaN as any }))
+  })
+
+  it('a corrupt non-numeric height/age cell (string) degrades gracefully', () => {
+    finiteOk(generateNutritionPlan({ ...BASE_INPUT, height_cm: 'tall' as any }))
+    finiteOk(generateNutritionPlan({ ...BASE_INPUT, age: 'old' as any }))
+  })
+
+  it('calcBMR coerces non-finite inputs to finite fallbacks but leaves valid inputs untouched', () => {
+    // Valid inputs: unchanged behaviour (10*w + 6.25*h - 5*a + 5 for male).
+    expect(calcBMR(80, 178, 28, 'male')).toBe(10 * 80 + 6.25 * 178 - 5 * 28 + 5)
+    expect(calcBMR(80, 178, 28, 'female')).toBe(10 * 80 + 6.25 * 178 - 5 * 28 - 161)
+    // Non-finite inputs: finite result using the 70kg / 170cm / 30y fallbacks.
+    expect(Number.isFinite(calcBMR(80, NaN, 30, 'male'))).toBe(true)
+    expect(Number.isFinite(calcBMR(80, 178, NaN, 'male'))).toBe(true)
+    expect(Number.isFinite(calcBMR(NaN, 178, 28, 'male'))).toBe(true)
+    expect(calcBMR(80, NaN, 30, 'male')).toBe(10 * 80 + 6.25 * 170 - 5 * 30 + 5)
   })
 })
 

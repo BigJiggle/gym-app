@@ -1,5 +1,41 @@
 # Change Agent Report
 
+## Run: 2026-10-30 #2 (BUG FIX — area (a) nutrition engine + Diet flows; a non-finite `height_cm` or `age` propagates **NaN into the stored, displayed `calories_target` AND `carbs_g`** of every generated diet plan, so the Diet page shows "NaN kcal" / "NaN g" headline targets while the per-meal macro cards look sane — a DB↔UI desync. Root cause: `calcBMR` did a raw `10*weight + 6.25*height - 5*age`; a non-finite height/age makes it NaN → `tdee = Math.round(NaN) = NaN` → `calories = Math.max(1200, NaN + adjustment)` is **NaN** (`Math.max(1200, NaN) === NaN`) → `carbs_g = Math.round((NaN - …)/4)` is NaN. `buildMeals` floors its OWN `totalCal` to `MIN_CALORIE_TARGET`, so the per-meal numbers self-heal — which is exactly what hides the bug — but the top-level plan fields persist as NaN and divide into the Diet page's intake percentages. `weight_kg` is already defended by `clampWeightKg` at its callers; `height_cm` and `age` had no counterpart. Reachable via the same corrupt / hand-edited numeric-cell vector prior runs (10-29#3, the diet/training read-seam fixes) accepted as in-scope — SQLite is dynamically typed, so a required numeric column can read back as a string or NaN — and it also makes `plan:previewGoalCalories` return NaN for every goal in the GoalPickerModal.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 14 queue items checked off) → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN before changes)
+Clean `master` + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (476 tests, 77 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (a) nutrition engine + Diet flows
+Rotated to **(a)** (least-recent; recent runs: (f) 10-30, (d) 10-29#3, (c) 10-29#2, (b) 10-29, (b) 10-28, (e) 10-27#2, then (a) 10-27). Deep-read the full SCOPE error paths:
+- **`electron/services/nutritionEngine.ts`** — `getPhaseAwareDeficit` (phase buckets), `calcPortionStr` (falsy-`calPer100g` bail, role clamps), `applyCookingStyle`/`applyPrepStyle` (snack/breakfast/grab-and-go guards), `getFood`/`getCultureFood`/`isExcluded` (substitute iteration, snack-only skip), `buildMeals` (0/non-finite `totalCal` floor, snack-cap math, `mainCount` arithmetic), `getMealTemplates` (1–20 main cycling, 0–20 snack cycling, time sort), `clampWeightKg`/`clampMealCount`/`sanitizeCalorieTarget`/`sanitizeMacroGrams`/`normalizeMeals` (all finite/floor-guarded), and **`calcBMR` ← bug here (the one unguarded numeric seam).**
+- **`electron/ipc/planHandlers.ts`** — `generateDiet` (AI + rule paths, `normalizeMeals`/`sanitizeCalorieTarget`/`sanitizeMacroGrams` on the untrusted model blob), `getDiet`, `recalculateMacros` (floors divisor, writes target back, self-heals a 0 row), `refineDietWithPrompt`/`refine_diet` (normalize + meal_count persist + orphan purge), `applyAIRequest` regen (`buildMealsPublic` + summed totals + meal_count persist), `swapMeal` (index bounds), `reorderMeals` (permutation remap of completions), `previewGoalCalories` (**also affected — raw weight/height/age → NaN preview**).
+- **`src/pages/Diet/index.tsx`** — intake %/refeed math (all `>0`-guarded), `activeMealIndex` time parse, `mealAdherenceStreak`, water/cardio localStorage (`nextWaterMl`/`nextCardioLog`/`cardioMinutesOn` — non-array/NaN guarded), weekly aggregates (`activeDays>0` / `totalMealsPerDay===0` guards), prefs panel.
+- **`src/pages/Diet/GroceryList.tsx`** (empty-meals guard, qty aggregation), **`swapAlternatives.ts`** (restriction + exclusion filtering, hard-constant portion math), **`src/utils/refeed.ts`** (`idx.length≥1`, no-mutation), **`mealCompletionHandlers.ts`** (orphan purge). All guarded.
+- **Fuzz:** 49,920 `generateNutritionPlan` combinations (every sex × goal × diet pref × weeks-out × meal-count {0,1,2,3,…,20,25,NaN,-1} × snack-count {…,20,25,NaN,-1} × weight {0,29,30,70,150,300,301,850,NaN,-5}) → **0** non-finite / negative / "NaN"-in-food outputs. The only non-finite escape was with a non-finite **height/age** (which the fuzz held fixed) — this bug.
+
+### STEP 3 — Fix (minimum, root-cause at the shared seam)
+- **`electron/services/nutritionEngine.ts` — `calcBMR`**: coerce each input to a finite fallback before the formula (`weight→70`, `height→170`, `age→30` when not `Number.isFinite`). Both call sites (`generateNutritionPlan`, `plan:previewGoalCalories`) funnel through `calcBMR`, so one guard fixes the stored-NaN plan AND the goal-calorie preview. Finite inputs — including out-of-range ones — are untouched, so no valid plan changes (confirmed: the fuzz's 49,920 finite-input plans are byte-identical, and the exact-value `calcBMR` assertions pin the unchanged formula).
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (480 tests, +4 new in `tests/unit/nutritionEngine.test.ts`)
+- `npx electron-vite build` → PASS
+- Empirically confirmed the repro: with the fix reverted, the 4 new tests FAIL (`calories_target` / `carbs_g` are NaN for NaN/`"tall"` height and NaN/`"old"` age); with the fix they pass.
+
+### Files changed
+- `electron/services/nutritionEngine.ts` — `calcBMR` guards non-finite weight/height/age.
+- `tests/unit/nutritionEngine.test.ts` — 4 new tests: NaN height, NaN age, corrupt string height/age, and a `calcBMR` unit test asserting valid inputs are byte-identical while non-finite inputs stay finite.
+- `change-agent-report.md` — this entry.
+
+### Deferred (not done — out of minimum scope this run)
+`buildPrepTimeline`'s far-out-show current-week flag gap (`startWeek = Math.min(currentWeek+2, 24)` drops the true current week for shows 25+ weeks out), carried over from the 10-30 run's Deferred note — it's area (f) and lower severity, left for a dedicated run.
+
 ## Run: 2026-10-30 (BUG FIX — area (f) shows/competition + date/week logic; the Settings "My Shows" list flags a show happening **TODAY** as **"Past"** after local noon, hiding its "Cancel Show" button and showing a contradictory "Past" badge next to "Primary" on the athlete's actual show day. Each show row recomputed `isPast` by hand as `countdown.totalDays === 0 && new Date(show.show_date + 'T12:00:00') < new Date()` — but on show day `totalDays` is 0 and the show's **noon** anchor (12:00) is earlier than any afternoon wall-clock, so `noon < now` flips true from 12:01pm onward → `isPast` true. `getShowCountdown` already exposes a correct `isPast` (`rawDays < 0`, true only once the date is strictly before today) precisely to distinguish "today" from "past"; this row reimplemented it wrongly instead of using it. `isPast` gates three things — the "Past" badge, the "weeks/days out" line, and the **Cancel Show** button — so the whole row's state was wrong for the back half of show day.)
 
 ### STEP 0 — Requested changes
