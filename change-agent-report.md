@@ -1,5 +1,40 @@
 # Change Agent Report
 
+## Run: 2026-10-31 #2 (NO BUG FOUND — area (b) training engine + workout/session flows audited clean; no real reachable defect found this run, so no fix was fabricated)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all queue items checked off) → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN)
+Clean `master` + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (483 tests, 78 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (b) training engine + workout/session flows
+Rotated to **(b)** (least-recent; recent runs: (e) 10-31, (a) 10-30#2, (f) 10-30, (d) 10-29#3, (c) 10-29#2, (b) 10-29). Deep-read every SCOPE error path in the training layer:
+- **`electron/services/trainingEngine.ts`** — `generateTrainingPlan` (freq/exPerSession/setsPerEx/maxSets all finite+range guarded; `??` ignores-0 holes already closed), `getSets` (deload floor + userMax min, always ≥1), all six split builders (`buildPPL/UpperLower/Arnold/Bro/FullBody` + `rotateOne` length-preserving B-variant), `getExercises`/`getExercisesByMuscleGroup`, `determinePhase`, `normalizeExercises` (read-seam coercion). **Fuzzed `generateTrainingPlan` across 5,080,320 input combinations** (7 splits × 4 equip × 3 goals × 12 freqs incl. 0/NaN/−1/999/3.5 × 10 exPerSession × 8 setsPerEx × 7 maxSets × 9 weeks incl. undefined/0/NaN/−3/30): **0 throws, 0 empty plans, 0 empty sessions, 0 non-finite/<1 sets, 0 bad names.** The ONLY anomaly was `weeks_total = −3` when `weeks_out = −3` (`weeks_out ? Math.min(weeks_out,16) : 12` passes a negative through) — **not reachable**: every production caller (`plan:generateTraining` L21, `generateAll` L309, `plan:updateShowDate` refine L411, `regenerateAll` L298) passes `weeksUntilShow()` (which floors at `Math.max(0, …)`) or `undefined`, never a raw negative. Guarding it would be fixing unreachable/correct code, so left as-is per mission rules.
+- **`electron/ipc/workoutHandlers.ts`** — `sanitizeReps`/`sanitizeWeightKg` (null-pass, non-finite→null, clamp 0–9999) applied at every write seam (`logSet`, `updateSet`, `saveSetsBatch`); `workout:active`/`history` are `WHERE user_id`-scoped; `history` LIMIT guarded; local-date `workout:start`.
+- **`electron/ipc/planHandlers.ts`** — `plan:generateTraining` (check-in deload via `force_deload`, not `weeks_out=1`; energy/sleep both 1–5 so `energyAvg < 2.5` is well-scaled; AI path filters `exercises.length > 0` and nulls `session_id` before delete), `plan:getTraining`/`getSessions` (both run `normalizeExercises` at the read seam), `plan:updateSession` (rejects empty `EMPTY_SESSION`).
+- **`src/pages/Training/*`** — `WorkoutSession` (`clampSetCount`/`parseRepMidpoint` seed guards, rest-timer `setInterval` dep-flip pattern correct, double-submit guarded by `saving`/`startingWorkout`, atomic batch-save on complete, display↔kg unit conversions consistent across pre-fill/quick-adjust/PR detect/summary), `detectNewPRs` (all-time prior-best, strict `>`, empty-set guarded), `WorkoutStats` (tonnage/e1RM/adherence/calendar — all denominators `>0`-guarded, kg→display via `toDisplay`), `WorkoutLogEditor` (blur auto-save, pending-vs-logged keys, unit conversion), `SessionEditor` (`clampSetCount` on Sets input, empty-save disabled), `index.tsx` widgets (countdown `prepPct` `|| 20` guard, sessions-week dedupe, muscle-volume MEV, `trainingStreak`/`exerciseTrend`/`lastPerfBySession`/`exercisePRs` — all guarded), `prevSessionLog`/`clampSetCount`/`parseRepMidpoint` utils.
+- **Cross-checked** that `user.weight_kg` (read raw by the MET calorie-burn widget) cannot go non-finite via any UI path — `sanitizeUserUpdate.clampWeightKgField` clamps 30–300 and drops NaN on every `user:update`, and there is no AI/non-UI write path to that column (unlike the diet profile), so the only non-finite vector is direct DB tampering → not treated as reachable.
+
+### STEP 3 — Fix
+None. No real, reachable defect was found in area (b); the layer is thoroughly hardened by prior runs. Per mission rules ("do not invent problems; do not 'fix' correct code; do NOT fabricate a fix"), no change was made.
+
+### STEP 4 — Verification (unchanged baseline, all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (483 tests, 78 files)
+- `npx electron-vite build` → PASS
+- (Fuzz test was a throwaway in `tests/unit/`, run then deleted — not committed.)
+
+### Files changed
+- `change-agent-report.md` — this entry only (no code change).
+
+### Deferred / observations (not defects — no action)
+- **Orphaned in-progress workout (benign):** if a user starts a workout, closes the app mid-session (not Complete/Abandon), and a plan regen then runs (phase boundary on next launch), the regen nulls `session_id` on that in_progress log, so `Training` auto-resume can't match it and the overlay never restores. Consequence is only an invisible stale `in_progress` row (no saved sets — sets persist only on Complete; a new workout creates a newer `workout:active` row). Harmless stale data, not a stuck UI; fixing it is a UX/feature call, out of minimal debug scope.
+- `generateTrainingPlan`'s `weeks_total = min(weeks_out, 16)` caps displayed Duration at 16 even for longer preps — a known, accepted display cap (not a defect).
+
 ## Run: 2026-10-31 (BUG FIX — area (e) widgets + localStorage stores; the competition-only **`PrepGuidanceWidget` ("This Week in Prep") silently renders nothing for a show 25+ weeks out**, even though the user explicitly enabled it (the widget is only offered once a show exists). Same gap also strips the current-week highlight + auto-expand from the Education prep timeline. Root cause: `buildPrepTimeline(showDate)` in `src/data/competitionPrep.ts` caps its display window with `startWeek = Math.min(currentWeek + 2, 24)` and flags the current week only inside a `for (w = startWeek; w >= 0; w--)` loop via `isCurrentWeek: w === currentWeek`. When the show is 25+ weeks out, `currentWeek > 24` so the loop is pinned to `startWeek = 24` and NEVER reaches `currentWeek` → **no** item is flagged `isCurrentWeek`. Both consumers then break: `PrepGuidanceWidget` does `buildPrepTimeline(...).find(w => w.isCurrentWeek) ?? null` and early-returns `null` (vanishes); the Education timeline's `timeline.find(w => w.isCurrentWeek)` auto-expand/highlight no-ops. A 6+ month (25–30 week) off-season/full-prep horizon is a normal, reachable state for a bodybuilder, so a user adds the show, enables the widget, and it shows nothing. This was flagged as a carried-over Deferred item in the 10-30 and 10-30#2 runs; this run fixes it.)
 
 ### STEP 0 — Requested changes
