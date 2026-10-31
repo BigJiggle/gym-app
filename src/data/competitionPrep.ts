@@ -91,9 +91,23 @@ export function buildPrepTimeline(showDate: string): { weeksOut: number; isCurre
   const totalDays = Math.max(0, Math.floor((show.getTime() - todayMidnight.getTime()) / 86400000))
   const currentWeek = Math.floor(totalDays / 7)
 
-  // Show from 2 weeks before current week (context) through show day
+  // Show from 2 weeks before current week (context) through show day, capping the
+  // list length so a far-out show doesn't render 30+ rows.
   const startWeek = Math.min(currentWeek + 2, 24)
   const items = []
+  // For a show beyond the capped window (currentWeek > 24 → startWeek pinned at 24)
+  // the loop below never reaches currentWeek, so WITHOUT this the current week is
+  // never flagged — PrepGuidanceWidget self-hides and the Education timeline loses
+  // its highlight/auto-expand. Surface the current week as the top item so it's
+  // always present and flagged, while still keeping the rest of the list capped.
+  if (currentWeek > startWeek) {
+    items.push({
+      weeksOut: currentWeek,
+      isCurrentWeek: true,
+      isPast: false,
+      guidance: getWeekGuidance(currentWeek),
+    })
+  }
   for (let w = startWeek; w >= 0; w--) {
     items.push({
       weeksOut: w,

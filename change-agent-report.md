@@ -1,5 +1,40 @@
 # Change Agent Report
 
+## Run: 2026-10-31 (BUG FIX — area (e) widgets + localStorage stores; the competition-only **`PrepGuidanceWidget` ("This Week in Prep") silently renders nothing for a show 25+ weeks out**, even though the user explicitly enabled it (the widget is only offered once a show exists). Same gap also strips the current-week highlight + auto-expand from the Education prep timeline. Root cause: `buildPrepTimeline(showDate)` in `src/data/competitionPrep.ts` caps its display window with `startWeek = Math.min(currentWeek + 2, 24)` and flags the current week only inside a `for (w = startWeek; w >= 0; w--)` loop via `isCurrentWeek: w === currentWeek`. When the show is 25+ weeks out, `currentWeek > 24` so the loop is pinned to `startWeek = 24` and NEVER reaches `currentWeek` → **no** item is flagged `isCurrentWeek`. Both consumers then break: `PrepGuidanceWidget` does `buildPrepTimeline(...).find(w => w.isCurrentWeek) ?? null` and early-returns `null` (vanishes); the Education timeline's `timeline.find(w => w.isCurrentWeek)` auto-expand/highlight no-ops. A 6+ month (25–30 week) off-season/full-prep horizon is a normal, reachable state for a bodybuilder, so a user adds the show, enables the widget, and it shows nothing. This was flagged as a carried-over Deferred item in the 10-30 and 10-30#2 runs; this run fixes it.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 14 queue items checked off) → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN before changes)
+Clean `master` + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (480 tests, 77 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (e) widgets (dashboard + Training/Nutrition tabs) + localStorage stores
+Rotated to **(e)** (least-recent; recent runs: (a) 10-30#2, (f) 10-30, (d) 10-29#3, (c) 10-29#2, (b) 10-29, (b) 10-28, then (e) 10-27#2). Deep-read the SCOPE error paths across the widget layer:
+- **Stores / persistence seams** — `localStore.ts` (`createLocalStore`: top-level shape guard + optional per-entry sanitizer + stable cached snapshot), `createWidgetStore.ts` + `useWidgets.ts` (unknown-id drop, de-dupe, default-set + one-time v2 migration, bounds-checked `reorder`), `competitionLogs.ts` (per-entry `validPosing/validSleep/validCondition/validSupplementDay` + `strArray` sanitizers), `cardioStore.ts` (legacy-id migration, non-array guard), `useWaterLog.ts` + `utils/water.ts` `nextWaterMl` / `utils/cardio.ts` `nextCardioLog`/`cardioMinutesOn` (non-finite→0, non-destructive cross-screen writes). All sound.
+- **Reorder zones** — `WidgetZone.tsx` / `TabWidgetZone.tsx` (real-stored-index preserved while hidden/competition-only/null-node slots are filtered; long-press cleanup on unmount; control-element guard), `TabWidgetControls.tsx`, `AddWidgets/index.tsx` (competition-only catalog gating). All sound.
+- **Computational widgets** — `WeeklyScorecardWidget`, `TodaysMacrosWidget`/`TodaysMealsWidget` (0/NaN-guarded denominators, orphan `meal_index` → `?? 0`), `TrainingVolumeWidget`/`WeeklyVolumeWidget`/`MuscleCoverageWidget`/`SessionsWeekWidget` (early-return/`>0` guards), `QuickStatsWidget`/`PrepPaceWidget` (`getShowCountdown.isPast`, `parseTargetWeightKg`), `RecentCheckinsWidget`/`CheckinFeedbackWidget` (robust `parseAdjustments` upstream → `notes` always a string[]), `SleepWidget`/`PosingWidget`/`SupplementWidget`/`ConditionWidget`/`CardioWidget`/`WaterWidget`/`DailyWeighInWidget`, and the Training "My Plan" / Nutrition "Meal Plan" inline tab nodes. All guarded.
+- **`src/data/competitionPrep.ts` — `buildPrepTimeline` ← bug here** (the one place the current-week flag can fall out of the returned list). `getWeekGuidance` confirmed to return valid guidance for any `weeksOut` (its final `return` is the >16 off-season bucket), so flagging a far-out current week doesn't crash.
+
+### STEP 3 — Fix (minimum, root-cause at the one seam)
+- **`src/data/competitionPrep.ts` — `buildPrepTimeline`**: when `currentWeek > startWeek` (a show beyond the 24-week display cap), **prepend** the current week as the top item (`{ weeksOut: currentWeek, isCurrentWeek: true, isPast: false, guidance: getWeekGuidance(currentWeek) }`) before the existing `startWeek..0` loop. The current week is now always present and flagged, the rest of the list stays capped (≤ 26 rows), and the common `currentWeek <= 24` path is **completely unchanged** (the prepend branch isn't taken — verified by the unchanged normal-case test). No other call sites or signatures touched.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (483 tests, +3 new in `tests/unit/prepTimelineCurrentWeek.test.ts`)
+- `npx electron-vite build` → PASS
+- Empirically confirmed the repro: before the fix the two far-out cases (30 weeks out, 25-week boundary) FAIL (`find(isCurrentWeek)` is `undefined`) while the normal ≤24-week case passes; after the fix all three pass.
+
+### Files changed
+- `src/data/competitionPrep.ts` — `buildPrepTimeline` prepends the current week when it exceeds the display cap.
+- `tests/unit/prepTimelineCurrentWeek.test.ts` — 3 new tests (30-weeks-out current-week flagged + future + real guidance; unchanged ≤24-week window behaviour incl. +2 context and peak-week tail; 25-week boundary).
+- `change-agent-report.md` — this entry.
+
+### Deferred (not done — out of minimum scope this run)
+For a show 25+ weeks out the Education timeline now shows the current week at the top followed by the capped `24..0` window, which leaves a visual gap (e.g. "30 weeks out" → "24 weeks out") for 26+ week horizons. This is intentional and strictly better than the widget/section vanishing — weeks 17+ all share identical off-season guidance anyway — so fully back-filling the gap (vs. keeping the list short) is left as a cosmetic call, not a defect.
+
 ## Run: 2026-10-30 #2 (BUG FIX — area (a) nutrition engine + Diet flows; a non-finite `height_cm` or `age` propagates **NaN into the stored, displayed `calories_target` AND `carbs_g`** of every generated diet plan, so the Diet page shows "NaN kcal" / "NaN g" headline targets while the per-meal macro cards look sane — a DB↔UI desync. Root cause: `calcBMR` did a raw `10*weight + 6.25*height - 5*age`; a non-finite height/age makes it NaN → `tdee = Math.round(NaN) = NaN` → `calories = Math.max(1200, NaN + adjustment)` is **NaN** (`Math.max(1200, NaN) === NaN`) → `carbs_g = Math.round((NaN - …)/4)` is NaN. `buildMeals` floors its OWN `totalCal` to `MIN_CALORIE_TARGET`, so the per-meal numbers self-heal — which is exactly what hides the bug — but the top-level plan fields persist as NaN and divide into the Diet page's intake percentages. `weight_kg` is already defended by `clampWeightKg` at its callers; `height_cm` and `age` had no counterpart. Reachable via the same corrupt / hand-edited numeric-cell vector prior runs (10-29#3, the diet/training read-seam fixes) accepted as in-scope — SQLite is dynamically typed, so a required numeric column can read back as a string or NaN — and it also makes `plan:previewGoalCalories` return NaN for every goal in the GoalPickerModal.)
 
 ### STEP 0 — Requested changes
