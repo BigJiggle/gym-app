@@ -1,5 +1,45 @@
 # Change Agent Report
 
+## Run: 2026-11-01 (NO BUG FOUND — area (c) check-in + Progress + adaptive nutrition re-audited against the now-larger codebase and confirmed clean; extended spot-checks into (d) data-lifecycle and (f) shows/date logic also clean. No real reachable defect found, so no fix was fabricated.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all queue items checked off) → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN)
+Clean `master` + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (483 tests, 78 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (c) check-in + Progress + adaptive nutrition
+Rotated to **(c)** (least-recent; recent runs: (b) 10-31#2, (e) 10-31, (a) 10-30#2, (f) 10-30, (d) 10-29#3, (c) 10-29#2). (c) was last audited clean on 10-29#2; this run re-traced it against the current, larger tree (483 vs 467 tests then) and re-verified every SCOPE error path, then extended into the adjacent due areas to maximise the chance of catching a real bug.
+
+- **`electron/services/checkinEngine.ts`** — `parseAdjustments` (guarantees the `{calories_delta, cardio_change, training_volume_change, notes[]}` shape against `'{}'`/non-JSON/legacy cells; every downstream `.notes.map`/`.calories_delta` consumer is safe), `clampCheckinWeightKg` (30–300 kg, rejects non-finite/≤0 → caller rejects), `weeksBetweenDates` (null on missing/unparseable/non-positive span, local-noon parse), `weightTrend` (single-week fallback; 0/non-finite bodyweight → 0), `weightTrendPct` (Theil–Sen median of pairwise per-week slopes; filters non-finite weights, skips non-positive x-gaps so a same-day duplicate can't divide by zero → Infinity, falls back to interval-index x when dates unparseable, needs ≥2 priors), `calculateAdjustments` (cut/recomp thresholds; recovery/stress/adherence notes; first-check-in `previous=null` path adds no spurious adjustment). All guarded.
+- **`electron/ipc/checkinHandlers.ts`** — all five handlers re-traced: `checkin:submit` (write-seam weight clamp; duplicate-same-day reject; interval lock by `check_in_date DESC`; diet-plan recalc with `MIN_CALORIE_TARGET`-floored ratio so a 0-target plan can't make meal scaling NaN/Infinity; `clampWeightKg` on macro weight; `recentCheckins` queried *before* the insert so it is priors-only), `checkin:submitMissed` (same clamp/dup-reject; chronological `week_number` back-fill + shift), `checkin:update` (date-clash guard; null/empty `check_in_date` dropped so NOT-NULL isn't violated; previous/trend scoped by effective **date** not insertion id; `(date,id)` renumber on date change; recomputes adjustments but deliberately does **not** re-apply to the live diet plan — avoiding a double-count, a prior deliberate decision), `checkin:history`/`checkin:latest` (parse adjustments at the read seam). 
+- **DB↔UI follow-through** — `src/store/planStore.ts` `submitCheckin` cascades `getDietPlan` after submit, so the calorie/macro recalc the handler writes is reloaded into the store (no desync).
+- **`src/pages/Progress/index.tsx`** — empty state (0 check-ins); `computeEstimatedBF` (weight clamped → denom >0; BF clamped 3–60 → bounded lbm/fat); `first`/`latest`/`elapsedWeeks` ordering (progress:entries ASC vs checkinHistory DESC — consistent); measurement weekly-rate floored at ≥1 week; 8-week diet-consistency `target>0` guard + DST-safe Monday arithmetic; required-rate direction colouring; wellness averages (length-guarded); body-comp chart (≥2-point). All guarded.
+- **`src/pages/CheckIn/index.tsx`** — `toKg`/`toCm` (reject NaN/≤0); auto-fill training/diet adherence (both effects guard `sessions?.length`/`meals?.length` so `expectedMeals`/`expectedSessions` are never 0; `daysSince` floored at 1); `saveEdit` validation returns hit `finally` (saving flag always reset); success-screen Show-Day projection (`weeksToShow ≤ 0 → null`, and `show_date` only ever a valid `<input type=date>` value so no NaN escape); locked-screen countdown; `MissedSlotPanel`.
+- **`src/utils/`** — `weeklyRate.ts` (≥1-week span or null, non-finite filtered), `weeksTracked.ts` (calendar span not row count), `targetWeight.ts` (NaN/≤0 → null), `dates.ts` (DST-safe `addDays`/`weekStartMonday`, `getShowCountdown` clamps `totalDays≥0` + separate `isPast`), `checkinSchedule.ts` (`countMissedBetween` guards interval ≤0/non-finite → no infinite `addMissedFrom` loop; biweekly uses a 14-day effective interval so no phantom mid-gap slot). The main-process `electron/services/checkinSchedule.ts` copy was diffed against the renderer copy: shared missed-slot logic is identical (only `getNextCheckinDate`, the local `CheckIn` interface vs the imported type, and comments differ — all by design).
+
+### STEP 2b — Extended spot-checks (adjacent due areas), all clean
+- **(d) data-lifecycle** — `electron/ipc/userHandlers.ts` (`parseUser`/`safeJsonArray` degrade a corrupt user TEXT cell to `[]` so startup can't brick; `user:resetAll` snapshots weigh-ins before the cascade delete), `electron/ipc/userSanitize.ts` (`sanitizeUserUpdate` clamps age/height/weight/freq/exercises/sets/meal/snack/bodyfat at the write seam, drops non-finite so a cleared field never NULLs a required column, and drops the derived `show_date`/`division`), `src/utils/resetData.ts` (`mergeWeighIns` one-entry-per-date, existing wins, invalid dropped; `resetLocalData` preserves only weigh-in + water keys; `userStore.resetAllData` hard-reloads so singleton stores can't resurrect deleted data). The Settings profile-edit height/weight imperial↔metric conversion round-trips correctly and a cleared numeric field (`parseFloat('')→NaN`) is dropped at the sanitizer.
+- **(f) shows/date logic** — `electron/services/showDates.ts` (`weeksUntilShow` local-midnight math matches the UI countdown; `localToday` uses local date not SQLite UTC), `electron/ipc/showHandlers.ts` (`syncPrimaryToNearest`/`persistProfileShowDate`/`setPrimaryShow` keep `users.show_date` consistent; malformed AI dates ignored; `shows:add/update/delete/cancelShow/setPrimary` each regenerate the diet for the new weeks-out to avoid a DB↔UI desync). Confirmed `nutritionEngine` has **no** `Math.random`/`Date.now()` → meal generation is deterministic, so the diet regen triggered when a *farther-future* (non-primary) show is added produces an identical plan (redundant, not destructive). `shows:update`'s `division ?? null` wipe-on-omit is **not reachable** — `window.api.updateShow` is exposed in preload but has no renderer caller. `meal_completions` has `UNIQUE(user_id,date,meal_index)` so `INSERT OR REPLACE` can't duplicate rows.
+
+### STEP 3 — Fix
+None. No real, reachable defect was found in (c) or the extended (d)/(f) checks. Per the mission rules ("do not invent problems; do not 'fix' correct code; do NOT fabricate a fix"), no change was made.
+
+### STEP 4 — Verification (unchanged baseline, all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (483 tests, 78 files)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `change-agent-report.md` — this entry only (no code change).
+
+### Deferred / observations (not defects — no action taken)
+- **`setPrimaryShow` vs `syncPrimaryToNearest` (design, not a bug):** a user can manually set a non-nearest upcoming show as primary, but the next `syncPrimaryToNearest` (startup / any show add/update/delete) re-points `users.show_date` to the *nearest* upcoming show, so a manual non-nearest primary choice does not persist across those events. This is consistent with the function's stated "always nearest upcoming" invariant; whether to let a manual primary stick is a product/UX decision, not a crash or data-corruption defect, so it was left untouched per the minimal-debug scope.
+- **Check-in measurement fields (waist/chest/hip/arm/thigh) are not range-clamped at the write seam** (only `weight_kg` is). They feed display-only surfaces (Measurement Changes card, MeasurementsChart) and `computeEstimatedBF`, whose output is already clamped 3–60% — so an extreme typo shows a large but non-crashing value. Weight is clamped specifically because it drives the backend trend/calorie adaptation; measurements drive no backend math, so clamping them would be display polish rather than a reachable-defect fix. Noted for a future run if the owner wants input hygiene there.
+
 ## Run: 2026-10-31 #2 (NO BUG FOUND — area (b) training engine + workout/session flows audited clean; no real reachable defect found this run, so no fix was fabricated)
 
 ### STEP 0 — Requested changes
