@@ -831,6 +831,16 @@ Ensure every exercise respects the constraints above while maintaining phase-app
           meal_count: [1, 20],
           snack_count: [0, 20],
           training_frequency: [2, 6],
+          // exercises_per_session / sets_per_exercise are written straight to the
+          // users row here, bypassing sanitizeUserUpdate's clampExercisesPerSession
+          // (3–12) / clampSetsPerExercise (2–8). Without these bounds an AI-applied
+          // "give me 40 working sets per exercise" persists unclamped, and getSets()
+          // honors it verbatim (compounds +1, no cap unless maxSetsOverride is set) —
+          // the plan then renders 41-set exercises while the live WorkoutSession caps
+          // display at 20 (clampSetCount), a DB↔UI desync on every future regen. Clamp
+          // to the same ranges every other write seam uses.
+          exercises_per_session: [3, 12],
+          sets_per_exercise: [2, 8],
         }
         if (k in NUMERIC_BOUNDS && typeof v === 'number') {
           const [lo, hi] = NUMERIC_BOUNDS[k]

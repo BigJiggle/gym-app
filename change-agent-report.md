@@ -1,5 +1,38 @@
 # Change Agent Report
 
+## Run: 2026-11-02 #2 (BUG FIX — area (d) onboarding + Settings + reset + data lifecycle; the **AI-assistant apply path (`plan:applyAIRequest`) persisted `exercises_per_session` / `sets_per_exercise` unclamped**, bypassing the `clampExercisesPerSession` (3–12) / `clampSetsPerExercise` (2–8) guards the Settings "Edit profile" save route uses. A request the assistant turns into a settings change — e.g. "give me 40 working sets per exercise" — stored the raw value, and `getSets()` honors it verbatim (compounds +1, no cap unless a `maxSetsOverride` is supplied, which a plain settings change does not carry), so the regenerated plan rendered 41-set exercises while the live WorkoutSession caps every set at 20 (`clampSetCount`) — the exact nonsensical-plan + DB↔UI desync the Settings clamp closes, reopened on the sibling write seam.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (12 checked off) → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN before changes)
+- `npx tsc --noEmit` → clean (exit 0)
+- `npm test` → 488 passed (78 files)
+- `npx electron-vite build` → built OK
+
+### STEP 2 — Area audited: (d) onboarding + Settings + reset + data lifecycle
+Rotated off the last five runs' areas (a, c, b, e, a). Traced every user-profile write seam: onboarding (`useOnboarding`, `validateStep`, `Step2Goals`), Settings "Edit profile" (`sanitizeUserUpdate` → `clampAge/HeightCm/WeightKgField/TrainingFrequency/ExercisesPerSession/SetsPerExercise`), `user:create`, the reset lifecycle (`resetData.ts`, `user:resetAll`, `userStore.resetAllData`), `settingsStore` / `settings:*`, `showHandlers` (add/update/delete/cancel/setPrimary + `syncPrimaryToNearest`), `db.ts`, `schema.ts` migrations, and `units.ts`. All but one seam already guard out-of-range / non-finite input (the product of prior runs). The gap: **the AI apply path writes the users row directly and only clamps `meal_count` / `snack_count` / `training_frequency` in its `NUMERIC_BOUNDS` table** — `exercises_per_session` and `sets_per_exercise` (both in its `ALLOWED_COLUMNS`) fell through unclamped.
+
+### The bug (root cause)
+`electron/ipc/planHandlers.ts` — the `plan:applyAIRequest` settings-change block applies `result.settingChanges` straight to `UPDATE users …`, clamping only the three fields in `NUMERIC_BOUNDS`. `sets_per_exercise` / `exercises_per_session` persisted raw. Then (regenerate path) `generateTrainingPlan` → `getSets(phase, isCompound, exp, userDefault, userMax)` returns `userDefault` / `userDefault + 1` with a cap applied only when `userMax !== undefined`; the AI path sets `userMax` only from `result.maxSetsOverride`, which a plain settings change does not include (the explicit `maxSetsOverride` hard-cap at planHandlers.ts:955 is likewise skipped). Result: the stored plan carries 40/41-set exercises, the Training tab renders them verbatim, and the live WorkoutSession clamps display to 1–20 — a persisted out-of-range column + DB↔UI desync, reachable through the shipped AI assistant.
+
+### STEP 3 — Fix (minimum, at the one seam)
+`electron/ipc/planHandlers.ts:828` — added `exercises_per_session: [3, 12]` and `sets_per_exercise: [2, 8]` to the AI path's `NUMERIC_BOUNDS` so these two fields clamp to the same ranges `sanitizeUserUpdate` (Settings), the onboarding inputs, and the engine's sane output already agree on. No other change; `training_experience_years` was left alone (it is bounded downstream — `exp >= 3 ? 1 : 0` in `getSets`, `Math.min(10, …)` in the adaptive path — so an out-of-range value has no material effect and clamping it would be fixing correct code).
+
+### STEP 3b — Test (failing-first, then green)
+Added `tests/unit/applyAIRequestTrainingFieldClamp.test.ts` (2 tests), driving the REAL `plan:applyAIRequest` against an in-memory DB with `generateWorkoutWithClaude` stubbed to reject (so the rule-based engine runs): (1) a settings change of `{ sets_per_exercise: 40, exercises_per_session: 30 }` must persist 8 / 12; (2) a `regenerateTraining` run must emit no exercise above 9 sets. Both FAILED before the fix (stored 40, rendered 41 sets) and PASS after.
+
+### STEP 4 — Verification (after fix, all PASS)
+- `npx tsc --noEmit` → clean (exit 0)
+- `npm test` → **490 passed** (79 files; +2 new)
+- `npx electron-vite build` → built OK
+
+### Files changed
+- `electron/ipc/planHandlers.ts` — two bounds added to `NUMERIC_BOUNDS` (+ rationale comment).
+- `tests/unit/applyAIRequestTrainingFieldClamp.test.ts` — new regression test (2 cases).
+
+---
+
 ## Run: 2026-11-02 (BUG FIX — area (a) nutrition engine + Diet flows; the Diet page's **"Exclude this food from future plans" (✕) button silently failed for every food whose display name differs from its canonical food id** — Salmon Fillet, Whole Eggs, Mixed Berries, Lean Ground Beef, Tuna, etc. The food kept reappearing after every plan regeneration, exactly the failure mode the earlier `foodId.ts` "xN" fix was meant to prevent, but only half-closed.)
 
 ### STEP 0 — Requested changes
