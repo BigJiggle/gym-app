@@ -1,5 +1,43 @@
 # Change Agent Report
 
+## Run: 2026-11-02 (BUG FIX — area (a) nutrition engine + Diet flows; the Diet page's **"Exclude this food from future plans" (✕) button silently failed for every food whose display name differs from its canonical food id** — Salmon Fillet, Whole Eggs, Mixed Berries, Lean Ground Beef, Tuna, etc. The food kept reappearing after every plan regeneration, exactly the failure mode the earlier `foodId.ts` "xN" fix was meant to prevent, but only half-closed.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all queue items checked off) → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN before changes)
+Clean `master` + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (483 tests, 78 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (a) nutrition engine + Diet flows
+Rotated to **(a)** (least-recently-fully-audited; recent runs: (c) 11-01, (b) 10-31#2, (e) 10-31, (a) 10-30#2, (f) 10-30, (d) 10-29#3). Deep-read the nutrition layer end to end: `nutritionEngine.ts` (phase deficit, `buildMeals`/`getMealTemplates`/`calcPortionStr`, `getFood`/`isExcluded`, clamps and sanitizers), `planHandlers.ts` (generateDiet, recalculateMacros, refineDiet*, applyAIRequest, swapMeal, **reorderMeals** completion-remap, previewGoalCalories), `mealCompletionHandlers.ts` (orphan purge), `planStore.ts`, and the Diet UI (`Diet/index.tsx` meal cards / drag-reorder / refeed / Today's Intake, `WeeklyMealView`, `GroceryList`, `swapAlternatives`, `refeed`, `mealAccordion`). Engine math, sanitizers, reorder remap, and refeed are all well-hardened by prior runs — no defect there.
+
+### The bug (root cause)
+The Diet page renders each food as a chip and offers a ✕ to "Exclude this food from future plans" (`handleExcludeFood` → `foodLabelToExclusionId(label)` in `src/utils/foodId.ts:13`). That helper slugged the DISPLAY label straight to an id: `"Salmon Fillet (180g)"` → `"salmon_fillet"`, `"Whole Eggs x3"` → `"whole_eggs"`, `"Mixed Berries (100g)"` → `"mixed_berries"`. But the exclusion engine (`isExcluded` in `nutritionEngine.ts`) matches an exclusion only against the canonical food **id** (`salmon`, `eggs`, `berries`) or an `EXCLUSION_ALIASES` key — never the slugged display name. So the stored exclusion matched nothing: `getFood('salmon', ['salmon_fillet'])` saw salmon as NOT excluded, regenerated it, and the food the user explicitly removed reappeared on the next plan build.
+
+- **Reachable & common:** affects any food whose picker display name ≠ its id — Salmon Fillet (`salmon`), Whole Eggs (`eggs`), Mixed Berries (`berries`), Lean Ground Beef (`lean_beef`), Tuna canned (`tuna_can`), and more; all appear in default omnivore/vegetarian/vegan templates. The earlier `foodId.ts` fix only handled the `xN` suffix (foods where display already equals the id, e.g. rice_cakes), leaving this larger class broken.
+- **Not an allergen-safety hole:** allergen avoidance goes through the `dietary_restrictions` labels (→ `EXCLUSION_ALIASES`), which already worked. This ✕ is the per-food *preference* path.
+
+### STEP 3 — Fix (minimum, at the seam)
+`src/utils/foodId.ts` — resolve the slug back to the canonical id through the food picker's own list (`FOODS`, the single source of truth for exclusion ids: the prefs-panel picker stores `f.id`). Built a `DISPLAY_SLUG_TO_ID` map (`slugify(f.name) → f.id`) once; `foodLabelToExclusionId` now returns `DISPLAY_SLUG_TO_ID.get(slug) ?? slug`. Every food the picker knows now round-trips to the id the engine matches; a display name the picker doesn't carry (culture dishes like "Jollof Rice", branded shakes) keeps its slug exactly as before — **no regression** (and labels whose slug already equals their id, e.g. `chicken_breast`, are unchanged). The `xN`/portion-strip pipeline was factored into a shared `slugify` so the map keys and the returned slug derive identically.
+
+Known remaining limitation (not fixed — out of minimal scope, would need the engine's culture map in the renderer): culture-specific display names not present in `FOODS` (e.g. "Jollof Rice" → engine id `white_rice`) still don't resolve via ✕. Noted for a future run.
+
+### STEP 3b — Test (failing-first, then green)
+`tests/unit/foodId.test.ts` — added a `display-name labels resolve to their canonical food id` block: (1) the mapping unit (`'Salmon Fillet (180g)'`→`salmon`, `'Whole Eggs x3'`→`eggs`, `'Mixed Berries (100g)'`→`berries`), (2) unchanged-slug cases (`chicken_breast`/`broccoli`/`rice_cakes`), (3) the FOODS-miss fallback (`'Jollof Rice …'`→`jollof_rice`), and (4) two behavioral tests via `buildMealsPublic` proving salmon / whole-eggs actually leave a regenerated omnivore plan once excluded through the ✕ label. All three new assertions FAILED against the old code (reproduced the bug), then PASS with the fix.
+
+### STEP 4 — Verification (after fix, all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (488 tests, 78 files; +5 new foodId cases)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `src/utils/foodId.ts` — resolve display-label slug to canonical food id via `FOODS` name→id map (`foodLabelToExclusionId`).
+- `tests/unit/foodId.test.ts` — +5 cases (mapping, unchanged-slug, fallback, two behavioral exclusion round-trips).
+- `change-agent-report.md` — this entry.
+
 ## Run: 2026-11-01 (NO BUG FOUND — area (c) check-in + Progress + adaptive nutrition re-audited against the now-larger codebase and confirmed clean; extended spot-checks into (d) data-lifecycle and (f) shows/date logic also clean. No real reachable defect found, so no fix was fabricated.)
 
 ### STEP 0 — Requested changes
