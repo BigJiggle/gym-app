@@ -22,21 +22,48 @@ function genId(): string {
   return c?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
-// Load persisted entries, migrating any legacy rows that predate per-entry ids
-// (older format was { date, type, minutes }). Persist back if we had to add ids
-// so the ids stay stable across reloads.
-function loadInitial(): CardioEntry[] {
+// Sanitize+migrate a raw parsed array into well-formed CardioEntry rows.
+//
+// cardio_log is shared across screens and user-editable, so — like every other
+// log store (competitionLogs' validPosing/validSleep, localStore's `sanitize`) —
+// a valid array can still carry a corrupt entry: a `null`, a hand-edited
+// `minutes:"20"` string, or `minutes:"abc"`. Those slip past the top-level
+// Array.isArray guard and then poison consumers: CardioWidget's
+// `weekMins = reduce((s,e)=>s+e.minutes,0)` STRING-CONCATENATES a numeric total
+// with a string minutes (`30 + "20"` → "3020"), rendering a nonsensical
+// "· 3020 min". This mirrors cardio.ts `minutesOf`: coerce minutes with Number()
+// and keep only finite values, drop entries without a usable date. Legacy rows
+// (no per-entry id, older `{date,type,minutes}` format) are still migrated by
+// minting an id. `changed` is true whenever anything was repaired/dropped so the
+// cleaned log is persisted back.
+function sanitizeEntries(raw: unknown[]): { entries: CardioEntry[]; changed: boolean } {
+  let changed = false
+  const entries: CardioEntry[] = []
+  for (const e of raw) {
+    if (!e || typeof e !== 'object') { changed = true; continue }
+    const row = e as Record<string, unknown>
+    if (typeof row.date !== 'string') { changed = true; continue }
+    const minutes = Number(row.minutes)
+    if (!Number.isFinite(minutes)) { changed = true; continue }
+    const id = typeof row.id === 'string' ? row.id : genId()
+    const type = typeof row.type === 'string' ? row.type : 'Other'
+    if (id !== row.id || type !== row.type || minutes !== row.minutes) changed = true
+    entries.push({ id, date: row.date, type, minutes })
+  }
+  return { entries, changed }
+}
+
+// Load persisted entries, sanitizing corrupt rows and migrating any legacy rows
+// that predate per-entry ids (older format was { date, type, minutes }). Persists
+// back whenever anything was repaired so the stored log stays clean and ids stay
+// stable across reloads. Exported for unit testing the load seam.
+export function loadInitial(): CardioEntry[] {
   try {
     const raw = JSON.parse(localStorage.getItem('cardio_log') ?? '[]')
     if (!Array.isArray(raw)) return []
-    let changed = false
-    const migrated: CardioEntry[] = raw.map((e) => {
-      if (e && typeof e.id === 'string') return e as CardioEntry
-      changed = true
-      return { id: genId(), date: e?.date, type: e?.type, minutes: e?.minutes }
-    })
-    if (changed) localStorage.setItem('cardio_log', JSON.stringify(migrated))
-    return migrated
+    const { entries, changed } = sanitizeEntries(raw)
+    if (changed) localStorage.setItem('cardio_log', JSON.stringify(entries))
+    return entries
   } catch {
     return []
   }

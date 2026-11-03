@@ -1,5 +1,42 @@
 # Change Agent Report
 
+## Run: 2026-11-03 (BUG FIX — area (e/f) widgets + localStorage stores; the **`cardioStore` is the only log store that never sanitizes its entries** — it migrates legacy rows (mints ids) but passes every other row through verbatim. A corrupt / hand-edited `cardio_log` entry with a non-numeric `minutes` (e.g. `"20"`) then reaches `CardioWidget`'s `weekMins = reduce((s,e)=>s+e.minutes,0)`, where `30 + "20"` STRING-CONCATENATES to `"3020"`, and `"3020" > 0` coerces truthy — so the widget renders a nonsensical "· 3020 min" weekly total instead of "50 min". A value-shown-doesn't-match-what's-stored desync reachable through the explicitly in-scope "corrupted or hand-edited localStorage".)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (the only `- [ ]` matches are in the format/instructions prose, not the queue) → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN before changes)
+Clean `master` + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (clean, exit 0)
+- `npm test` → PASS (490 tests, 79 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (f) shows/competition + date/week logic, extended into (e) widgets + localStorage stores
+Rotated to **(f)** (least-recently-audited: recent runs were (d) 11-02#2, (a) 11-02, (c) 11-01, (b) 10-31#2, (e) 10-31, (f) 10-30). Deep-traced the entire date/week + show surface and found it **clean** — the product of many prior fixes:
+- `src/utils/dates.ts` (`getShowCountdown` noon-vs-midnight + `isPast`, `weekStartMonday`, DST-safe `addDays`), `electron/services/showDates.ts` (`weeksUntilShow`, `localToday`), `electron/ipc/showHandlers.ts` (`syncPrimaryToNearest`, `persistProfileShowDate`, add/update/delete/cancel/setPrimary, off-season transition), `electron/services/checkinSchedule.ts` (next-date, missed-slot `floor(gap/interval)-1`, interval-0 infinite-loop guard), `src/utils/weeklyRate.ts` / `weeksTracked.ts`, `src/data/competitionPrep.ts` (`buildPrepTimeline` cap + current-week surfacing, `getWeekGuidance` contiguous thresholds), all countdown/prep widgets (PeakWeek, PrepGuidance, PrepPace, QuickStats, WeeklyScorecard, SessionsWeek), `determinePhase`, `day_of_week` 1–7 convention across engine/Claude/UI, `DAY_SCHEDULES` vs the 2–6 `clampTrainingFrequency`, NavSidebar, Settings show management, the AI apply path's `show_date`/`division` handling, and the Progress/CheckIn show projections. No reachable defect in any of it.
+- Extended the sweep into **(e)** (widgets + localStorage stores) and the shared cardio helpers. There the real defect surfaced: `src/store/cardioStore.ts` admits unsanitized entries while every sibling store guards them — `competitionLogs.ts` `validPosing`/`validSleep` require `Number.isFinite(e.minutes)`, `localStore.ts` has a `sanitize` hook, and `src/utils/cardio.ts` `minutesOf` already coerces cardio minutes with `Number()`. `cardioStore` was the gap.
+
+### The bug (root cause)
+`src/store/cardioStore.ts` — `loadInitial()` only migrated rows missing an id (`{date,type,minutes}` → add id) and returned every other row untouched. A corrupt/hand-edited `cardio_log` therefore kept entries like `{minutes:"20"}` (string) or `{minutes:"abc"}` or a bare `null`. Consumers that sum minutes with a plain `reduce((s,e)=>s+e.minutes,0)` — `CardioWidget.tsx:20` (`weekMins`) — then string-concatenate: `0 + 30 = 30`, `30 + "20" = "3020"`, and the `weekMins > 0` render guard coerces `"3020"` truthy, so the dashboard shows "· 3020 min" for a real 50-minute week. (`PosingWidget` uses the same raw reduce but is safe because `posingStore` already drops non-finite entries; `cardioStore` was the lone unguarded store.)
+
+### STEP 3 — Fix (minimum, at the store load seam)
+`src/store/cardioStore.ts` — added `sanitizeEntries()` and routed `loadInitial()` through it (also now `export`ed for the load-seam test). Each row must be an object with a string `date`; `minutes` is coerced via `Number()` and kept only when `Number.isFinite` (so a hand-edited `"20"` is preserved as `20`, while `"abc"`/`null`/non-objects are dropped); missing `id` still mints one (legacy migration preserved), missing `type` defaults to `'Other'`. The cleaned log is persisted back whenever anything was repaired/dropped. This mirrors the coercion philosophy of `cardio.ts` `minutesOf` and the drop-bad-entries philosophy of `competitionLogs`, closing the one store that lacked both. No consumer changes needed — every reader now receives finite numeric `minutes`.
+
+### STEP 3b — Test (failing-first, then green)
+`tests/unit/cardioStore.test.ts` — added a `loadInitial — corrupted / hand-edited localStorage` block (2 cases): (1) a `cardio_log` mixing a numeric entry, a string-`"20"` entry, a `null`, a legacy id-less row, and an `"abc"`-minutes row must load as exactly 3 well-formed entries, the string `"20"` coerced to `20`, the garbage dropped, and the `CardioWidget` reduce yielding the **number** `65` (not `"3020…"`); (2) a well-formed log is returned unchanged. Case (1) was verified to FAIL against the pre-fix `loadInitial` (kept 5 rows incl. garbage; reduce produced a string) and PASS after.
+
+### STEP 4 — Verification (after fix, all PASS)
+- `npx tsc --noEmit` → PASS (clean, exit 0)
+- `npm test` → PASS (**492 tests**, 79 files; +2 new)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `src/store/cardioStore.ts` — `sanitizeEntries()` + sanitizing/export of `loadInitial()`.
+- `tests/unit/cardioStore.test.ts` — +2 load-seam corruption cases.
+- `change-agent-report.md` — this entry.
+
+---
+
 ## Run: 2026-11-02 #2 (BUG FIX — area (d) onboarding + Settings + reset + data lifecycle; the **AI-assistant apply path (`plan:applyAIRequest`) persisted `exercises_per_session` / `sets_per_exercise` unclamped**, bypassing the `clampExercisesPerSession` (3–12) / `clampSetsPerExercise` (2–8) guards the Settings "Edit profile" save route uses. A request the assistant turns into a settings change — e.g. "give me 40 working sets per exercise" — stored the raw value, and `getSets()` honors it verbatim (compounds +1, no cap unless a `maxSetsOverride` is supplied, which a plain settings change does not carry), so the regenerated plan rendered 41-set exercises while the live WorkoutSession caps every set at 20 (`clampSetCount`) — the exact nonsensical-plan + DB↔UI desync the Settings clamp closes, reopened on the sibling write seam.)
 
 ### STEP 0 — Requested changes
