@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { useUserStore } from '../../store/userStore'
 import { usePlanStore } from '../../store/planStore'
 import { useSettingsStore } from '../../store/settingsStore'
-import { localDateStr } from '../../utils/dates'
+import { localDateStr, getShowCountdown } from '../../utils/dates'
 import { computeWeeklyWeightRate } from '../../utils/weeklyRate'
 import { parseTargetWeightKg } from '../../utils/targetWeight'
 
@@ -73,6 +73,15 @@ export default function PrepPaceWidget() {
             const fmt = (kg: number) => isImperial ? `${Math.round(kg * 2.20462 * 10) / 10}` : `${Math.round(kg * 10) / 10}`
             const showDateStr = nearestShow?.show_date
             const weeksToShow = showDateStr ? Math.max(0, (new Date(showDateStr + 'T12:00:00').getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 7)) : null
+            // Weeks-OUT label uses the canonical floor-based getShowCountdown().weeks —
+            // the same value the sidebar, QuickStats/PeakWeek widgets, Settings, the
+            // Training tab, and the Progress countdown all show. The fractional
+            // `weeksToShow` above stays fractional for the projection math only;
+            // rounding it for the LABEL (Math.round) overstated weeks-out by one for
+            // any show ≥4 remainder days out (e.g. a 39-day show read "6w" here while
+            // every other surface said "5 weeks out") — a cross-surface desync on the
+            // athlete's single most important prep metric.
+            const showWeeksOut = showDateStr ? getShowCountdown(showDateStr).weeks : null
             const projectedKg = weeksToShow !== null ? currentWeightKg + weeklyRateKg * weeksToShow : null
             // Guard the persisted target the same way CheckIn/Progress do: a
             // corrupt/hand-edited "abc"/"NaN" would otherwise pass the truthy-string
@@ -87,7 +96,7 @@ export default function PrepPaceWidget() {
                 </p>
                 {projectedKg !== null && weeksToShow !== null && weeksToShow > 0 && (
                   <p className="text-xs mt-1">
-                    <span className="text-gray-500">Show day ({Math.round(weeksToShow)}w): </span>
+                    <span className="text-gray-500">Show day ({showWeeksOut ?? Math.floor(weeksToShow)}w): </span>
                     <span className="font-semibold text-gray-300">~{fmt(projectedKg)} {wUnit}</span>
                     {targetKg !== null && (
                       <span className={`ml-1.5 font-medium ${

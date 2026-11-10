@@ -1,5 +1,44 @@
 # Change Agent Report
 
+## Run: 2026-11-10 #2 (BUG FIX — area (a/f) Diet + prep-pace widgets + date/week logic; the **Prep Pace dashboard widget and the Check-In "Show Day Projection" overstated weeks-out by one for any show ≥4 remainder days out**. Both rendered `Math.round(weeksToShow)` from a *fractional* weeks value, while the rest of the app — the sidebar countdown, QuickStats/PeakWeek widgets, Settings, the Training tab, and (as of run #1 today) the Progress countdown — reports weeks-out via the canonical **floor-based** `getShowCountdown().weeks`. For a show 39 days out (5 weeks + 4 days) the sidebar/Training/Progress say "5 weeks out" while the Prep Pace widget said "Show day (6w)" and Check-In said "~6w projection · 6 weeks to show" — the exact same cross-surface desync run #1 fixed on Progress, on the two sibling display seams it didn't reach. On the **dashboard this is a same-screen contradiction**: QuickStats/PeakWeek (floor) vs Prep Pace (round) side by side.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (the only `- [ ]` matches are in the format/instructions prose, not the queue) → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN before changes)
+Clean `master` + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (494 tests, 80 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (a) nutrition engine + Diet flows, extended into (b) training and (f) date/week display
+Rotated off run #1's (c). Deep-read **(a)** and confirmed it clean: `nutritionEngine` (`generateNutritionPlan`, `buildMeals` SNACK_CAL/mainCalories split, `calcPortionStr`, `getMealTemplates` main/snack index sets, `getFood`/`getCultureFood` substitution, `normalizeMeals`/`sanitizeCalorieTarget`/`sanitizeMacroGrams`/`clampMealCount`/`clampWeightKg`), the Diet page (`Today's Intake` reduce over `displayMeals[c.meal_index]`, refeed boost via `applyRefeedToMeals`, `mealAdherenceStreak`, `activeMealIndex`, water/cardio steppers via `nextWaterMl`/`nextCardioLog`/`cardioMinutesOn`), `GroceryList.buildGroceryItems` (gram/fixed-count/plain aggregation), `WeeklyMealView`, `swapAlternatives` (restriction/exclusion filtering), `recipeSteps`, and the backend `mealCompletionHandlers` (UNIQUE(user,date,meal_index) dedupe), `plan:generateDiet`/`swapMeal`/`reorderMeals` (completion remap on pure-permutation only). All hardened by prior runs. Fuzzed `generateTrainingPlan` across 6 splits × 3 equipment × freq 2–6 × exercises-per-session {undef,1–12} × 4 goals × 7 weeks-out values (`tests/scratch` harness) → **0 empty sessions, 0 duplicate exercise names, 0 non-positive set counts**; `workoutHandlers` (sanitizeReps/WeightKg), `detectNewPRs`, `WorkoutStats`, `userSanitize`, `checkinEngine`/`checkinSchedule`, `resetData` all re-confirmed clean. The real defect surfaced in the weeks-out DISPLAY seams the run #1 (c) fix left behind.
+
+### The bug (root cause)
+`getShowCountdown(showDate).weeks` = `Math.floor(totalDays/7)` is the app's canonical "weeks out" and is what every durable surface shows (sidebar `NavSidebar`, `QuickStatsWidget`, `PeakWeekWidget`, `Settings`, `Education`, the Training tab's prep %, the backend `weeksUntilShow`, and the Progress countdown after run #1). Two surfaces bypassed it with their own `Math.round` of a *fractional* `weeksToShow` computed from `Date.now()`:
+- `src/components/widgets/PrepPaceWidget.tsx:90` — `Show day ({Math.round(weeksToShow)}w)`.
+- `src/pages/CheckIn/index.tsx:790,806` — `~{Math.round(weeksToShow)}w projection` and `{Math.round(weeksToShow)} weeks to show`.
+`Math.round` rounds **up** once the fractional week ≥ 0.5 (≈ remainder ≥ 3.5 days), so every show 4–6 remainder days out read one week high. (`weeksToShow` is correctly kept fractional for the *projection* math `current + rate*weeksToShow`; only the weeks-out LABEL was wrong — identical in nature to run #1's Progress fix, which also left the fractional value for projection and only corrected the displayed integer.)
+
+### STEP 3 — Fix (minimum, display seam only)
+Both files now derive `const showWeeksOut = getShowCountdown(<showDate>).weeks` and render that (PrepPace: `{showWeeksOut ?? Math.floor(weeksToShow)}w`, matching the exact `?? Math.floor` fallback run #1 used on Progress; Check-In: `{showWeeksOut}w` / `{showWeeksOut} weeks`). The fractional `weeksToShow` is untouched for the projection + its `> 0` render guards. No other behavior changed; imports extended to pull `getShowCountdown` from `../../utils/dates`.
+
+### STEP 3b — Test (failing-first, then green)
+`tests/unit/prepPaceShowWeeks.test.tsx` (new, jsdom) — renders the real `<PrepPaceWidget/>` with a seeded cut trend (83 kg now vs 85 kg 14 days ago → non-null weekly rate so the projection row mounts) and a primary show. Asserts the label reads "Show day (5w)" (not "6w") for a **39-day-out** show (5 wk + 4 days), and still "5w" for an exact **35-day** (5-week) show. Verified the 39-day case FAILS against the pre-fix `Math.round` (rendered "6w") and PASSES after; the 35-day case passes either way (round==floor there), documenting that only ≥4-remainder-day shows were affected. (Check-In's two seams carry the identical one-line change against the same now-proven canonical helper; its full page isn't render-tested here — the whole Check-In page pulls many stores/effects and is impractical to mount in jsdom — but `getShowCountdown` itself is covered by `tests/unit/showCountdownPast.test.ts` / `weeksUntilShow.test.ts` and the Progress render test.)
+
+### STEP 4 — Verification (after fix, all PASS)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (**496 tests**, 81 files; +2 new)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `src/components/widgets/PrepPaceWidget.tsx` — floor-based `showWeeksOut` via `getShowCountdown`; "Show day" label no longer `Math.round`s.
+- `src/pages/CheckIn/index.tsx` — same fix on the "Show Day Projection" `~Nw projection` + `N weeks to show` labels.
+- `tests/unit/prepPaceShowWeeks.test.tsx` — new regression test (2 cases).
+- `change-agent-report.md` — this entry.
+
+---
+
 ## Run: 2026-11-10 (BUG FIX — area (c) check-in + Progress + adaptive nutrition; the **Progress page's "Show Countdown" tile overstated weeks-out by one for ~6 of every 7 shows**. It rendered `Math.ceil(weeksToShow)` from its own local fractional `weeksUntil()` helper, while the rest of the app — the Training tab countdown, every prep widget, and the backend `weeksUntilShow` — reports weeks-out via the canonical **floor-based** `getShowCountdown().weeks`. For a show 38 days out (5 weeks + 3 days) the Training tab and the actual plan the athlete follows say "5 weeks out" while Progress said "6 wks until show" — a cross-surface DB↔UI desync on the app's single most important prep metric. Only shows an exact multiple of 7 days away agreed.)
 
 ### STEP 0 — Requested changes

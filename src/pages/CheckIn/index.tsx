@@ -7,7 +7,7 @@ import { Textarea } from '../../components/ui/Input'
 import Button from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import type { CheckIn } from '../../types'
-import { localDateStr } from '../../utils/dates'
+import { localDateStr, getShowCountdown } from '../../utils/dates'
 import { computeMissedSlots } from '../../utils/checkinSchedule'
 import { ratingBgClass, ratingTextClass, type RatingDirection } from '../../utils/ratingColor'
 import { computeWeeklyWeightRate } from '../../utils/weeklyRate'
@@ -761,6 +761,13 @@ export default function CheckIn() {
           if (weeklyRateKg === null) return null
           const weeksToShow = (new Date(user.show_date + 'T12:00:00').getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 7)
           if (weeksToShow <= 0) return null
+          // Weeks-OUT label uses the canonical floor-based getShowCountdown().weeks so
+          // it agrees with the sidebar / QuickStats / Training tab / Progress countdown.
+          // `weeksToShow` stays fractional for the projection math below; rounding it
+          // for the label (Math.round) overstated weeks-out by one for any show ≥4
+          // remainder days out (e.g. a 39-day show showed "6w"/"6 weeks to show" here
+          // while every other surface said "5 weeks out").
+          const showWeeksOut = getShowCountdown(user.show_date).weeks
           const projectedKg = newest.weight_kg + weeklyRateKg * weeksToShow
           const targetKg = parseTargetWeightKg(settings.target_weight_kg as string | undefined)
           const fmt = (kg: number) => isImperial
@@ -787,7 +794,7 @@ export default function CheckIn() {
                   <span className={`font-semibold ${rateGood ? 'text-green-400' : 'text-amber-400'}`}>{rateDisplay}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">~{Math.round(weeksToShow)}w projection</span>
+                  <span className="text-gray-500">~{showWeeksOut}w projection</span>
                   <span className="font-semibold text-gray-200">{fmt(projectedKg)}</span>
                 </div>
                 {targetKg !== null && gap !== null && (
@@ -803,7 +810,7 @@ export default function CheckIn() {
                 )}
               </div>
               <p className="text-xs text-gray-600 mt-2">
-                Avg over {recent.length} check-in{recent.length !== 1 ? 's' : ''} · {Math.round(weeksToShow)} weeks to show
+                Avg over {recent.length} check-in{recent.length !== 1 ? 's' : ''} · {showWeeksOut} weeks to show
               </p>
             </div>
           )
