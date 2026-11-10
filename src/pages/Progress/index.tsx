@@ -12,7 +12,7 @@ import { ratingTextClass } from '../../utils/ratingColor'
 import { computeWeeklyWeightRate } from '../../utils/weeklyRate'
 import { computeWeeksTracked } from '../../utils/weeksTracked'
 import { parseTargetWeightKg } from '../../utils/targetWeight'
-import { localDateStr, weekStartMonday, addDays } from '../../utils/dates'
+import { localDateStr, weekStartMonday, addDays, getShowCountdown } from '../../utils/dates'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LineChart, Line, CartesianGrid, Legend } from 'recharts'
 import type { ProgressPhoto } from '../../types'
 
@@ -139,7 +139,18 @@ export default function Progress() {
 
   // Trend computation
   const weeklyRateKg = computeWeeklyWeightRate(checkinHistory)
+  // `weeksToShow` stays FRACTIONAL — it drives the show-weight projection and the
+  // required-rate math below, which need the real sub-week remainder. For the
+  // DISPLAYED "weeks out" countdown, use the app's canonical floor-based
+  // `getShowCountdown().weeks` (the same value the Training tab, the prep widgets,
+  // and the backend `weeksUntilShow` all show). The tile previously rendered
+  // `Math.ceil(weeksToShow)`, which overstated the count by one for every show
+  // that isn't an exact multiple of 7 days away (e.g. a 38-day-out show read as
+  // "6 wks" here while the Training tab and the plan the athlete follows said
+  // "5 weeks out") — a cross-surface desync on the app's single most important
+  // prep metric.
   const weeksToShow = user.show_date ? weeksUntil(user.show_date) : null
+  const showWeeksOut = user.show_date ? getShowCountdown(user.show_date).weeks : null
   const currentWeightKg = checkinHistory[0]?.weight_kg ?? user.weight_kg
   const projectedWeightKg =
     weeklyRateKg !== null && weeksToShow !== null
@@ -251,7 +262,7 @@ export default function Progress() {
               <>
                 <div className="bg-gray-800/60 rounded-xl p-3">
                   <p className="text-xs text-gray-500 mb-1">Show Countdown</p>
-                  <p className="text-lg font-bold text-brand-400">{Math.ceil(weeksToShow)} wks</p>
+                  <p className="text-lg font-bold text-brand-400">{showWeeksOut ?? Math.floor(weeksToShow)} wks</p>
                   <p className="text-xs text-gray-600 mt-0.5">until show day</p>
                 </div>
                 {projectedWeightKg !== null && (

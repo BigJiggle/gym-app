@@ -1,5 +1,41 @@
 # Change Agent Report
 
+## Run: 2026-11-10 (BUG FIX — area (c) check-in + Progress + adaptive nutrition; the **Progress page's "Show Countdown" tile overstated weeks-out by one for ~6 of every 7 shows**. It rendered `Math.ceil(weeksToShow)` from its own local fractional `weeksUntil()` helper, while the rest of the app — the Training tab countdown, every prep widget, and the backend `weeksUntilShow` — reports weeks-out via the canonical **floor-based** `getShowCountdown().weeks`. For a show 38 days out (5 weeks + 3 days) the Training tab and the actual plan the athlete follows say "5 weeks out" while Progress said "6 wks until show" — a cross-surface DB↔UI desync on the app's single most important prep metric. Only shows an exact multiple of 7 days away agreed.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN before changes)
+Clean `master` + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (492 tests, 79 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (b) training then (c) check-in + Progress + adaptive nutrition
+Rotated off last run's (e/f). Started in **(b)** (least-recently-audited: 10-31#2) and confirmed it clean — deep-read + re-fuzzed `trainingEngine.generateTrainingPlan` across all 6 splits × 3 equipment tiers × freq 2–6 × exercises-per-session {undef,1,2,3,5,8,12} (no empty session, no duplicate exercise names that would collapse `WorkoutSession`'s name-keyed state Map, no bad entries); traced `workoutHandlers` (sanitizeReps/WeightKg write-seam clamps), `WorkoutSession` (clampSetCount, parseRepMidpoint, detectNewPRs, rest-timer effect), `WorkoutLogEditor`, `SessionEditor`, `WorkoutStats`, and all `planHandlers` training delete/regenerate seams (every `DELETE FROM training_sessions` is preceded by the `UPDATE workout_logs SET session_id=NULL` guard). All hardened by prior runs.
+Extended into **(c)**: `checkinEngine` (Theil–Sen trend, clampCheckinWeightKg, parseAdjustments), `checkinHandlers` (submit / submitMissed / update week-number renumbering + per-day dedupe), `checkinSchedule` (getNextCheckinDate anchor walk, countMissedBetween floor(gap/interval)-1 + interval-0 guard), `progressHandlers`, `nutritionEngine` (re-fuzzed `generateNutritionPlan` across meal 1–20 × snack 0–20 × 4 prefs × 4 goals — no NaN/empty/≥25%-mismatch), `clearOrphanedMealCompletions` call coverage, `TodaysMacrosWidget`/`RecentCheckinsWidget`/`CheckinFeedbackWidget`, `WeightChart`, `resetData`. The real defect surfaced in the Progress page's show-countdown display.
+
+### The bug (root cause)
+`src/pages/Progress/index.tsx` — the Weight-Trend card's "Show Countdown" tile rendered `{Math.ceil(weeksToShow)} wks`, where `weeksToShow = weeksUntil(user.show_date)` is a **fractional** weeks value (`Math.round(weeks*10)/10`). `Math.ceil(5.4) = 6`. Everywhere else the app floors: `src/utils/dates.ts` `getShowCountdown` returns `weeks: Math.floor(totalDays/7)`, the Training tab does `Math.floor(totalDays/7)`, and the backend `showDates.ts` `weeksUntilShow` does `Math.floor(... /7)` — the value that actually drives phase determination and `weeks_total`. So the plan the athlete follows was built for "5 weeks out" while Progress told them "6 wks". The prior (f) audit (11-03) traced the competition/prep widgets and `getShowCountdown` itself but not that the Progress page bypasses it with its own ceil — a genuinely-missed seam. (`weeksToShow` stays fractional on purpose: it still drives the show-weight projection `current + rate*weeksToShow` and the required-rate math, which need the sub-week remainder; only the DISPLAY was wrong.)
+
+### STEP 3 — Fix (minimum, display seam only)
+`src/pages/Progress/index.tsx` — added a `showWeeksOut = user.show_date ? getShowCountdown(user.show_date).weeks : null` derived value (imported `getShowCountdown` from `../../utils/dates`) and changed the tile to `{showWeeksOut ?? Math.floor(weeksToShow)} wks`, so the countdown now shows the exact same floor-based weeks-out as the Training tab / prep widgets / engine. The fractional `weeksToShow` is untouched for the projection + required-rate math. No other behavior changed.
+
+### STEP 3b — Test (failing-first, then green)
+`tests/unit/progressShowCountdown.test.tsx` (new, jsdom) — renders the real `<Progress/>` with a seeded future show + two check-ins 14 days apart (so the Weight-Trend card mounts) and asserts the tile shows "5 wks" (not "6 wks") for a 38-day-out show, and still "5 wks" for an exact 35-day (5-week) show. Verified the 38-day case FAILS against the pre-fix `Math.ceil` (rendered "6 wks") and PASSES after; the 35-day case passes either way (ceil==floor there), documenting that only non-multiples were affected. (Adds a `ResizeObserver` stub since recharts needs it in jsdom.)
+
+### STEP 4 — Verification (after fix, all PASS)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (**494 tests**, 80 files; +2 new)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `src/pages/Progress/index.tsx` — floor-based `showWeeksOut` via `getShowCountdown`; tile no longer `Math.ceil`s.
+- `tests/unit/progressShowCountdown.test.tsx` — new regression test (2 cases).
+- `change-agent-report.md` — this entry.
+
+---
+
 ## Run: 2026-11-03 (BUG FIX — area (e/f) widgets + localStorage stores; the **`cardioStore` is the only log store that never sanitizes its entries** — it migrates legacy rows (mints ids) but passes every other row through verbatim. A corrupt / hand-edited `cardio_log` entry with a non-numeric `minutes` (e.g. `"20"`) then reaches `CardioWidget`'s `weekMins = reduce((s,e)=>s+e.minutes,0)`, where `30 + "20"` STRING-CONCATENATES to `"3020"`, and `"3020" > 0` coerces truthy — so the widget renders a nonsensical "· 3020 min" weekly total instead of "50 min". A value-shown-doesn't-match-what's-stored desync reachable through the explicitly in-scope "corrupted or hand-edited localStorage".)
 
 ### STEP 0 — Requested changes
