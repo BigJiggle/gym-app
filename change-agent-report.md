@@ -1,5 +1,41 @@
 # Change Agent Report
 
+## Run: 2026-11-11 #2 (BUG FIX — area (b) training + workout/session flows; the **Training tab's "Sessions This Week" widget counted the WRONG thing**, so its badge / color / "all sessions done" congratulation disagreed with the green squares it renders. The squares light one-per-PLANNED-session (keyed by `day_of_week`) when a workout was completed on that weekday this week, but `doneCount` was `completedDows.size` — the number of DISTINCT weekdays with ANY completed workout. The two diverge the moment training happens off the planned days — the single most common real scenario (life shifts your schedule): with a **Mon/Wed/Fri plan but Tue/Thu/Sat actually trained**, `completedDows.size === 3 === sessions.length`, so the widget read **"3/3 · All sessions done this week — great prep!"** while **ZERO** squares were green (no planned day was trained) — a blatant same-widget self-contradiction. Training an **extra day beyond the plan** read **"4/3"** and *suppressed* the "all done" message even though every planned session was completed. Both come from counting raw weekdays instead of completed planned sessions.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** in the Queue → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN before changes)
+Clean `master` + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (499 tests, 81 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (b) training engine + workout/session flows (least-recently-covered; prior runs rotated through a/c/d/e/f)
+Deep-read and re-confirmed clean: `trainingEngine.generateTrainingPlan` (freq/exPerSession/setsPerEx/maxSets non-finite+non-positive guards, `normalizeExercises` read-seam coercion, all 6 split builders, `rotateOne` no-empty-session guard, `determinePhase`/`getSets`), `workoutHandlers` (`sanitizeReps`/`sanitizeWeightKg` write-seam clamps on every entry point incl. `saveSetsBatch`/`updateSet`/`logSet`, `undefined`→NULL coercion, local-date `workout:start`), the live `WorkoutSession` (`clampSetCount`/`parseRepMidpoint` set seeds, rest-timer effect dep, `detectNewPRs` all-time strict-`>` compare, kg↔display conversions), `SessionEditor`/`WorkoutLogEditor` (empty-session Save guard, clamp on stored `sets`), `WorkoutStats` (PR/e1RM/tonnage/adherence/calendar math, div guards), and the `planHandlers` training write/read/refine/regen seams (every `DELETE FROM training_sessions` preceded by the `UPDATE workout_logs SET session_id=NULL` orphan guard; `plan:updateSession` empty-session reject; AI set-cap sanitize + server-side `Math.min` clamp; `exercises_per_session`/`sets_per_exercise` AI-write clamps). All hardened by prior runs. The real defect surfaced in the Training-tab "Sessions This Week" widget's completion count.
+
+### The bug (root cause)
+`src/pages/Training/index.tsx` — the `sessions-week` widget computed `const doneCount = completedDows.size`, where `completedDows` is the set of weekdays (Mon=1…Sun=7) on which ANY workout was completed this week. But the squares below render one per PLANNED session and are green iff `completedDows.has(session.day_of_week)`, and the badge color + "all sessions done" message both key off `doneCount === totalSessions`. So `doneCount` (distinct trained weekdays) ≠ the green-square count (planned days trained) whenever training lands on a non-planned weekday: off-schedule training → false "all done" with no green squares; extra-day training → "4/3" and a *missing* "all done". The correct count is the number of planned session days actually trained — exactly what the squares show and always ≤ total.
+
+### STEP 3 — Fix (minimum, matches the rendered squares)
+Added `src/utils/weeklySessionProgress.ts` — a pure `weeklySessionProgress(plannedDows, completedDates)` (+ `weeklySessionProgressFromLogs` / `weekdayFromDateStr` helpers) that derives `completedDows` (noon-anchored, Sun→7) and returns `doneCount = plannedDows.filter(d => completedDows.has(d)).length`, `total`, and `allDone = total > 0 && doneCount === total`. The widget now destructures `{ completedDows, doneCount, total: totalSessions }` from `weeklySessionProgressFromLogs(sessions.map(s => s.day_of_week), completedThisWeek)`; the squares reuse the same `completedDows`, so badge / color / message / squares are now one consistent source. No other behavior changed.
+
+### STEP 3b — Test (failing-first, then green)
+`tests/unit/weeklySessionProgress.test.ts` (new, 7 cases): on-schedule all-done; **off-schedule Mon/Wed/Fri plan vs Tue/Thu/Sat trained → 0 done / not allDone** (the core bug); **extra-day Mon/Wed plan vs Mon/Wed/Sat → 2/2 allDone, not 3/2**; partial; Sunday-scheduled→Sunday-trained credited (getDay()===0→7); empty plan. Verified by temporarily reverting the util to the old `completedDows.size` → **3 cases FAIL** (off-schedule read 3/3-allDone, extra-day read 3/2), **PASS** after restoring the fix.
+
+### STEP 4 — Verification (after fix, all PASS)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (**506 tests**, 82 files; +7 new)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `src/utils/weeklySessionProgress.ts` — new pure helper (counts completed PLANNED sessions).
+- `src/pages/Training/index.tsx` — "Sessions This Week" widget uses it; `doneCount`/`completedDows` now agree with the rendered squares.
+- `tests/unit/weeklySessionProgress.test.ts` — new regression test (7 cases).
+- `change-agent-report.md` — this entry.
+
+---
+
 ## Run: 2026-11-11 (BUG FIX — area (d) data lifecycle + plan read seams, extending into (a) Diet; the **`plan:getDiet` read seam does a raw `JSON.parse(plan.meals)` with NO per-entry normalization**, unlike its sibling `plan:getTraining` which routes the stored cell through `normalizeExercises`. `diet_plans.meals` is a TEXT cell in a dynamically-typed, user-accessible SQLite file, so a corrupt / hand-edited / legacy cell either **throws in the handler** (non-JSON text → `plan:getDiet` rejects, and `loadDietPlan` has no try/catch) or slips a **`null` / non-object meal entry — or one with a non-string `time`** — straight to the renderer, which assumes the shape with no error boundary: the Diet page's `activeMealIndex` does `m.time.split(':')`, `NextMealWidget` does `meal.time.split(':')` / `meal.foods.length`, `WeeklyMealView`/`GroceryList` do `meal.foods.map` / `for (const food of meal.foods)` → **TypeError white-screens the Diet tab and dashboard meal widgets**. This is the exact "corrupt/hand-edited stored cell" vector the project already closed on the training read seam (`normalizeExercises`, run 10-29) and the user read seam (`parseUser`/`safeJsonArray`, run 10-29) — the diet read seam was the one left open, and the `userHandlers` comment even *claims* "normalizeMeals (diet) … already close at their read seams" while `plan:getDiet` in fact bypassed it.)
 
 ### STEP 0 — Requested changes

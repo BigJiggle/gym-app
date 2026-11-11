@@ -14,6 +14,7 @@ import { TRAINING_WIDGET_META, trainingWidgetStore } from '../../components/widg
 import type { TrainingSession, ExerciseLibraryItem } from '../../types'
 import { parseLocalDate, weekStartMondayStr } from '../../utils/dates'
 import { findPrevSessionLog } from '../../utils/prevSessionLog'
+import { weeklySessionProgressFromLogs } from '../../utils/weeklySessionProgress'
 
 const DAY_NAMES = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const PHASE_COLOR: Record<string, string> = {
@@ -466,14 +467,15 @@ export default function Training() {
             const completedThisWeek = workoutHistory.filter(
               (log) => log.status === 'completed' && log.date >= weekStartStr && log.date <= todayDateStr
             )
-            const totalSessions = trainingPlan.sessions?.length ?? 0
-            const completedDows = new Set(
-              completedThisWeek.map((log) => {
-                const d = new Date(log.date + 'T12:00:00')
-                return d.getDay() === 0 ? 7 : d.getDay()
-              })
+            // doneCount / completedDows must agree with the per-session squares
+            // below: count PLANNED session days that were trained, not every
+            // weekday with any completed workout (which read "3/3 · all done"
+            // with zero green squares when training happened off-schedule, or
+            // "4/3" for an extra day). See weeklySessionProgress.
+            const { completedDows, doneCount, total: totalSessions } = weeklySessionProgressFromLogs(
+              (trainingPlan.sessions ?? []).map((s) => s.day_of_week),
+              completedThisWeek,
             )
-            const doneCount = completedDows.size
             if (totalSessions === 0) return null
             return (
               <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
