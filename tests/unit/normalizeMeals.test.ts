@@ -64,3 +64,50 @@ describe('normalizeMeals', () => {
     expect(out[0].time).toMatch(/^\d{2}:\d{2}$/)
   })
 })
+
+// Read-seam behavior: plan:getDiet reads the diet_plans.meals TEXT cell and used to
+// hand its RAW `JSON.parse` straight to the renderer with no normalization (unlike the
+// training seam plan:getTraining, which routes through normalizeExercises). A corrupt /
+// hand-edited cell then either threw in the handler (non-JSON text) or slipped a
+// null/non-object meal — or one with a non-string `time` — into the Diet page's
+// `m.time.split(':')` and NextMealWidget's `meal.foods.map`, white-screening with no
+// error boundary. For normalizeMeals to serve that seam it must accept the stored JSON
+// STRING, not just an already-parsed array — mirroring normalizeExercises.
+describe('normalizeMeals — stored-cell (JSON string) read seam', () => {
+  it('parses a valid JSON-string array of meals (the stored diet_plans.meals cell)', () => {
+    const stored = JSON.stringify([
+      { name: 'Breakfast', time: '07:00', calories: 500, protein_g: 40, carbs_g: 50, fat_g: 15, foods: ['Oats (80g dry)'] },
+      { name: 'Lunch', time: '13:00', calories: 600, protein_g: 45, carbs_g: 60, fat_g: 18, foods: ['Chicken (200g)'] },
+    ])
+    const out = normalizeMeals(stored)
+    expect(out).toHaveLength(2)
+    expect(out[0].name).toBe('Breakfast')
+    expect(out[0].foods).toEqual(['Oats (80g dry)'])
+    expect(out[1].time).toBe('13:00')
+  })
+
+  it('returns [] (no throw) for a corrupt / non-JSON stored cell', () => {
+    expect(normalizeMeals('{not valid json')).toEqual([])
+    expect(normalizeMeals('')).toEqual([])
+  })
+
+  it('guarantees every meal has a split-safe string time and an array foods from a corrupt JSON-string cell', () => {
+    // A hand-edited cell holding a null entry and a meal with a non-string `time`
+    // and missing `foods` — the exact shapes that crash m.time.split(':') / meal.foods.map.
+    const stored = JSON.stringify([
+      null,
+      { name: 'Meal 2', time: 70000, calories: 400, protein_g: 30, carbs_g: 40, fat_g: 10 },
+      { name: 'Meal 3', time: '18:30', calories: 500, protein_g: 35, carbs_g: 45, fat_g: 12, foods: ['Rice'] },
+    ])
+    const out = normalizeMeals(stored)
+    expect(out).toHaveLength(2)
+    for (const m of out) {
+      expect(typeof m.time).toBe('string')
+      expect(m.time).toMatch(/^\d{1,2}:\d{2}$/)
+      expect(Array.isArray(m.foods)).toBe(true)
+      // Prove the Diet page's parse can't throw / NaN-out on these.
+      const [h, min] = m.time.split(':')
+      expect(Number.isFinite(Number(h) * 60 + Number(min))).toBe(true)
+    }
+  })
+})

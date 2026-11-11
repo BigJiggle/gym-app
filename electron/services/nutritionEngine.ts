@@ -899,13 +899,24 @@ export function sanitizeMacroGrams(raw: unknown, mealsMacroSum = 0): number {
 // WORKOUT path already filters invalid sessions (`exercises.length > 0`); this is
 // the matching guard for the diet path. Returns [] for a non-array input so the
 // caller can fall back to the rule-based engine instead of storing an empty plan.
+// Accepts EITHER an already-parsed array (the AI write paths) or the raw JSON string
+// from the stored diet_plans.meals TEXT cell (the plan:getDiet read seam). SQLite is
+// dynamically typed and the DB file is user-accessible, so a corrupt / hand-edited /
+// legacy cell can hold non-JSON text (which would otherwise THROW in plan:getDiet's
+// JSON.parse — loadDietPlan has no try/catch) or a null/non-object/time-less meal entry
+// that reaches m.time.split(':') / meal.foods.map() with no error boundary. This is the
+// diet counterpart of normalizeExercises on the training read seam (plan:getTraining).
 export function normalizeMeals(raw: unknown): Meal[] {
-  if (!Array.isArray(raw)) return []
+  let val: unknown = raw
+  if (typeof raw === 'string') {
+    try { val = JSON.parse(raw) } catch { return [] }
+  }
+  if (!Array.isArray(val)) return []
   const num = (v: unknown): number => {
     const n = Math.round(Number(v))
     return Number.isFinite(n) ? n : 0
   }
-  return raw
+  return val
     .filter((m): m is Record<string, unknown> => !!m && typeof m === 'object')
     .map((m) => ({
       name: typeof m.name === 'string' && m.name.trim() ? m.name : 'Meal',

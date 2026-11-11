@@ -1,5 +1,42 @@
 # Change Agent Report
 
+## Run: 2026-11-11 (BUG FIX — area (d) data lifecycle + plan read seams, extending into (a) Diet; the **`plan:getDiet` read seam does a raw `JSON.parse(plan.meals)` with NO per-entry normalization**, unlike its sibling `plan:getTraining` which routes the stored cell through `normalizeExercises`. `diet_plans.meals` is a TEXT cell in a dynamically-typed, user-accessible SQLite file, so a corrupt / hand-edited / legacy cell either **throws in the handler** (non-JSON text → `plan:getDiet` rejects, and `loadDietPlan` has no try/catch) or slips a **`null` / non-object meal entry — or one with a non-string `time`** — straight to the renderer, which assumes the shape with no error boundary: the Diet page's `activeMealIndex` does `m.time.split(':')`, `NextMealWidget` does `meal.time.split(':')` / `meal.foods.length`, `WeeklyMealView`/`GroceryList` do `meal.foods.map` / `for (const food of meal.foods)` → **TypeError white-screens the Diet tab and dashboard meal widgets**. This is the exact "corrupt/hand-edited stored cell" vector the project already closed on the training read seam (`normalizeExercises`, run 10-29) and the user read seam (`parseUser`/`safeJsonArray`, run 10-29) — the diet read seam was the one left open, and the `userHandlers` comment even *claims* "normalizeMeals (diet) … already close at their read seams" while `plan:getDiet` in fact bypassed it.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** in the Queue (the only `- [ ]` matches are in the format/instructions prose) → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN before changes)
+Clean `master` + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (496 tests, 81 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (d) onboarding + Settings + reset + data lifecycle (least-recently-covered: last 11-02 #2), extended into (a) Diet read path
+Rotated off the recent (a/b/c/f) runs. Deep-read and re-confirmed clean: `userSanitize` (all clamp helpers + `sanitizeUserUpdate` drop-non-finite + derived show_date/division drop), `userHandlers` (`user:create`/`user:update`/`user:resetAll`, `parseUser`/`safeJsonArray`), `resetData` (`isPreservedKey`/`mergeWeighIns`/`resetLocalData`), the Onboarding wizard (`validateStep`, Step1 unit toggles kg/lb + cm/ft round-then-split, Step2 show-date `min={today}`), the Settings "Edit profile" + "My Shows" save paths (height/weight imperial round-trips, meal/snack steppers clamped), `showHandlers` (`syncPrimaryToNearest`/`persistProfileShowDate`/`setPrimaryShow` + add/update/delete/cancel diet-regen seams), `checkinEngine`/`checkinSchedule`/`checkinHandlers` (Theil–Sen trend, `clampCheckinWeightKg`, `countMissedBetween` interval-0 guard, week_number renumbering), `nutritionEngine.generateNutritionPlan` (calcBMR non-finite guard, snack/meal clamps), `trainingEngine` (determinePhase/getSets), and `src/utils/dates.ts` (noon-anchored, DST-immune countdown). The real defect surfaced in the **Diet plan read seam**, which — alone among the three stored-JSON read paths — never adopted the project's per-cell normalization guard.
+
+### The bug (root cause)
+`electron/ipc/planHandlers.ts` `plan:getDiet` returned `{ ...plan, meals: JSON.parse(plan.meals as string) }` — a raw parse, no try/catch, no shape coercion. The guard function `normalizeMeals` existed (and is applied on the AI *write* paths), but could NOT be wired into the read seam as-is: unlike `normalizeExercises`, it returned `[]` for *any* string (it tested `Array.isArray(raw)` on the raw value), so it rejected the valid stored JSON string — which is exactly why the seam bypassed it with a raw `JSON.parse`. Result: the per-launch Diet load had no defense against a corrupt/hand-edited/legacy `meals` cell, and `loadDietPlan` (`src/store/planStore.ts`, no try/catch) surfaced any parse throw as an unhandled rejection; a surviving malformed entry crashed the Diet page / `NextMealWidget` at `m.time.split(':')` / `meal.foods.map` with no error boundary.
+
+### STEP 3 — Fix (minimum, mirrors the training/user read seams)
+- `electron/services/nutritionEngine.ts` — `normalizeMeals` now accepts EITHER an already-parsed array (unchanged behavior for the AI write paths) **or the raw JSON string** from the stored cell: `typeof raw === 'string' → try { JSON.parse } catch { return [] }`, then the existing non-array `→ []` guard and per-entry sanitizer (drops null/non-object entries; forces a string `name`, a `/^\d{1,2}:\d{2}$/` `time` defaulting to `'12:00'`, finite numeric macros, and a string-only `foods` array). This is byte-for-byte the shape `normalizeExercises` uses on the training side.
+- `electron/ipc/planHandlers.ts` — `plan:getDiet` now returns `meals: normalizeMeals(plan.meals as string)` instead of `JSON.parse(...)`. The other `JSON.parse(saved.meals)` sites are left untouched: each reads a row the *same handler just wrote* through the engine / `normalizeMeals`, so the value is already well-formed; `plan:getDiet` is the one pure per-launch read of a possibly-stale/corrupt cell (the `plan:getTraining` analog).
+
+### STEP 3b — Test (failing-first, then green)
+`tests/unit/normalizeMeals.test.ts` — new `describe('normalizeMeals — stored-cell (JSON string) read seam')` with 3 cases: (1) parses a valid JSON-string array of meals (the stored cell), (2) returns `[]` without throwing for non-JSON / empty strings, (3) from a JSON-string cell containing a `null` entry + a meal with a non-string `time` and missing `foods`, guarantees every returned meal has a split-safe string `time` and an array `foods` (and that `Number(h)*60+Number(min)` is finite — proving the Diet page's parse can't throw/NaN). Verified cases (1) and (3) **FAIL** against the pre-fix `normalizeMeals` (returned `[]` for the JSON string) and **PASS** after; case (2) documents the no-throw contract. The 6 pre-existing `normalizeMeals` cases (including the `'see above'` string → `[]` assertion) still pass — a non-JSON string parses-throws back to `[]`.
+
+### STEP 4 — Verification (after fix, all PASS)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (**499 tests**, 81 files; +3 new)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `electron/services/nutritionEngine.ts` — `normalizeMeals` accepts the stored JSON string (read-seam support), mirroring `normalizeExercises`.
+- `electron/ipc/planHandlers.ts` — `plan:getDiet` normalizes the stored `meals` cell instead of raw `JSON.parse`.
+- `tests/unit/normalizeMeals.test.ts` — new read-seam regression block (3 cases).
+- `change-agent-report.md` — this entry.
+
+---
+
 ## Run: 2026-11-10 #2 (BUG FIX — area (a/f) Diet + prep-pace widgets + date/week logic; the **Prep Pace dashboard widget and the Check-In "Show Day Projection" overstated weeks-out by one for any show ≥4 remainder days out**. Both rendered `Math.round(weeksToShow)` from a *fractional* weeks value, while the rest of the app — the sidebar countdown, QuickStats/PeakWeek widgets, Settings, the Training tab, and (as of run #1 today) the Progress countdown — reports weeks-out via the canonical **floor-based** `getShowCountdown().weeks`. For a show 39 days out (5 weeks + 4 days) the sidebar/Training/Progress say "5 weeks out" while the Prep Pace widget said "Show day (6w)" and Check-In said "~6w projection · 6 weeks to show" — the exact same cross-surface desync run #1 fixed on Progress, on the two sibling display seams it didn't reach. On the **dashboard this is a same-screen contradiction**: QuickStats/PeakWeek (floor) vs Prep Pace (round) side by side.)
 
 ### STEP 0 — Requested changes

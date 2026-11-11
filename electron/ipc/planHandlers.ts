@@ -257,7 +257,11 @@ export function registerPlanHandlers(ipcMain: IpcMain): void {
       .prepare('SELECT * FROM diet_plans WHERE user_id = ? ORDER BY id DESC LIMIT 1')
       .get(userId) as Record<string, unknown> | undefined
     if (!plan) return null
-    return { ...plan, meals: JSON.parse(plan.meals as string) }
+    // Normalize at the read seam so a corrupt / hand-edited / legacy diet_plans.meals
+    // cell can't throw here (non-JSON) or feed a null/non-object/time-less meal entry to
+    // the renderer (m.time.split(':') / meal.foods.map, no error boundary). Mirrors
+    // plan:getTraining's normalizeExercises. See normalizeMeals.
+    return { ...plan, meals: normalizeMeals(plan.meals as string) }
   })
 
   ipcMain.handle('plan:updateSession', (_event, sessionId: number, exercises: unknown[]) => {
