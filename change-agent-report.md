@@ -1,5 +1,40 @@
 # Change Agent Report
 
+## Run: 2026-11-13 (BUG FIX — area (c) check-in + Progress + adaptive nutrition; the **locked-screen "Edit Last Check-In" save never refreshed the store**, so a correction applied to the DB kept showing the OLD values in the UI — a DB↔UI desync. `saveEdit` (`src/pages/CheckIn/index.tsx`) calls `window.api.updateCheckin(...)` and then only re-queries `getNextCheckinDate`; it never calls `loadCheckinHistory`. Its two sibling write paths both refresh — `submitCheckin` updates the store with the new row, and the missed-fill `onMissedFilled` calls `loadCheckinHistory` — but the edit path was the odd one out. Result: right after saving a corrected weigh-in, the locked screen's "Last weigh-in" line still shows the pre-edit weight/date, the dashboard's `CheckinFeedbackWidget` (reads `latestCheckin`) and `RecentCheckinsWidget` (reads `checkinHistory`) keep the stale number + stale coach-feedback notes, and — most damaging — re-opening Edit pre-fills the form from the stale `lastCheckin`, so the correction looks like it was **lost** (user re-edits unnecessarily or loses trust), even though the DB holds the corrected value.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** in the Queue → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN before changes)
+Clean `master` + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (506 tests, 82 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (c) check-in + Progress + adaptive nutrition (last dedicated audits 11-01 / 10-29; only spot-checked on the 11-11/11-12 runs)
+Deep-read (beyond prior spot-checks) and re-confirmed clean: `checkinEngine` (`parseAdjustments` read-seam shape guard; `clampCheckinWeightKg` 30–300; `weightTrend`/`weightTrendPct` Theil–Sen with ≤0 bodyweight guards and same-day `dx<=0` skip so duplicate weigh-ins can't divide-by-zero; `calculateAdjustments` cut/recomp thresholds + recovery/stress/adherence notes), `checkinHandlers` (write-seam weight clamp on submit/submitMissed/update; same-day DUPLICATE_CHECKIN rejects; chronological `week_number` renumber on retroactive insert + date-edit; meal-scaling floors the ratio divisor at `MIN_CALORIE_TARGET` and `newCalories` at 1200), `progressHandlers` (all `user_id`-scoped), the full `Progress/index.tsx` (first→latest vs newest-date ordering agree because week_number==date rank after every renumber; `weeksUntil`/`getShowCountdown().weeks` floor-consistent; all macro/BF%/measurement tiles 0-denominator-guarded), `weeklyRate.ts` (≥1-week span floor, non-finite guards), `weeksTracked.ts` (first→last span), `WeightChart`/`MeasurementsChart` (connectNulls seed, ≥2-point gating), `CheckinFeedbackWidget`/`RecentCheckinsWidget`/`TodaysMacrosWidget` (adjustments always an array via parse seam; `>0 ? … : 0` macro-% guards), the `planStore` check-in slice, and a combinatorial **fuzz** of `generateNutritionPlan` + `calculateAdjustments` over extreme weights/heights/ages/goals/meal-counts/snack-counts/weeks-out (0/neg/NaN/Infinity/undefined) → **no non-finite macro or `calories_delta`, no throw**. The one real defect surfaced in the Check-In page's locked-screen edit write path.
+
+### The bug (root cause)
+`src/pages/CheckIn/index.tsx` `saveEdit()` — after `await window.api.updateCheckin(...)` succeeds it sets `editSaved`, re-queries `getNextCheckinDate`, and closes the panel, but **never refreshes the planStore**. The locked screen derives `lastCheckin = checkinHistory[0]` and the dashboard widgets read `checkinHistory`/`latestCheckin` straight from the store; with the store unchanged they all keep rendering the pre-edit values, and `openEdit()` re-seeds the form from the same stale `lastCheckin`. The store only reloads on a later component *mount* (`loadCheckinHistory` is keyed on `user.id`, which doesn't change mid-session), so until the user navigates away and back the corrected value is invisible — and a re-open of Edit actively contradicts the DB.
+
+### STEP 3 — Fix (minimum, matches the sibling write paths)
+Added one line in `saveEdit`: `await loadCheckinHistory(user!.id)` immediately after the successful `updateCheckin`, before the `getNextCheckinDate` refresh. `loadCheckinHistory` re-reads both `checkin:history` and `checkin:latest` and updates `checkinHistory` + `latestCheckin`, so the locked screen, the dashboard check-in widgets, and a re-opened edit form all immediately reflect the saved values. `loadCheckinHistory` is already destructured in the component (used by the mount effect and `onMissedFilled`); no new wiring. No other behavior changed.
+
+### STEP 3b — Test (failing-first, then green)
+`tests/unit/checkinEditRefresh.test.tsx` (new, jsdom): renders `CheckIn` in the LOCKED state (future `getNextCheckinDate`), opens "Edit Last Check-In", corrects the weight 85 → 84, clicks "Save Changes", and asserts (a) `updateCheckin` fired once, (b) `getCheckinHistory` was called **again** after the edit (store refreshed), and (c) `planStore.latestCheckin.weight_kg === 84`. Verified it **FAILS on `master`** ("expected 1 to be greater than 1" — history only loaded once, at mount) and **PASSES** with the fix.
+
+### STEP 4 — Verification (after fix, all PASS)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (**507 tests**, 83 files; +1 new)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `src/pages/CheckIn/index.tsx` — `saveEdit` now refreshes the store after a successful edit.
+- `tests/unit/checkinEditRefresh.test.tsx` — new regression test.
+- `change-agent-report.md` — this entry.
+
+---
+
 ## Run: 2026-11-12 (NO BUG FOUND — area (e) widgets + localStorage stores re-audited in full against the now-larger codebase and confirmed clean; extended spot-checks into (a) nutrition engine + Diet, (c) check-in engine/handlers, and (f) show/date logic also clean. No real reachable defect found, so no fix was fabricated.)
 
 ### STEP 0 — Requested changes

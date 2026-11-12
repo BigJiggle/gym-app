@@ -530,6 +530,12 @@ export default function CheckIn() {
           check_in_date: editDate || null,
         } as any)
         setEditSaved(true)
+        // Refresh the store so the locked screen's "Last weigh-in", the dashboard
+        // check-in widgets, and a re-opened edit form all reflect the just-saved
+        // values instead of the stale pre-edit ones. submit / missed-fill already
+        // refresh; the edit path did not, so a correction looked like it was lost
+        // (re-opening Edit pre-filled the OLD weight) — a DB↔UI desync.
+        await loadCheckinHistory(user!.id)
         // Refresh nextAllowed so the lock screen updates after a date change
         const newIso = await window.api.getNextCheckinDate(user!.id)
         if (newIso) {
