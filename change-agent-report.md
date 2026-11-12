@@ -1,5 +1,48 @@
 # Change Agent Report
 
+## Run: 2026-11-12 (NO BUG FOUND — area (e) widgets + localStorage stores re-audited in full against the now-larger codebase and confirmed clean; extended spot-checks into (a) nutrition engine + Diet, (c) check-in engine/handlers, and (f) show/date logic also clean. No real reachable defect found, so no fix was fabricated.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** in the Queue → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN)
+Clean `master` + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (506 tests, 82 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (e) widgets + localStorage stores (least-recently-covered: last 11-03; prior runs rotated through a/b/c/d/f since)
+Deep-read and re-confirmed clean the full widget + localStorage surface:
+
+**localStorage store infrastructure (the shared seams):**
+- `createWidgetStore.ts` — array read guard (`!Array.isArray → defaults`), unknown-id filter + `[...new Set()]` de-dupe (no duplicate React keys), `reorder` bounds guard, try/catch around every parse.
+- `localStore.ts` (`createLocalStore`) — top-level shape guard (`Array.isArray(parsed) !== Array.isArray(fb) → fallback`) + optional per-entry `sanitize` applied after; stable snapshot cache.
+- `useWidgets.ts` — known-id filter + de-dupe, one-time `_v2` migration guard, bounds-checked reorder; `registry.tsx` maps **all 22** `WidgetId`s (no undefined Component).
+- `competitionLogs.ts` — `validPosing`/`validSleep`/`validCondition`/`validSupplementDay` each **reject** non-finite/malformed entries (so a hand-edited string-number is *dropped*, never string-concatenated — the class of bug the 11-03 cardio fix closed cannot recur here); `supplement_list` keeps only string members.
+- `cardioStore.ts` — `sanitizeEntries` coerces `minutes` with `Number()` + finite guard, mints ids, migrates legacy rows, persists repairs; `useWaterLog.ts` — `parseInt` + `isNaN→0`, `storedTarget>0` guard.
+- `src/utils/cardio.ts` (`cardioMinutesOn`/`nextCardioLog`) and `src/utils/refeed.ts` (`applyRefeedToMeals`) — non-array/non-finite safe, non-destructive writes, exact-sum carb split.
+
+**Widgets (render + math):** Cardio, Sleep, Posing, Supplement, Condition, Water, DailyWeighIn (`parseDailyWeightLog` 30–300 kg per-entry clamp + write-seam clamp), WeeklyScorecard, TrainingVolume, WeeklyVolume, MuscleCoverage, NextMeal (`meal.time.split(':')` safe because the diet read seam normalizes `time`), TodaysMacros / TodaysMeals (0-denominator guards; `?? 0` / `.has(i)` bounding of stale `meal_index`), QuickStats / PeakWeek / PrepPace (all use canonical floor-based `getShowCountdown().weeks` for the weeks-out label, fractional only for projection math — the 11-10 desync class stays closed), RecentCheckins, SessionsWeek, TabWidgetZone (drag reorder uses persisted indices, bounds-guarded; long-press timer cleared on unmount).
+
+### Cross-area spot-checks (all clean)
+- **(f) date/week:** `utils/dates.ts` (`getShowCountdown` noon-vs-midnight 12h buffer makes the ms-division DST-immune; `weekStartMonday` calendar-day arithmetic) and `services/showDates.ts` (`weeksUntilShow` = `floor(x/(7d))` which is identically equal to the UI's `floor(floor(x/d)/7)`, so backend plan-phase and UI weeks-out always agree).
+- **(c) check-in:** `checkinEngine` (`parseAdjustments` read-seam shape guard, `clampCheckinWeightKg` 30–300, Theil–Sen trend skips non-positive x-gaps so same-day duplicates can't divide by zero, bodyweight ≤0 guard); `checkinHandlers` (same-day DUPLICATE_CHECKIN reject on submit/submitMissed/update, chronological `week_number` renumber on date-edit, meal scaling floors the ratio divisor at `MIN_CALORIE_TARGET`); `progressHandlers` all scoped by `user_id`.
+- **(a) nutrition + Diet:** `buildMeals` (0/non-finite calorie floor, snack-cap, `mainCount>0` guard), `generateNutritionPlan` (`clampMealCount` 1–20 + `resolvedSnackCount` 0–20 NaN guards), `getMealTemplates` main/snack index selection covers 1–20, AI-apply `NUMERIC_BOUNDS` clamps meal/snack/sets; every diet-regen write path (`generateDiet`, `refine_diet`, `refineDietWithPrompt`, `applyAIRequest`, `startupRefresh`, `regenerateDietForGoal`, `plan:swapMeal`/`reorderMeals`) calls `clearOrphanedMealCompletions` or preserves count, so no "6/5 meals" adherence desync is reachable.
+- **training engine (b, engine layer):** `determinePhase`/`getSets`/`getExercises` finite-safe, `normalizeExercises` read-seam guard, `DAY_SCHEDULES[freq]` fallback — `training_frequency` clamped 2–6 upstream.
+
+### STEP 3 — Fix
+None. No real, reachable defect surfaced; correct code was left untouched (no fabricated fix).
+
+### STEP 4 — Verification (unchanged tree)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (506 tests, 82 files)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `change-agent-report.md` — this entry only (no code change).
+
+---
+
 ## Run: 2026-11-11 #2 (BUG FIX — area (b) training + workout/session flows; the **Training tab's "Sessions This Week" widget counted the WRONG thing**, so its badge / color / "all sessions done" congratulation disagreed with the green squares it renders. The squares light one-per-PLANNED-session (keyed by `day_of_week`) when a workout was completed on that weekday this week, but `doneCount` was `completedDows.size` — the number of DISTINCT weekdays with ANY completed workout. The two diverge the moment training happens off the planned days — the single most common real scenario (life shifts your schedule): with a **Mon/Wed/Fri plan but Tue/Thu/Sat actually trained**, `completedDows.size === 3 === sessions.length`, so the widget read **"3/3 · All sessions done this week — great prep!"** while **ZERO** squares were green (no planned day was trained) — a blatant same-widget self-contradiction. Training an **extra day beyond the plan** read **"4/3"** and *suppressed* the "all done" message even though every planned session was completed. Both come from counting raw weekdays instead of completed planned sessions.)
 
 ### STEP 0 — Requested changes
