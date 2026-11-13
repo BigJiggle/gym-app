@@ -1,5 +1,42 @@
 # Change Agent Report
 
+## Run: 2026-11-13 #3 (NO BUG FOUND — area (b) training engine + workout/session flows re-audited in full, rotating off 11-13 #2's (f/b) and #1's (c); extended into (a) nutrition + Diet, (e) widgets + localStorage stores, and (d) data lifecycle. Deep-traced every SCOPE error path in these areas and a whole-codebase sweep of every `JSON.parse` call site (both processes) plus the localStorage-store factory; every seam already carries an explicit guard. No real reachable defect found, so — per the routine's rule — no fix was fabricated.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** in the Queue → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN)
+Clean `master` (`0cab0ad..7ab52d3` pulled, already up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (514 tests, 84 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (b) training engine + workout/session (last dedicated 10-31 / 11-11 #2; 11-13 #2 only touched the burn-widget bodyweight source), extended into (a), (e), (d)
+Read deeply and re-confirmed clean — every candidate error path already guarded:
+
+**(b) training engine + workout/session**
+- `trainingEngine.ts`: `generateTrainingPlan` clamps `training_frequency` (NaN→4, 2–6), `exercises_per_session` (0/neg/NaN→undefined so builders floor), `sets_per_exercise` and `max_sets_per_exercise` (same); `normalizeExercises` read seam (drops null/non-object entries, guarantees string `name`); `rotateOne` keeps variant-B sessions non-empty; `getSets`/`buildExercises` finite for all inputs.
+- `electron/ipc/workoutHandlers.ts`: `sanitizeReps`/`sanitizeWeightKg` clamp both tails (0–9999, null→null) at **every** write seam (logSet, updateSet, saveSetsBatch); `workout:start` uses local date; `workout:active`/`history` scoped by `user_id` + status; `parseLog` normalizes `skipped`.
+- `WorkoutSession.tsx`: `buildInitialStates` runs `clampSetCount` + `parseRepMidpoint` (both `unknown`-tolerant — no `.split` crash on a numeric/absent `reps`); rest-timer effect keyed on the running-boolean (functional decrement, no stale closure); `handleComplete` converts display→kg, excludes 0-weight from volume, `detectNewPRs` only on a strict all-time beat; weight/reps inputs feed through the sanitize seam.
+- `WorkoutLogEditor.tsx` (auto-save on blur, pending→logged toggle, add/delete set), `SessionEditor.tsx` (add/remove/reorder, `clampSetCount` on the sets input, empty-session save-disabled guard), `WorkoutStats.tsx` (PR/e1RM/tonnage/6-week-trend/adherence — all 0-denominator-guarded, noon-anchored week math), `prevSessionLog.ts` (null-`session_id` guard both sides), `weeklySessionProgress.ts` (counts planned sessions, not raw weekdays), `clampSetCount`/`parseRepMidpoint`/`detectNewPRs`/`trainingBurn` helpers — all clean. Training index weekly-muscle / streak / lastPerf memos noon-anchor dates and null-guard `session_id`.
+
+**(a) nutrition + Diet** — `normalizeMeals` read seam (regex-validated `time`, finite macros, string-only `foods`); `buildMeals` floors `totalCal` to `MIN_CALORIE_TARGET`, caps `SNACK_CAL`, guards `mainCount>0`; `generateNutritionPlan` resolves/clamps snack_count (0–20) and meal_count (`clampMealCount` 1–20); `applyRefeedToMeals` (exact carb-sum distribution, snack-skip, non-mutating); Diet page intake %s / water / cardio / adherence-streak all denominator-guarded; `user.meal_count` (main) is never overwritten by the stored `plan.meal_count` (total) on regen.
+
+**(e) widgets + localStorage + (d) data lifecycle** — `TodaysMacrosWidget`/`WeeklyScorecardWidget`/`DailyWeighInWidget`/`SleepWidget` denominator- and shape-guarded; `createLocalStore` + `competitionLogs` sanitizers drop corrupt entries; `parseDailyWeightLog`, `cardioStore.loadInitial`, `GroceryList`, `PrepGuidanceWidget`, Education posing/milestone logs — **every** `JSON.parse` of a user-editable cell is in a try/catch or a normalize seam (verified a full repo-wide sweep: `claudeService`, `checkinEngine.parseAdjustments`, `showHandlers`/`planHandlers` user-array parses, `userHandlers.safeJsonArray`, `mealCompletionHandlers`, `settingsHandlers`, `progressHandlers`, `user:resetAll` weigh-in snapshot — all guarded/scoped). Verified the check-in → diet cascade: `planStore.submitCheckin` reloads the diet plan so the boosted targets/meals don't go stale after a weigh-in; `checkin:update`'s date edit renumbers `week_number` by (date,id).
+
+### Why no fix
+Per the routine's rule — "do not invent problems … do not 'fix' correct code." A few items were considered and deliberately **not** touched because they are intended behaviour, not reachable defects: the Diet-tab refeed boost is documented as display-only (the dashboard shows the real stored plan); `WorkoutStats` monthly adherence measures completed days against the whole month's planned sessions (a consistent full-month denominator, same as its sibling calendar view); the `SessionEditor` sets input clamping to 1 on an empty field is a minor controlled-input nicety, not data corruption. None rises to a real, reachable, user-facing bug.
+
+### STEP 4 — Verification (unchanged tree; only this report added)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (514 tests, 84 files)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `change-agent-report.md` — this entry (no source changes).
+
+---
+
 ## Run: 2026-11-13 #2 (BUG FIX — area (b/f) training widgets + bodyweight source; the **dashboard and the Training tab showed DIFFERENT "this week's calorie burned" for the SAME workouts** — a UI↔UI desync. Both widgets compute the identical metric `Σ round(MET 5.5 × bodyweight × session-hours)` over the same completed, timed workout logs; the ONLY difference was the bodyweight input. The dashboard `TrainingVolumeWidget` used the **latest check-in weigh-in** (`latestCheckin?.weight_kg ?? user.weight_kg`) while the Training tab's "This Week's Calorie Burn" widget (`src/pages/Training/index.tsx`) used the **stale onboarding weight** (`user.weight_kg`). `users.weight_kg` is set at onboarding/Settings and is **never updated when a check-in is submitted** (confirmed: no `UPDATE users SET weight_kg` on any check-in path — the weigh-in only drives macro recalc + the `weekly_checkins` row), so it goes stale the moment the athlete's weight changes. Before the first weight-changing check-in `latestCheckin` is null and both fall back to `user.weight_kg` → they agree; the desync appears exactly once a weigh-in differs from the onboarding weight — i.e. after the first check-in of any cut, the app's single most common flow. A 90 kg→82 kg athlete saw the dashboard report ~9% lower kcal burned than the Training tab for the very same sessions.)
 
 ### STEP 0 — Requested changes
