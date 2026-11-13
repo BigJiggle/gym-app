@@ -3,6 +3,7 @@ import { useUserStore } from '../../store/userStore'
 import { usePlanStore } from '../../store/planStore'
 import { useSettingsStore } from '../../store/settingsStore'
 import { localDateStr, weekStartMondayStr } from '../../utils/dates'
+import { currentBodyweightKg, weeklyTrainingKcalBurned } from '../../utils/trainingBurn'
 
 // "This Week's Volume" — sets logged, total weight moved, and estimated training
 // kcal burned this week. (Distinct from the MEV-coverage 'weekly-volume' widget.)
@@ -37,14 +38,11 @@ export default function TrainingVolumeWidget() {
   const displayVol = isImperial ? Math.round(totalVolumeKg * 2.20462).toLocaleString() : Math.round(totalVolumeKg).toLocaleString()
   const totalPlanned = trainingPlan?.sessions?.length ?? 0
 
-  const currentWeightKg = latestCheckin?.weight_kg ?? user.weight_kg
-  const MET = 5.5
-  const totalKcalBurned = thisWeekLogs.reduce((acc, log) => {
-    if (!log.started_at || !log.ended_at) return acc
-    const durationHours = (new Date(log.ended_at).getTime() - new Date(log.started_at).getTime()) / (1000 * 60 * 60)
-    return acc + Math.round(durationHours * MET * currentWeightKg)
-  }, 0)
-  const sessionsWithDuration = thisWeekLogs.filter(l => l.started_at && l.ended_at).length
+  // Shared with the Training tab's "This Week's Calorie Burn" widget so the two
+  // surfaces always report the same kcal for the same workouts (see trainingBurn).
+  const currentWeightKg = currentBodyweightKg(latestCheckin, user)
+  const { total: totalKcalBurned, perLog: burns } = weeklyTrainingKcalBurned(thisWeekLogs, currentWeightKg)
+  const sessionsWithDuration = burns.length
 
   return (
     <Link to="/training" className="block">

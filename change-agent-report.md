@@ -1,5 +1,44 @@
 # Change Agent Report
 
+## Run: 2026-11-13 #2 (BUG FIX — area (b/f) training widgets + bodyweight source; the **dashboard and the Training tab showed DIFFERENT "this week's calorie burned" for the SAME workouts** — a UI↔UI desync. Both widgets compute the identical metric `Σ round(MET 5.5 × bodyweight × session-hours)` over the same completed, timed workout logs; the ONLY difference was the bodyweight input. The dashboard `TrainingVolumeWidget` used the **latest check-in weigh-in** (`latestCheckin?.weight_kg ?? user.weight_kg`) while the Training tab's "This Week's Calorie Burn" widget (`src/pages/Training/index.tsx`) used the **stale onboarding weight** (`user.weight_kg`). `users.weight_kg` is set at onboarding/Settings and is **never updated when a check-in is submitted** (confirmed: no `UPDATE users SET weight_kg` on any check-in path — the weigh-in only drives macro recalc + the `weekly_checkins` row), so it goes stale the moment the athlete's weight changes. Before the first weight-changing check-in `latestCheckin` is null and both fall back to `user.weight_kg` → they agree; the desync appears exactly once a weigh-in differs from the onboarding weight — i.e. after the first check-in of any cut, the app's single most common flow. A 90 kg→82 kg athlete saw the dashboard report ~9% lower kcal burned than the Training tab for the very same sessions.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN before changes)
+Clean `master` + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (507 tests, 83 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (f) show/date + (b) training widgets (rotated off 11-13 #1's area (c); (f) last dedicated 11-10, (b) last 11-11 #2)
+Deep-read and re-confirmed clean: `utils/dates.ts` (`getShowCountdown`/`weekStartMonday`/`addDays` all DST- and UTC-safe, noon/midnight anchored), `services/showDates.ts` + `ipc/showHandlers.ts` (local-midnight `weeksUntilShow`, `localToday`, `syncPrimaryToNearest`/`setPrimaryShow`/`cancelShow` all regenerate diet for the new show context), `data/competitionPrep.ts` `buildPrepTimeline` (25+-week current-week flagging), `PeakWeekWidget`/`QuickStatsWidget`/`PrepPaceWidget`/Progress + CheckIn show-day projections (all floor-consistent via `getShowCountdown().weeks`, fractional weeks kept only for projection math), `checkinSchedule` (both copies identical; infinite-loop + 0-interval guards), nutrition/training engines (sanitize/clamp seams), the Diet `reorderMeals`/`swapMeal` completion-remap, `cardio.ts`/`water.ts`/`units.ts`. A delegated deep trace of (b) training/workout and (d) onboarding/Settings/reset confirmed those write seams clean too. The one real defect: the Training tab's calorie-burn widget read the stale `user.weight_kg` while its dashboard twin read the current weigh-in.
+
+### The bug (root cause)
+The MET-5.5 burn math was **duplicated inline** in two places that had drifted on their bodyweight source. `TrainingVolumeWidget.tsx:40` (dashboard) correctly used `latestCheckin?.weight_kg ?? user.weight_kg`; `src/pages/Training/index.tsx:539` (Training tab `'calorie-burn'` node) used `const weightKg = user.weight_kg` and its `usePlanStore()` destructure never even pulled `latestCheckin`. Same formula, same logs, different weight → two different kcal numbers on two surfaces. (The Training page also never loaded check-in history, so even reading `latestCheckin` would be null on a direct navigation to the tab.)
+
+### STEP 3 — Fix (minimum; mirrors the project's weeklySessionProgress precedent of extracting the shared logic both surfaces use)
+- New `src/utils/trainingBurn.ts`: `currentBodyweightKg(latestCheckin, user)` (prefer the latest weigh-in, fall back to onboarding weight, guard non-finite/≤0) and `weeklyTrainingKcalBurned(logs, bodyweightKg)` (the MET-5.5 per-log-rounded summation + per-log breakdown; skips logs without both timestamps or with non-positive/corrupt durations; returns 0 for a non-finite weight — no NaN leak).
+- `src/pages/Training/index.tsx`: destructure `latestCheckin` + `loadCheckinHistory`, call `loadCheckinHistory(user.id)` in the load effect (so the tab populates it on direct navigation), and compute the widget via `currentBodyweightKg` + `weeklyTrainingKcalBurned`.
+- `src/components/widgets/TrainingVolumeWidget.tsx`: use the same two helpers (behavior unchanged — it already used the latest weigh-in), eliminating the duplicated math so the two surfaces can't drift again.
+
+### STEP 3b — Test (new)
+`tests/unit/trainingBurn.test.ts` (pure, no jsdom): `currentBodyweightKg` prefers the weigh-in and falls back on null/undefined/NaN/0/negative; `weeklyTrainingKcalBurned` formula + per-log rounding, skips missing-timestamp / reversed / unparseable logs, and returns 0 for a non-finite weight; plus a **regression** case proving both surfaces, now sharing the helper, agree AND reflect the current weigh-in (82) not the stale onboarding weight (90).
+
+### STEP 4 — Verification (after fix, all PASS)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (**514 tests**, 84 files; +7 new)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `src/utils/trainingBurn.ts` — new shared helper (current-bodyweight source + MET-5.5 burn).
+- `src/pages/Training/index.tsx` — calorie-burn widget uses the current weigh-in via the helper; loads check-in history.
+- `src/components/widgets/TrainingVolumeWidget.tsx` — uses the same helper (de-duplicates the math).
+- `tests/unit/trainingBurn.test.ts` — new regression test.
+- `change-agent-report.md` — this entry.
+
+---
+
 ## Run: 2026-11-13 (BUG FIX — area (c) check-in + Progress + adaptive nutrition; the **locked-screen "Edit Last Check-In" save never refreshed the store**, so a correction applied to the DB kept showing the OLD values in the UI — a DB↔UI desync. `saveEdit` (`src/pages/CheckIn/index.tsx`) calls `window.api.updateCheckin(...)` and then only re-queries `getNextCheckinDate`; it never calls `loadCheckinHistory`. Its two sibling write paths both refresh — `submitCheckin` updates the store with the new row, and the missed-fill `onMissedFilled` calls `loadCheckinHistory` — but the edit path was the odd one out. Result: right after saving a corrected weigh-in, the locked screen's "Last weigh-in" line still shows the pre-edit weight/date, the dashboard's `CheckinFeedbackWidget` (reads `latestCheckin`) and `RecentCheckinsWidget` (reads `checkinHistory`) keep the stale number + stale coach-feedback notes, and — most damaging — re-opening Edit pre-fills the form from the stale `lastCheckin`, so the correction looks like it was **lost** (user re-edits unnecessarily or loses trust), even though the DB holds the corrected value.)
 
 ### STEP 0 — Requested changes

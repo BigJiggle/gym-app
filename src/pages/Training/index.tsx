@@ -15,6 +15,7 @@ import type { TrainingSession, ExerciseLibraryItem } from '../../types'
 import { parseLocalDate, weekStartMondayStr } from '../../utils/dates'
 import { findPrevSessionLog } from '../../utils/prevSessionLog'
 import { weeklySessionProgressFromLogs } from '../../utils/weeklySessionProgress'
+import { currentBodyweightKg, weeklyTrainingKcalBurned } from '../../utils/trainingBurn'
 
 const DAY_NAMES = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const PHASE_COLOR: Record<string, string> = {
@@ -42,6 +43,8 @@ export default function Training() {
     startWorkout,
     loadActiveWorkout,
     loadWorkoutHistory,
+    latestCheckin,
+    loadCheckinHistory,
   } = usePlanStore()
   const { settings } = useSettingsStore()
 
@@ -65,6 +68,11 @@ export default function Training() {
     loadTrainingPlan(user.id)
     loadActiveWorkout(user.id)
     loadWorkoutHistory(user.id)
+    // Needed for the calorie-burn widget's CURRENT bodyweight (latest weigh-in).
+    // Without loading it here, a direct navigation to Training leaves latestCheckin
+    // null and the estimate silently falls back to the stale onboarding weight,
+    // disagreeing with the dashboard's identical widget (see currentBodyweightKg).
+    loadCheckinHistory(user.id)
     window.api.getExerciseLibrary().then(setExerciseLibrary)
   }, [user?.id])
 
@@ -534,16 +542,13 @@ export default function Training() {
               (log) => log.status === 'completed' && log.date >= weekStartStr && log.date <= todayDateStr && log.started_at && log.ended_at
             )
             if (weekCompleted.length === 0) return null
-            // MET 5.5 for vigorous weight training (ACSM standard)
-            const MET = 5.5
-            const weightKg = user.weight_kg
-            let weeklyBurn = 0
-            const burns = weekCompleted.map((log) => {
-              const hrs = (new Date(log.ended_at!).getTime() - new Date(log.started_at).getTime()) / 3600000
-              const kcal = Math.round(MET * weightKg * hrs)
-              weeklyBurn += kcal
-              return { date: log.date, kcal, mins: Math.round(hrs * 60) }
-            })
+            // Use the CURRENT bodyweight (latest weigh-in, falling back to the
+            // onboarding weight) via the shared helper so this estimate agrees with
+            // the dashboard's identical "kcal burned" widget instead of using the
+            // stale users.weight_kg — see currentBodyweightKg / weeklyTrainingKcalBurned.
+            const weightKg = currentBodyweightKg(latestCheckin, user)
+            const { total: weeklyBurn, perLog: burns } = weeklyTrainingKcalBurned(weekCompleted, weightKg)
+            if (burns.length === 0) return null
             const todayBurn = burns.find(b => b.date === todayDateStr)
             return (
               <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
