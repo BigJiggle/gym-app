@@ -1,5 +1,44 @@
 # Change Agent Report
 
+## Run: 2026-11-14 (NO BUG FOUND — area (d) onboarding + Settings + reset + data lifecycle re-audited in full, rotating off 11-13 #3's (b, extended a/e/d), #2's (f/b) and #1's (c); extended into (c) check-in store/frontend, (f) date/week utils, and the frontend state stores. Deep-traced every SCOPE error path — the Settings "Edit profile" write seam (`userSanitize.ts`), the data-reset/weigh-in merge, the check-in submit/edit/missed cascade and its store refresh, the Diet reorder/swap/completion index remap, and the unit-conversion helpers. Every seam already carries an explicit clamp/NaN-drop/guard. No real reachable defect found, so — per the routine's rule — no fix was fabricated.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** in the Queue → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN)
+Clean `master` (`cc1a1f6`, already up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (514 tests, 84 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (d) onboarding + Settings + reset + data lifecycle (last dedicated 10-25/10-26), extended into (c), (f), and the frontend stores
+Read deeply and re-confirmed clean — every candidate error path already guarded:
+
+**(d) Settings / profile / data lifecycle**
+- `electron/ipc/userSanitize.ts` `sanitizeUserUpdate`: every numeric profile field clamped at the write seam (`clampAge` 16–80, `clampHeightCm` 100–250, `clampWeightKgField` 30–300, `clampTrainingFrequency` 2–6, `clampExercisesPerSession` 3–12, `clampSetsPerExercise` 2–8, `clampMealCount` 1–20, `clampSnackCount` 0–20, `clampBodyFatPct` 3–60); a cleared field (`parseInt('')`→NaN) returns `undefined` and is dropped by the final filter so a required column is never NULLed; derived `show_date`/`division` are dropped so a profile edit can't ghost-write or desync them. `Settings/index.tsx` `handleSaveProfile` funnels every edit through that seam; the imperial↔metric height/weight inputs round-trip through the same clamp.
+- `src/utils/resetData.ts`: `isPreservedKey` keeps only the weigh-in + water keys; `mergeWeighIns` dedupes by date (daily entry wins), drops invalid weigh-ins (`isValidWeighIn`), and sorts ascending; `resetLocalData` reads the surviving log in a try/catch, collects-then-deletes (no mutate-while-iterate), and persists the merge.
+
+**(c) check-in store + frontend (extended)**
+- `checkinHandlers.ts` submit/submitMissed/update: weight clamped (`clampCheckinWeightKg` 30–300, null→reject), same-day duplicate rejected on every path, `previous`/trend window selected by **date** (not insertion id), `week_number` renumbered by (date,id) on a date-changing edit, `check_in_date` never written null/empty. `planStore.submitCheckin` prepends the new row (regular submit always uses `localDateStr()` = today, so DESC order holds) and reloads the diet plan; `onMissedFilled` and the locked-screen edit both call `loadCheckinHistory` (11-13 #1's fix) so no stale UI.
+- `checkinEngine.ts`: `parseAdjustments` normalizes any corrupt `adjustments` cell; `weightTrendPct` (Theil–Sen) skips non-positive x-gaps (same-day dupes → no ÷0); `weightTrend`/recovery/stress branches all finite-guarded.
+
+**(f) date/week utils (extended)** — `dates.ts` (`getShowCountdown` noon-vs-midnight anchor gives a 12h DST buffer; `weekStartMonday`/`addDays` calendar-arith DST-safe), `weeklyRate.ts`/`weeksTracked.ts` (finite-filtered, ≥1-week-span floor, null on too-little history), `checkinSchedule.ts` (`countMissedBetween` returns 0 for a non-positive/non-finite interval → no infinite loop; day-mode re-align guarded `<7`).
+
+**(a/b/e spot-checks)** — `nutritionEngine.ts` (clampWeightKg/clampMealCount/MIN_CALORIE_TARGET floors, `buildMeals` Infinity-guarded ratios, `getMealTemplates` cycles templates for 7+ counts), `trainingEngine.ts` (getSets/buildExercises finite), `WorkoutStats.tsx` (computePRs/epley1RM/tonnage/adherence all 0-denominator-guarded), `WeightChart`/`MeasurementsChart` (empty/single-point safe), `competitionLogs.ts`/`SupplementWidget`/`cardio.ts`/`water.ts` (entry sanitizers + non-destructive, clamped writes). The Diet `plan:reorderMeals` recovers the old→new permutation and remaps today/future completions only on a complete permutation; the drag handlers operate on the baseline `dietPlan.meals` (not the refeed-boosted `displayMeals`), so a refeed-day reorder can't persist boosted macros.
+
+### Why no fix
+Per the routine's rule — "do not invent problems … do not 'fix' correct code." Edge cases considered and deliberately **not** touched because they are intended behaviour or not reachable via the normal UI: `getNextCheckinDate` interval mode with a corrupt NaN `checkin_interval_days` would yield an Invalid Date (lock bypass), but the interval is only ever set from a fixed set of UI buttons (valid numbers) and the same-day duplicate guard still holds; the reorder `JSON.stringify` match on two **identical** cycled meals is stable via `used[]`/`break` and indistinguishable to the user (same macros/name); `monthlyAdherenceData`'s current-month denominator is the whole month's planned sessions by design (consistent with the calendar view). None rises to a real, reachable, user-facing defect.
+
+### STEP 4 — Verification (unchanged tree; only this report added)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (514 tests, 84 files)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `change-agent-report.md` — this entry (no source changes).
+
+---
+
 ## Run: 2026-11-13 #3 (NO BUG FOUND — area (b) training engine + workout/session flows re-audited in full, rotating off 11-13 #2's (f/b) and #1's (c); extended into (a) nutrition + Diet, (e) widgets + localStorage stores, and (d) data lifecycle. Deep-traced every SCOPE error path in these areas and a whole-codebase sweep of every `JSON.parse` call site (both processes) plus the localStorage-store factory; every seam already carries an explicit guard. No real reachable defect found, so — per the routine's rule — no fix was fabricated.)
 
 ### STEP 0 — Requested changes
