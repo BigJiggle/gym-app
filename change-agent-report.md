@@ -1,5 +1,42 @@
 # Change Agent Report
 
+## Run: 2026-11-14 #2 (NO BUG FOUND — area (a) nutrition engine + Diet flows re-audited in full, rotating off 11-14 #1's (d) and 11-13 #3's (b)/#2's (f/b)/#1's (c). Deep-read `nutritionEngine.ts` end-to-end (BMR/TDEE/phase-deficit/macro derivation, `buildMeals`, `getMealTemplates`, cook-time/prep-style/culture/exclusion selection, `normalizeMeals`, every clamp/sanitize helper), the Diet page (`src/pages/Diet/index.tsx`: refeed display, intake %/adherence-streak math, meal-eaten index mapping), `src/utils/refeed.ts`, the swap/reorder completion-remap handlers (`planHandlers.ts`), and `mealCompletionHandlers.ts`. Extended into (f) shows/date logic (`showHandlers.ts`, `showDates.ts`), (e) widgets + unit conversions (`WaterWidget`/`useWaterLog`, `DailyWeighInWidget`, `WeeklyScorecardWidget`, the two "this week's kcal burn" surfaces + `trainingBurn.ts`, `units.ts`), (c) `checkinEngine.ts`/`checkinHandlers.ts`, and the training engine (`trainingEngine.ts`). Backed the read with **empirical fuzzing**: generated plans across every extreme weight/height/age/goal/meal-count/snack-count/weeks-out/preference combination (incl. 0, negative, NaN, ±Infinity, 1e9) and every split/equipment/exercise-count/sets combo for training — **zero** NaN/Infinity fields, **zero** empty sessions, **zero** sub-1-set exercises; and fuzzed `calculateAdjustments` (incl. same-day-duplicate priors → no ÷0), the check-in meal-scaling path, `normalizeMeals`, `sanitizeCalorieTarget`/`sanitizeMacroGrams` with adversarial JSON. Every seam already carries an explicit clamp/NaN-drop/finite-guard. No real reachable defect found, so — per the routine's rule — no fix was fabricated.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** in the Queue → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN)
+Clean `master` (`e1995e1`, already up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (514 tests, 84 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (a) nutrition engine + Diet flows (extended into c/e/f/b)
+Read deeply and re-confirmed clean — every candidate SCOPE error path already guarded:
+
+**(a) nutrition engine + Diet**
+- `generateNutritionPlan`: `clampWeightKg` (30–300, NaN/<30→70) floors bodyweight before macro derivation; `calcBMR` guards non-finite weight/height/age; `calories = Math.max(1200, …)`; `resolvedSnackCount` drops NaN then clamps 0–20; `clampMealCount` (NaN→4, 1–20) before `buildMeals`; phase derived from the *actual* adjustment, not a static map.
+- `buildMeals`: floors `totalCal` to `MIN_CALORIE_TARGET` so `(protein·4)/totalCal` can't be Infinity; `SNACK_CAL` capped at the per-slot share; `perMainCal` guarded on `mainCount>0`; per-meal carb floored at 0. `getMealTemplates` cycles the 6 main / 3 snack templates for any count (1–20 each). `normalizeMeals` is the read seam for a corrupt/hand-edited `meals` cell (parses safely, drops null/non-object entries, regex-validates `time`, coerces finite macros).
+- Diet page: refeed is display-only (`applyRefeedToMeals` returns a new array, never mutates; carb boost sums exactly); intake `calPct/protPct/carbPct/fatIntakePct` all denominator-guarded and `Math.min(100,…)`; consumed macros use `displayMeals[c.meal_index]?.x ?? 0` so an out-of-range completion index can't throw; refeed/water/cardio localStorage reads all NaN-guarded. `plan:reorderMeals` remaps today/future completions only on a complete permutation (delete-then-reinsert avoids the UNIQUE collision); `plan:swapMeal` bounds the index.
+
+**(c)/(e)/(f)/(b) extended** — `checkinEngine` (`weightTrendPct` Theil–Sen skips non-positive x-gaps → no ÷0; `clampCheckinWeightKg`; `parseAdjustments` normalizes a corrupt cell); `checkinHandlers` submit/missed/update (same-day dupe rejected every path, week_number renumbered by (date,id), `check_in_date` never null); `trainingBurn` + both "this week kcal burn" surfaces read bodyweight from the same `currentBodyweightKg(latestCheckin, user)` seam and skip timestamp-less/negative-duration logs (the 11-13 #2 desync stays fixed); `WaterWidget`/`useWaterLog`/`DailyWeighInWidget` (oz/lbs↔ml/kg round-trips, log parse-sanitized to 30–300 kg); `WeeklyScorecardWidget` ISO-week Mon→today math (Sunday edge handled); `units.ts` `cmToFeetInches` round-then-split (no "5 ft 12 in"); `showHandlers`/`showDates` (local-midnight weeks-out, `localToday` avoids the UTC drift).
+
+### STEP 3 — Fix
+None — no real reachable defect found. Per the routine's rule ("do not invent problems … do not 'fix' correct code"), no fix was fabricated. Deliberately NOT touched because intended/unreachable: the `shows:add` raw `show_date` insert (the "My Shows" form uses `<input type="date">`, so the value is always a valid YYYY-MM-DD or empty, and an empty string sorts below `today` so it never becomes primary); the dashboard burn widget's `net kcal/day` dividing total burn by all completed logs while the burn only counts timestamped ones (a soft estimate, not data corruption); a 66-lb (= 29.9 kg) daily weigh-in being rejected by the 30 kg floor (below any competitor's weight).
+
+### STEP 2b — Empirical fuzz (temporary tests, removed after running)
+Two throwaway vitest files exercised the engines with the full adversarial grid above; both passed (no NaN/Infinity/empty-session/sub-1-set/÷0), then were deleted so the tree is unchanged apart from this report.
+
+### STEP 4 — Verification (unchanged tree; only this report added)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (514 tests, 84 files)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `change-agent-report.md` — this entry (no source changes).
+
+---
+
 ## Run: 2026-11-14 (NO BUG FOUND — area (d) onboarding + Settings + reset + data lifecycle re-audited in full, rotating off 11-13 #3's (b, extended a/e/d), #2's (f/b) and #1's (c); extended into (c) check-in store/frontend, (f) date/week utils, and the frontend state stores. Deep-traced every SCOPE error path — the Settings "Edit profile" write seam (`userSanitize.ts`), the data-reset/weigh-in merge, the check-in submit/edit/missed cascade and its store refresh, the Diet reorder/swap/completion index remap, and the unit-conversion helpers. Every seam already carries an explicit clamp/NaN-drop/guard. No real reachable defect found, so — per the routine's rule — no fix was fabricated.)
 
 ### STEP 0 — Requested changes
