@@ -1,5 +1,43 @@
 # Change Agent Report
 
+## Run: 2026-11-15 #2 (NO BUG FOUND — area (b) training engine + workout/session flows re-audited in full, rotating off 11-15 #1's (f/e/c), 11-14 #2's (a) and #1's (d); extended via a delegated read-only scan into (a) nutrition engine + Diet, (c) Progress, (d) Onboarding/Settings, and (e) widgets + localStorage. Deep-read the entire training path end-to-end and every candidate SCOPE error path across the other areas. Every seam already carries an explicit clamp/NaN-drop/finite guard; every shared metric reads from one source. No real reachable defect found, so — per the routine's rule — no fix was fabricated.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` Queue has **zero unchecked (`- [ ]`) items** → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN)
+Clean `master` (`8a6a802`, already up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (514 tests, 84 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (b) training engine + workout/session flows (extended into a/c/d/e)
+Read deeply and re-confirmed clean — every candidate SCOPE error path already guarded:
+
+**(b) training engine (`electron/services/trainingEngine.ts`)**
+- `generateTrainingPlan`: `freq` guarded against NaN/non-finite/out-of-range (round→clamp 2–6, else 4); `exPerSession`/`userDefault`/`userMax` each reject non-finite/non-positive (incl. a typed 0 that slips past HTML `min`) → fall back to `undefined` so each builder applies its own default, never an empty/zero-set session; `weeksTotal` falsy-0-safe; `force_deload` drives only the phase, not duration.
+- `getSets` deload floor `Math.max(1, sets-1)`; `userMax` applied via `Math.min` only when positive. `normalizeExercises` parses/drops non-object entries and guarantees a string `name` at the `plan:getTraining` read seam. `getExercises`/`getExercisesByMuscleGroup` compound/isolation interleave + `slice(0,count)`; every muscleGroup has ≥1 `minimal`-tier exercise so no split (PPL/UL/Arnold/Bro/FullBody) yields an empty session even at minimal equipment; `rotateOne` preserves length; bro/full-body `.filter(Boolean)` drops undefined indexes.
+- `determinePhase`/`getRepRange`/`getRIR` boundary-consistent.
+
+**workout/session flows** — `workoutHandlers` (`sanitizeReps`/`sanitizeWeightKg` clamp 0–9999 + NaN→null at every write seam: logSet/updateSet/saveSetsBatch; `workout:start` local-date; history LIMIT guarded). `WorkoutSession` (`clampSetCount` + `parseRepMidpoint` seed guards; markSetDone idempotent on double-tap; add/remove-set bounded; PR detection via `detectNewPRs` compares display-unit vs all-time map; weight kg-conversion on save). `WorkoutLogEditor`/`SessionEditor` (`clampSetCount` on the Sets input; free-text reps handled by `parseRepMidpoint`; `plan:updateSession` rejects empty-session write). `WorkoutStats`/Training `index.tsx` (PRs/tonnage/trend/adherence all denominator- or length-guarded; `getShowCountdown` floor matches the inline Training-tab countdown; `weeklySessionProgressFromLogs` counts planned sessions; `findPrevSessionLog` null-session guard; `weeklyTrainingKcalBurned`/`currentBodyweightKg` finite/positive guards and single bodyweight source).
+
+**(c) extended** — `checkinEngine.calculateAdjustments` sign-verified (cut/recomp: too-fast→+150, stalling→−100/cardio, on-track note; `weightTrendPct` Theil–Sen skips non-positive x-gaps so same-day dupes can't ÷0; recovery `+100` only when `calories_delta<=0`); `checkinHandlers` submit/submitMissed/update (same-day dupe rejected every path, week_number renumbered by (date,id), diet re-scale divisor floored at `MIN_CALORIE_TARGET`); `checkinSchedule.countMissedBetween` returns 0 on non-positive/non-finite interval → no infinite loop in `addMissedFrom`.
+
+**(a)/(d)/(e) extended (delegated read-only scan)** — nutrition engine (`calcBMR` finite-guards, `buildMeals` floors `totalCal`, `clampWeightKg`/`clampMealCount`/`sanitize*`/`normalizeMeals` at every seam, `calcPortionStr` guards missing `calPer100g`); Diet page (`displayMeals[c.meal_index]?.x ?? 0`, all %s denominator-guarded, `applyRefeedToMeals` non-mutating, `meal.time.split` safe post-normalize); Progress page (`computeWeeklyWeightRate`/`computeWeeksTracked` ≥2-finite + ≥1-week-span, ASC vs DESC orderings used consistently, estimated-BF clamped); Settings/Onboarding (`sanitizeUserUpdate` → per-field clamps drop NaN/extremes before SQLite); widgets + localStorage (`createLocalStore`/`createWidgetStore` shape-reject + de-dupe, per-entry sanitizers in `competitionLogs`/`parseDailyWeightLog`, every widget average/% length-guarded).
+
+### STEP 3 — Fix
+None — no real reachable defect found. Per the routine's rule ("do not invent problems … do not 'fix' correct code"), no fix was fabricated. Two items were **considered and deliberately NOT touched** because each is a cosmetic/design choice, not a reachable defect: (1) the Diet "Still to eat" kcal line can read a small negative when calories are over but protein is under on a refeed day (no crash/NaN, gated behind `mealsEaten < totalMeals`, purely cosmetic — excluded per the routine's no-cosmetic rule); (2) a refeed day shows boosted "Today's Intake" calories while the "This Week" total / Progress consistency count the base stored meal calories for that day — the stored plan is deliberately untouched (display-only refeed), so this is an intended design choice, not a DB↔UI desync.
+
+### STEP 4 — Verification (unchanged source tree; only this report added)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (514 tests, 84 files)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `change-agent-report.md` — this entry (no source changes).
+
+---
+
 ## Run: 2026-11-15 (NO BUG FOUND — area (f) shows/competition + date/week logic re-audited in full, rotating off 11-14 #2's (a), #1's (d), and 11-13 #3's (b); extended into (e) widgets + localStorage stores and (c) check-in/Progress. Deep-read every SCOPE error path in these areas plus a cross-surface metric-consistency sweep (the exact bug class the 11-13 burn-widget and 11-10 weeks-out fixes addressed). Every seam already carries an explicit clamp/NaN-drop/finite guard, and every shared metric reads from one source. No real reachable defect found, so — per the routine's rule — no fix was fabricated.)
 
 ### STEP 0 — Requested changes
