@@ -1,5 +1,45 @@
 # Change Agent Report
 
+## Run: 2026-11-15 (NO BUG FOUND — area (f) shows/competition + date/week logic re-audited in full, rotating off 11-14 #2's (a), #1's (d), and 11-13 #3's (b); extended into (e) widgets + localStorage stores and (c) check-in/Progress. Deep-read every SCOPE error path in these areas plus a cross-surface metric-consistency sweep (the exact bug class the 11-13 burn-widget and 11-10 weeks-out fixes addressed). Every seam already carries an explicit clamp/NaN-drop/finite guard, and every shared metric reads from one source. No real reachable defect found, so — per the routine's rule — no fix was fabricated.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` Queue has **zero unchecked (`- [ ]`) items** (all 12 items done, latest 2026-07-07) → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN)
+Clean `master` (`8e78ef4`, already up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (514 tests, 84 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (f) shows/competition + date/week (last dedicated via the 11-10/11-03 fixes), extended into (e) and (c)
+Read deeply and re-confirmed clean — every candidate error path already guarded:
+
+**(f) shows / competition / date-week**
+- `src/utils/dates.ts`: `localDateStr`/`parseLocalDate` (local-noon parse), `addDays`/`weekStartMonday` (calendar-day arithmetic, DST-safe), `getShowCountdown` (`totalDays` floored at 0 + separate `isPast` so a past show doesn't read "SHOW DAY!" forever), `weekStartMondayStr`.
+- `electron/services/showDates.ts`: `weeksUntilShow` (local-midnight so the generated plan's weeks-out matches the UI countdown), `localToday` (local date, not SQLite UTC `date('now')`).
+- `electron/ipc/showHandlers.ts`: `syncPrimaryToNearest` (`show_date >= localToday()`, re-points users.show_date/division on every add/update/delete/cancel), `persistProfileShowDate` (regex-validates the AI-supplied date, routes through the shows table so it survives relaunch), `setPrimaryShow` (past-show guard + diet regen anchored to the same local day), and the add/update/delete/cancel diet-regen branches (each regenerates for the new weeks-out so Diet ≠ sidebar can't desync).
+- `src/components/widgets/PeakWeekWidget.tsx` (`daysOut = totalDays + 1`, self-hides outside the 7-day window and on `isPast`), `src/data/competitionPrep.ts` `PEAK_WEEK_PROTOCOL` (daysOut 1–7 all present), `buildPrepTimeline`/`getWeekGuidance` (current-week surfaced even for 25+-week-out shows), `REFEED_DAY_NAMES` (0=Sun, matches `getDay()`).
+- Verified **day_of_week convention is consistent app-wide**: `trainingEngine` emits 1=Mon…6=Sat (`DAY_SCHEDULES`), and every consumer (`WeeklyScorecardWidget`, `SessionsWeekWidget`, Training tab `todayDow`, `weeklySessionProgress.weekdayFromDateStr`) maps JS Sunday(0)→7 to match.
+
+**(e) widgets + localStorage (extended)** — `useWaterLog`/`WaterWidget` (NaN-guarded reads, oz↔ml round-trips), `DailyWeighInWidget` + `parseDailyWeightLog` (per-entry sanitize, 30–300 kg bound at the write seam, 7-day/prev-7 avg guarded ≥2 entries), `CardioWidget`/`cardioStore` (minutes>0 guard), `SleepWidget`/`competitionLogs` (SleepEntry.hours matches the scorecard's `e.hours>=7` read; every store has an entry-level validator dropping corrupt rows), `TodaysMacrosWidget`/`NextMealWidget`/`TodaysSessionWidget` (`meals[c.meal_index]?.x ?? 0`, all %s denominator-guarded, PR detection compares strict max weight), `MuscleCoverageWidget` (`nameToGroup.get` miss is skipped, not crashed), `QuickStatsWidget`, `GroceryList.buildGroceryItems` (gram/count/plain-name accumulation, per-occurrence sums), `WeeklyMealView.getWeekBounds` (setDate roll-over), `createLocalStore`.
+
+**(c) check-in / Progress (extended)** — `checkinEngine.calculateAdjustments` (cut/recomp branches: sign verified — losing fast→+150, stalling→−100/cardio, on-track→no change; `weightTrendPct` Theil–Sen median, non-positive x-gaps skipped so same-day dupes can't ÷0, sign preserved through the positive bodyweight divisor), `checkinHandlers` submit/submitMissed/update (same-day duplicate rejected every path; the retroactive missed-slot insert counts priors-before-date and shifts later week_numbers so numbering stays chronological; `adjustments` parsed via `parseAdjustments` on history/latest/submit so `RecentCheckinsWidget`'s `c.adjustments.calories_delta` reads an object, not a raw string), `checkinSchedule.computeMissedSlots` (`countMissedBetween` returns 0 on a non-positive/non-finite interval → no infinite loop), Progress page (`progressEntries` ASC vs `checkinHistory` DESC orderings each used consistently — starting=oldest, current=newest; `computeWeeklyWeightRate`/`computeWeeksTracked` finite-filtered and ≥1-week-span floored; weeks-out label uses canonical `getShowCountdown().weeks`).
+
+**(a)/(b) spot-checks** — `nutritionEngine.buildMeals` (MIN_CALORIE_TARGET floor on the ratio divisors, `SNACK_CAL` capped, `mainCount>0` guard, snack-named templates == snackCount so `isSnack` and `mainCount=length−snackCount` agree), `getMealTemplates` (cycles 6 main / 3 snack templates for any count), `getFood`/`isExcluded` (alias + normalized-name match), `plan:swapMeal`/`plan:reorderMeals` (index-bounded; reorder remaps today/future completions only on a complete permutation, delete-then-reinsert to dodge the UNIQUE collision).
+
+### STEP 3 — Fix
+None — no real reachable defect found. Per the routine's rule ("do not invent problems … do not 'fix' correct code"), no fix was fabricated. One item was **considered and deliberately NOT touched** because it is a defensible design choice rather than a reachable defect: `TrainingVolumeWidget` ("This Week's Volume") shows a secondary "sessions" stat as `thisWeekLogs.length / trainingPlan.sessions.length` (completed workouts this week ÷ weekly plan size), whereas the dedicated `SessionsWeekWidget` and the scorecard show `completedPlannedSessions / scheduledSoFar`. These can differ (e.g. an extra off-plan workout reads "4/3" vs "3/3"), but the Volume widget's numerator legitimately counts the sessions whose sets/volume/kcal it is summarizing (changing it to planned-session-progress would desync the count from the volume it summarizes), and the two widgets answer different questions (progress-so-far vs week-total). Unlike the 11-13 burn desync (the *same* metric computed from a different bodyweight) and the 11-10 weeks-out desync (the *same* countdown rounded differently), this is two distinct, each-internally-consistent metrics — not a single value shown two ways — so it is not a reachable defect to fix.
+
+### STEP 4 — Verification (unchanged tree; only this report added)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (514 tests, 84 files)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `change-agent-report.md` — this entry (no source changes).
+
+---
+
 ## Run: 2026-11-14 #2 (NO BUG FOUND — area (a) nutrition engine + Diet flows re-audited in full, rotating off 11-14 #1's (d) and 11-13 #3's (b)/#2's (f/b)/#1's (c). Deep-read `nutritionEngine.ts` end-to-end (BMR/TDEE/phase-deficit/macro derivation, `buildMeals`, `getMealTemplates`, cook-time/prep-style/culture/exclusion selection, `normalizeMeals`, every clamp/sanitize helper), the Diet page (`src/pages/Diet/index.tsx`: refeed display, intake %/adherence-streak math, meal-eaten index mapping), `src/utils/refeed.ts`, the swap/reorder completion-remap handlers (`planHandlers.ts`), and `mealCompletionHandlers.ts`. Extended into (f) shows/date logic (`showHandlers.ts`, `showDates.ts`), (e) widgets + unit conversions (`WaterWidget`/`useWaterLog`, `DailyWeighInWidget`, `WeeklyScorecardWidget`, the two "this week's kcal burn" surfaces + `trainingBurn.ts`, `units.ts`), (c) `checkinEngine.ts`/`checkinHandlers.ts`, and the training engine (`trainingEngine.ts`). Backed the read with **empirical fuzzing**: generated plans across every extreme weight/height/age/goal/meal-count/snack-count/weeks-out/preference combination (incl. 0, negative, NaN, ±Infinity, 1e9) and every split/equipment/exercise-count/sets combo for training — **zero** NaN/Infinity fields, **zero** empty sessions, **zero** sub-1-set exercises; and fuzzed `calculateAdjustments` (incl. same-day-duplicate priors → no ÷0), the check-in meal-scaling path, `normalizeMeals`, `sanitizeCalorieTarget`/`sanitizeMacroGrams` with adversarial JSON. Every seam already carries an explicit clamp/NaN-drop/finite-guard. No real reachable defect found, so — per the routine's rule — no fix was fabricated.)
 
 ### STEP 0 — Requested changes
