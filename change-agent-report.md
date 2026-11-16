@@ -1,5 +1,47 @@
 # Change Agent Report
 
+## Run: 2026-11-16 (NO BUG FOUND — area (c) check-in + Progress + adaptive nutrition re-audited in full, rotating off 11-15 #2's (b), #1's (f), 11-14 #2's (a) and #1's (d); extended into (e) widgets + localStorage stores, plus the DB schema/migrations/db-helper layer. Deep-read the whole check-in path end-to-end and traced every SCOPE error path across the adjacent areas. Two parallel read-only sub-audits (charts/progress widgets; nutrition/grocery/show/date paths) surfaced two candidate defects and one near-miss — ALL independently DISPROVEN against primary sources (recharts 2.15.4 source + the actual call sites). Every seam already carries an explicit clamp/NaN-drop/finite guard; every shared metric reads from one source. No real reachable defect found, so — per the routine's rule — no fix was fabricated.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` Queue has **zero unchecked (`- [ ]`) items** → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN)
+Clean `master` (`b05bd28`, already up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (514 tests, 84 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (c) check-in + Progress + adaptive nutrition (extended into e + DB layer)
+Read deeply and re-confirmed clean — every candidate SCOPE error path already guarded:
+
+**(c) check-in engine (`electron/services/checkinEngine.ts`)** — `parseAdjustments` (single read seam, always returns a well-formed `Adjustments` incl. `notes:[]`, so no consumer `.notes.map`/`.calories_delta` can crash on a `'{}'`/corrupt/non-JSON cell); `clampCheckinWeightKg` (30–300, non-finite/<=0 → null rejected at every write seam); `weightTrendPct` Theil–Sen median skips non-positive x-gaps so same-day dupes can't ÷0, falls to the single-week `weightTrend` under 2 priors; `weightTrend` guards 0/non-finite bodyweight → 0; `calculateAdjustments` cut/recomp sign-verified (too-fast→+150, stalling→−100 or cardio when calories already ≤1400, on-track note), recovery `+100` only when `calories_delta<=0`.
+
+**check-in handlers (`electron/ipc/checkinHandlers.ts`)** — submit/submitMissed/update all clamp the weight, reject a same-day duplicate every path (keeps week_numbers unique + the trend chart single-valued per day), and select `previous`/trend window by DATE not insertion id (so a back-filled retroactive weigh-in can't feed a backwards signal); submit's weekNumber = prior-max+1, submitMissed counts priors-before-date then shifts later rows, update renumbers by (date,id) whenever the date changed; the adaptive diet re-scale floors the ratio divisor at `MIN_CALORIE_TARGET` and derives protein/fat from the clamped just-submitted weight; `check_in_date` is never written null/empty (dropped from the UPDATE set). `checkinSchedule.computeMissedSlots`/`countMissedBetween` return 0 on a non-positive/non-finite interval → no infinite loop in `addMissedFrom`; `getNextCheckinDate` anchor-walk is day-of-week correct for weekly/biweekly/interval.
+
+**Progress page (`src/pages/Progress/index.tsx`) + utils** — `computeWeeklyWeightRate`/`computeWeeksTracked` finite-filtered + ≥1-week-span floored; `progressEntries` (week_number ASC) vs `checkinHistory` (date DESC) orderings each used consistently (first=oldest, latest/[0]=newest), kept in sync by the update-path renumber; `computeEstimatedBF` clamped 3–60; weeks-out label uses canonical `getShowCountdown().weeks`; measurement deltas length/≥2 guarded; all %/width bars denominator-guarded. Check-In page: `toKg`/`toCm` reject NaN/<=0; auto-fill training/diet adherence denominators floored at 1/Math.max(1,…); success-state projection reads `checkinHistory[0]` (the just-prepended submit) and guards `weeklyRate===null`/`weeksToShow<=0`.
+
+**(e) widgets + localStorage (extended)** — `createLocalStore` (shape-reject + per-entry sanitizer seam), `competitionLogs` (per-store entry validators drop corrupt rows), `WeeklyScorecardWidget`/`SessionsWeekWidget`/`weeklySessionProgress` (DOW Sun→7 mapping, all scores length-guarded, `completedPlanned/scheduledSoFar`), `TrainingVolumeWidget` (early-return on empty week → `/thisWeekLogs.length` safe), `trainingBurn`/`cardio`/`water` (finite/positive guards, non-destructive same-day merges, single bodyweight source), Dashboard `adherenceStreak` (totalMeals>0 guard, 60-day window).
+
+**DB layer (`electron/database/{schema,db}.ts`)** — migrations v1–13 apply idempotently (statement-split, `IF NOT EXISTS`, version-gated, failures logged-not-rethrown so a bad migration never wipes data); v9 table-rebuild preserves all columns; `namedParams` maps `undefined→null`; `normalizeMeals` on the `plan:getDiet` read seam coerces every macro to a finite number, so even a hand-edited `meals` cell carrying NaN (e.g. via the adaptive re-scale write path) renders as 0, never NaN, in the UI.
+
+### STEP 2b — Two sub-audit candidates + one near-miss, all DISPROVEN on verification
+1. **WeightChart "Show Day" tooltip (`src/components/charts/WeightChart.tsx:68-85`)** — claim: hovering the projected Show-Day point renders a blank value in the wrong (actual/orange) color because `actual = payload.find(dataKey==='weight')` matches the null-valued weight item. **Disproven against recharts 2.15.4 source**: `<Tooltip>`'s `filterNull` prop defaults to `true` (`node_modules/recharts/lib/component/Tooltip.js:71-75`) and filters every `entry.value == null` item out of `finalPayload` BEFORE passing it to the custom `content`. At Show Day the weight item (value `null`) is stripped, so `CustomTooltip` sees only `[{dataKey:'projected'}]` → `actual=undefined` → `isProjected=true` → renders the projected weight in blue, labeled "projected". The code is correct.
+2. **DailyWeighInWidget 66 lb floor** — a 66 lb (= 29.94 kg) entry is rejected by the 30 kg floor though the input advertises `min=66`. Below any competitor's bodyweight; flagged trivial by the sub-audit itself and already considered-and-rejected on the 11-14 #2 run. Not a reachable defect.
+3. **`shows:update` edit-to-past-date → stale cutting diet** — unreachable: `updateShow`/`shows:update` exists only in the preload type surface (`src/types/index.ts:275`) and is **called from nowhere in `src/`**; the Settings show-date input routes through `user:update`, where `sanitizeUserUpdate` deliberately drops `show_date` (`userSanitize.ts:116`). No live edit path.
+
+### STEP 3 — Fix
+None — no real reachable defect found. Per the routine's rule ("do not invent problems … do not 'fix' correct code"), no fix was fabricated.
+
+### STEP 4 — Verification (unchanged source tree; only this report added)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (514 tests, 84 files)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `change-agent-report.md` — this entry (no source changes).
+
+---
+
 ## Run: 2026-11-15 #2 (NO BUG FOUND — area (b) training engine + workout/session flows re-audited in full, rotating off 11-15 #1's (f/e/c), 11-14 #2's (a) and #1's (d); extended via a delegated read-only scan into (a) nutrition engine + Diet, (c) Progress, (d) Onboarding/Settings, and (e) widgets + localStorage. Deep-read the entire training path end-to-end and every candidate SCOPE error path across the other areas. Every seam already carries an explicit clamp/NaN-drop/finite guard; every shared metric reads from one source. No real reachable defect found, so — per the routine's rule — no fix was fabricated.)
 
 ### STEP 0 — Requested changes
