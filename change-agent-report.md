@@ -1,5 +1,48 @@
 # Change Agent Report
 
+## Run: 2026-11-16 #2 ([FIX] — area (a) nutrition + Diet flows: fixed a real, reachable DB↔UI desync where regenerating the meal plan left stale meal-completions in the frontend store, inflating "meals eaten" past the plan size (e.g. "6/4 meals"). Rotated off 11-16 #1's (c), 11-15 #2's (b), #1's (f), 11-14's (a)/(d). Two parallel read-only sub-audits traced the two largest files (planHandlers.ts 1133L, Diet/index.tsx 1903L); I verified every candidate against primary sources myself.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` Queue has **zero unchecked (`- [ ]`) items** → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN before changes)
+Clean `master` (`bdad61b`, already up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (514 tests, 84 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (a) nutrition engine + Diet flows (+ check-in/Progress/utils/widgets/stores manually)
+I deep-read checkinEngine/checkinHandlers, Progress page + utils (units, targetWeight, dates, water, cardio, trainingBurn, weeklyRate, weeksTracked, refeed, detectNewPRs, parseRepMidpoint, weeklySessionProgress), userSanitize, settings/progress/mealCompletion handlers, GroceryList, WeeklyMealView, mealAccordion, swapAlternatives, recipeSteps, Step4Nutrition, planStore, and several widgets — all already correctly guarded. Two parallel read-only Explore sub-audits covered planHandlers.ts and Diet/index.tsx and surfaced the defect below (plus lower-severity candidates recorded under "Not fixed this run").
+
+### STEP 3 — THE BUG (real, reachable, no API key needed) + fix
+**Stale meal-completions after an in-place diet regenerate → "meals eaten" exceeds plan size (DB↔UI desync).**
+- Root cause: every non-AI regenerate path on the Diet tab (Regenerate Meals button `src/pages/Diet/index.tsx:471`, save prefs `:234`, toggle restriction `:218`, exclude food `:206`) calls the store action `generateDietPlan` (`src/store/planStore.ts:72`), whose IPC handler `plan:generateDiet` (`electron/ipc/planHandlers.ts:160`) does `DELETE FROM diet_plans` + `INSERT` (new plan id) and purges today/future completions whose positional `meal_index` no longer maps to a meal (`clearOrphanedMealCompletions`, `:240`). But `generateDietPlan` in the store only `set({ dietPlan })` — it never reloads `mealCompletions`. The Diet page's completions-reload effect was keyed `[user?.id, tab]` (`src/pages/Diet/index.tsx:163-166`), so it did NOT refire on a plan change.
+- Symptom: with e.g. a 6-meal plan and several meals logged today, lowering snack_count (or hitting Regenerate / toggling a restriction / excluding a food) produces a 4-meal plan while the store keeps the 6 stale completions. `mealsEaten = todayCompletions.length` (6) then exceeds `totalMeals = displayMeals.length` (4): the badge renders "6/4 meals", the weekly-compliance cell greens incorrectly ("days on track" inflated), and every `mealsEaten === totalMeals` "all meals hit" state never fires — until a tab switch or relaunch. (Consumed macros stay ~right because they read `displayMeals[c.meal_index]?.calories ?? 0`, so orphan indices contribute 0 — it's the meal-COUNT displays that are wrong.)
+- Why a display-time clamp would be WRONG: the backend deliberately purges only today/future orphans and keeps historical days as a record (a past day legitimately has 6 completions from when the plan was 6 meals). Clamping `meal_index < currentMealCount` at render would corrupt that history. The correct fix is to re-read the DB (which already reflects the purge for today), not to clamp.
+- Fix (minimal, correct layer — the component owns the week range): key the completions-reload effect on the plan id too — `}, [user?.id, tab, dietPlan?.id])` (`src/pages/Diet/index.tsx:174`). Since `plan:generateDiet` returns a new plan id on every regenerate, the effect now refires and reloads the current week's completions from the DB (orphans gone for today, history intact), covering all four non-AI regenerate paths in one place. Mirrors the reorder drop handlers (`:1134`, `:1274`) that already reload for the same reason.
+
+### STEP 3b — Added test
+`tests/unit/dietRegenerateCompletionsRefresh.test.tsx` (jsdom) — renders the real Diet page, records the mount completions load, then simulates a 6→4 regenerate (new plan id + DB purged to 4) and asserts the store reloads so today's completions = 4 (≤ meal_count), never 6. FAILS on the old `[user?.id, tab]` deps ("expected 2 to be greater than 2"), PASSES with the fix.
+
+### STEP 4 — Verification (all GREEN)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (515 tests, 85 files — +1 new test)
+- `npx electron-vite build` → PASS
+
+### Not fixed this run (recorded for a future run — one fix per run)
+From the planHandlers/claudeService sub-audit, two genuine but **AI-path-gated** issues (only run when a `claude_api_key` is configured AND the hardcoded `claudeService.ts:7` model id is valid, so currently latent):
+1. **(would be HIGH if reachable) AI "switch to maintenance"/activity change rebuilds meals but never recomputes calories** — `plan:applyAIRequest` regen block (`planHandlers.ts:990-1028`) passes the *existing* `calories_target`/macros into `buildMealsPublic` and only re-distributes foods; it never re-derives energy from the new `goal`/`activity_level`. Result: `users.goal` says maintain while `diet_plans.calories_target` stays at the cut value — stored goal and calories mutually inconsistent.
+2. **(LOW-MED) negative AI macros persist** — `normalizeMeals`'s `num()` (`nutritionEngine.ts:915`) accepts negative finite values; a hallucinated `"calories": -400` is stored verbatim and subtracts from day totals. One-line guard would be `Math.max(0, n)`.
+3. **(LOW) `maxSetsOverride` writes `sets: null`** when an AI exercise omits `sets` (`planHandlers.ts:974`, `Math.min(undefined, cap)` → NaN → JSON `null`). Low reachability.
+From the Diet sub-audit, two LOW display-only items deliberately NOT touched (cosmetic / design, per the no-cosmetic rule): "Still to eat" kcal can read a small negative when calories are over but protein is short (`index.tsx:580`, no `Math.max(0,…)` unlike the adjacent macro spans); swapping a meal ON a refeed day captures the refeed-boosted portion sizes into the baseline plan (`index.tsx:1235`/`:1849` → `swapAlternatives.ts` uses `meal.calories`) — portions are labelled "examples", low impact.
+
+### Files changed
+- `src/pages/Diet/index.tsx` — completions-reload effect now also keyed on `dietPlan?.id` (+ expanded comment).
+- `tests/unit/dietRegenerateCompletionsRefresh.test.tsx` — new failing-then-passing regression test.
+- `change-agent-report.md` — this entry.
+
+---
+
 ## Run: 2026-11-16 (NO BUG FOUND — area (c) check-in + Progress + adaptive nutrition re-audited in full, rotating off 11-15 #2's (b), #1's (f), 11-14 #2's (a) and #1's (d); extended into (e) widgets + localStorage stores, plus the DB schema/migrations/db-helper layer. Deep-read the whole check-in path end-to-end and traced every SCOPE error path across the adjacent areas. Two parallel read-only sub-audits (charts/progress widgets; nutrition/grocery/show/date paths) surfaced two candidate defects and one near-miss — ALL independently DISPROVEN against primary sources (recharts 2.15.4 source + the actual call sites). Every seam already carries an explicit clamp/NaN-drop/finite guard; every shared metric reads from one source. No real reachable defect found, so — per the routine's rule — no fix was fabricated.)
 
 ### STEP 0 — Requested changes

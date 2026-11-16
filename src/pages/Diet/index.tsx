@@ -156,14 +156,21 @@ export default function Diet() {
     loadDietPlan(user.id)
   }, [user?.id])
 
-  // Reload completions for current week whenever the plan tab is re-activated.
-  // The Weekly View loads its own week's completions into the shared store; without
-  // this refresh, returning from a previous-week view would show stale (empty) data
-  // in the Today's Intake and This Week's Diet sections.
+  // Reload completions for current week whenever the plan tab is re-activated OR
+  // the plan itself changes. The Weekly View loads its own week's completions into
+  // the shared store; without this refresh, returning from a previous-week view
+  // would show stale (empty) data in the Today's Intake and This Week's Diet
+  // sections. Keying on dietPlan.id also covers a regenerate (Regenerate Meals,
+  // save prefs, toggle a restriction, exclude a food — all DELETE+INSERT a new
+  // plan row): the backend purges today/future completions whose meal_index no
+  // longer maps to a meal (clearOrphanedMealCompletions), so without a reload a
+  // meal-count shrink leaves orphaned completions in the store that inflate
+  // "meals eaten" past the plan size (e.g. "6/4 meals") and the weekly-compliance
+  // counts. The reorder drop handlers reload for the same reason.
   useEffect(() => {
     if (!user?.id || tab !== 'plan') return
     loadMealCompletions(user.id, mondayStr, todayStr)
-  }, [user?.id, tab])
+  }, [user?.id, tab, dietPlan?.id])
 
   // Load 30 days of completions for streak calculation (kept in local state to
   // avoid polluting the shared store's date range which the Weekly View depends on).
