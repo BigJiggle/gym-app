@@ -1,5 +1,45 @@
 # Change Agent Report
 
+## Run: 2026-11-17 #2 ([FIX] — area (b) training engine + workout/session flows: fixed a real, reachable UI↔UI desync where the Stats-tab Personal-Records list surfaced a meaningless "X kg × 0" PR for a set logged with a weight but reps cleared to 0 — a set every OTHER PR/top-set/last-performance surface in the app correctly ignores. Rotated off 11-17 #1's (e), 11-16 #2's (a), #1's (c), 11-15 #2's (b)/#1's (f). Deep-read the whole training path — trainingEngine, workoutHandlers, planHandlers training branch, WorkoutSession/WorkoutLogEditor/SessionEditor/WorkoutStats/Training index, and the training utils/widgets/date helpers.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` Queue has **zero unchecked (`- [ ]`) items** (all 14 done) → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN before changes)
+Clean `master` (`2bea4e5`, already up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (517 tests, 86 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (b) training engine + workout/session flows
+Deep-read and traced every SCOPE error path across: `trainingEngine.ts` (freq/exPerSession/userDefault/userMax all finite+positive-guarded with fallbacks; `normalizeExercises` read-seam coercion; split builders floor their counts and `.filter(Boolean)` undefined picks; `rotateOne` keeps variant-B non-empty; `determinePhase`/`getSets` deload math), `workoutHandlers.ts` (`sanitizeReps`/`sanitizeWeightKg` clamp [0,9999] at every write seam incl. logSet/updateSet/saveSetsBatch; local-date `workout:start`; `started_at`/`ended_at` both UTC so duration math agrees), `planHandlers` training branch (regenerate nulls `session_id` before deleting sessions; `JSON.stringify`→`normalizeExercises` round-trip; `plan:updateSession` rejects empty), `showDates.weeksUntilShow`/`localToday` (local-midnight parity with the UI), `WorkoutSession`/`WorkoutLogEditor`/`SessionEditor` (clampSetCount, parseRepMidpoint, detectNewPRs, rest-timer effect, double-submit guards), `WorkoutStats`, Training `index.tsx` (streak/trend/weekly-muscle/session-progress), and the training utils (`prevSessionLog`, `weeklySessionProgress`, `trainingBurn`) + `dates.ts`. Nearly all seams already carry explicit clamps/guards from prior runs. One genuine reachable defect surfaced in the PR list's reps filter.
+
+### STEP 3 — THE BUG (real, reachable, no API key needed) + fix
+**WorkoutStats "Personal Records" shows a meaningless "X kg × 0" PR for a weight-but-zero-reps set — inconsistent with every other PR surface (UI↔UI desync).**
+- Root cause: `computePRs` (`src/pages/Training/WorkoutStats.tsx:27`) guarded reps with `s.reps_actual === null`, which lets a `reps_actual === 0` set through. **Every other** PR / top-set / last-performance / progression computation in the app uses the falsy `!s.reps_actual` check (which excludes 0): `exercisePRs` (`Training/index.tsx:155` — the direct counterpart), `lastPerfBySession` (`:203`), history `topSets` (`:896`), `computeExerciseProgression`/`trackableExercises`/tonnage (`WorkoutStats.tsx:61`/`:174`/`:266`), WorkoutSession's `lastPerformance`/`allTimePR` (`:240`/`:260`), and the Training widgets. `computePRs` was the lone outlier.
+- Reachability (no corruption, no AI key, normal UI): the live `WorkoutSession`'s reps input is `value={s.reps || ''}` with no `min`, so `onChange(Number(''))` yields **0** when the field is cleared; the ✓ "done" button is not rep-gated. `handleComplete` persists that set as `{ weight_kg: >0, reps_actual: 0 }` (sanitizeReps(0)=0). On the Stats tab that set then surfaces as a PR rendered `{pr.weightKg}{unit} × {pr.reps}` → "X kg × 0", and can even out-rank a real heavier-reps PR (a 150 kg × 0 beats a genuine 120 kg × 8), while the Plan tab's `exercisePRs` shows no PR for the same exercise — the two surfaces disagree.
+- Why this is the correct minimal fix (not a data/write change): `reps_actual = 0` is data the backend intentionally stores (sanitizeReps floors negatives/blanks to 0, by design — see the workoutHandlers comment). The broken invariant is purely that the PR *reader* here diverged from the app-wide "a rep count of 0 isn't a performed rep" convention. Aligning this one guard to `!s.reps_actual` makes the Stats PR list agree with every other surface; a legit weighted set with real reps is unchanged.
+- Fix: `src/pages/Training/WorkoutStats.tsx:27` — `s.reps_actual === null` → `!s.reps_actual` (+ `export` on `computePRs` for unit testing, + an explanatory comment).
+
+### STEP 3b — Added test
+`tests/unit/computePRs.test.ts` (3 tests): (1) a `weight_kg:100, reps_actual:0` set yields **no** PR; (2) a normal `140 × 5` set is still a PR; (3) a later `150 × 0` set does **not** out-rank a real `120 × 8` PR (stays 120 × 8). Verified these FAIL on the pre-fix `=== null` guard (test 1 & 3 — the 150×0 wrongly reported as "reps: 0, weightKg: 150") and PASS after.
+
+### STEP 4 — Verification (all GREEN)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (520 tests, 87 files — +3 new)
+- `npx electron-vite build` → PASS
+
+### Not fixed this run (recorded for a future run — one fix per run)
+- Cosmetic-only, deliberately left (per the no-cosmetic rule, consistent with prior runs): the live `WorkoutSession` summary "Volume" stat sums in-memory `weight × reps` with unclamped inputs, so a deliberately typed negative rep could understate that transient card (the persisted `reps_actual` is still clamped to ≥0 at the write seam). Not a stored-data or cross-surface defect.
+- `buildPPLSessions` gives "Push A" and "Push B (Volume Focus)" identical exercise lists (variant isn't threaded into `getExercises`, unlike the Arnold/Upper-Lower builders) — a plan-quality/feature concern, out of scope for a bug-fix run.
+
+### Files changed
+- `src/pages/Training/WorkoutStats.tsx` — `computePRs` reps guard `=== null` → `!s.reps_actual`; exported for testing; added explanatory comment.
+- `tests/unit/computePRs.test.ts` — new failing-then-passing regression tests.
+- `change-agent-report.md` — this entry.
+
+---
+
 ## Run: 2026-11-17 ([FIX] — area (e) widgets + localStorage stores: fixed a real, reachable localStorage↔store desync + silent data-loss between the dashboard Cardio widget (zustand `cardioStore` singleton) and the Diet tab's cardio stepper, which writes the SAME `cardio_log` key directly. Rotated off 11-16 #2's (a), #1's (c), 11-15 #2's (b), #1's (f). Deep-read the whole widget + store layer and traced the two cardio writers to the shared key.)
 
 ### STEP 0 — Requested changes

@@ -19,12 +19,23 @@ interface PR {
   date: string
 }
 
-function computePRs(history: WorkoutLog[]): PR[] {
+// Exported for unit testing. A set counts toward a PR only when it has a real
+// weight AND a real rep count. The reps guard uses the falsy `!s.reps_actual`
+// check (excludes null/undefined/0) — matching every sibling PR / top-set /
+// last-performance computation in the app (exercisePRs in Training/index.tsx,
+// lastPerfBySession, computeExerciseProgression, trackableExercises, the
+// WorkoutSession PR maps, and the training widgets). The prior `=== null` guard
+// let a `reps_actual === 0` set through: the live WorkoutSession stores a set
+// completed with a weight entered but reps cleared to 0 as `reps_actual: 0`
+// (its reps input is `value={s.reps || ''}` → `Number('') === 0`, and the ✓
+// button isn't rep-gated), so such a set surfaced here as a meaningless
+// "X kg × 0" PR that no other surface recognized — a UI↔UI desync.
+export function computePRs(history: WorkoutLog[]): PR[] {
   const bests = new Map<string, PR>()
   for (const log of history) {
     if (log.status !== 'completed') continue
     for (const s of log.sets ?? []) {
-      if (s.skipped || s.weight_kg === null || s.weight_kg === 0 || s.reps_actual === null) continue
+      if (s.skipped || s.weight_kg === null || s.weight_kg === 0 || !s.reps_actual) continue
       const existing = bests.get(s.exercise_name)
       if (!existing || s.weight_kg > existing.weightKg) {
         bests.set(s.exercise_name, {
