@@ -1,5 +1,46 @@
 # Change Agent Report
 
+## Run: 2026-11-17 ([FIX] — area (e) widgets + localStorage stores: fixed a real, reachable localStorage↔store desync + silent data-loss between the dashboard Cardio widget (zustand `cardioStore` singleton) and the Diet tab's cardio stepper, which writes the SAME `cardio_log` key directly. Rotated off 11-16 #2's (a), #1's (c), 11-15 #2's (b), #1's (f). Deep-read the whole widget + store layer and traced the two cardio writers to the shared key.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` Queue has **zero unchecked (`- [ ]`) items** (all 14 done) → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN before changes)
+Clean `master` (`baf1d66`, already up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (515 tests, 85 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (e) widgets + localStorage stores
+Deep-read the store infra (`localStore`/`createWidgetStore`/`competitionLogs`/`useWidgets`), every widget (Sleep, Water, Cardio, Posing, Condition, Supplement, DailyWeighIn, NextMeal, PrepPace, QuickStats, TodaysMacros, MuscleCoverage, WeeklyScorecard, SessionsWeek, TrainingVolume, WeeklyVolume, TodaysSession, RecentCheckins, CheckinFeedback), the drag-reorder zones (`WidgetZone`/`TabWidgetZone`/`TabWidgetControls`), the `AddWidgets` catalog, the reset/data-lifecycle seam (`resetData.ts` + `userStore.resetAllData`), and the shared water/cardio utils. Traced every SCOPE error path (corrupt localStorage, duplicate same-day entries, unit edges, division/NaN) and the DB read seams (`parseAdjustments`, `normalizeMeals`) feeding the widgets — all already guarded. One genuine defect surfaced in the cardio cross-tab sync.
+
+### STEP 3 — THE BUG (real, reachable, no API key needed) + fix
+**Dashboard Cardio widget ↔ Diet-tab cardio stepper: stale-store desync and silent data-loss on the shared `cardio_log` key.**
+- Root cause: the dashboard **Cardio widget** reads `useCardioStore` (`src/store/cardioStore.ts`) — a zustand **module singleton** whose `cardioLog` is populated once, at module load, by `loadInitial()` reading `cardio_log`. The **Diet tab's** cardio stepper (`src/pages/Diet/index.tsx` `updateCardio`) writes the **same `cardio_log` key directly** via `localStorage.setItem` (its single-total `nextCardioLog` write), **never touching the store**. Dashboard (`/dashboard`) and Diet (`/diet`) are separate routes, so the store survives the navigation while the widget remounts against stale in-memory state.
+- Symptom (reachable sequence, no reload): (1) log cardio on the dashboard → store & `cardio_log` both `[LISS 30]`; (2) go to `/diet`, tap cardio `+5` → Diet writes `cardio_log` = `[LISS 35]` directly, **store stays stale at `[LISS 30]`**; (3) return to the dashboard — the Cardio widget shows the stale 30/2-sessions, **disagreeing with storage (35)**; (4) log another dashboard session → `addEntry` persists from the stale `[LISS 30]` → `[LISS 30, HIIT 20]`, **permanently clobbering the Diet +5 edit** (total reverts to 50, not 55). The water tracker does NOT have this bug: `useWaterLog` uses component-local `useState` that re-reads localStorage on every remount, so there is no persistent singleton to go stale.
+- Why the minimal correct fix is a reconcile (not a refactor): `cardio_log`'s source of truth after a Diet write IS localStorage; the only broken invariant is that the long-lived store isn't re-synced to it. Added `reloadFromStorage()` to the store (`set({ cardioLog: loadInitial() })`) and call it in Diet's `updateCardio` right after the direct `localStorage.setItem`. This re-reads (and re-sanitizes/ids) the just-written key so the store becomes the single source of truth again — fixing both the stale display and the clobber-on-next-write, without changing the Diet stepper's existing collapse semantics or the store's multi-entry model.
+- Files: `src/store/cardioStore.ts` (new `reloadFromStorage` action + doc), `src/pages/Diet/index.tsx` (import `useCardioStore`; call `reloadFromStorage()` after the cardio write).
+
+### STEP 3b — Added test
+`tests/unit/cardioStoreReload.test.ts` (jsdom, 2 tests): (1) `reloadFromStorage` re-reads a `cardio_log` the Diet page wrote directly (store 30 → 35); (2) the full clobber scenario — dashboard log → reconciled Diet +5 → dashboard log again — ends at **55, not the pre-fix 50**, with localStorage and store in agreement. Both FAIL before the fix (`reloadFromStorage is not a function` / stale clobber), PASS after.
+
+### STEP 4 — Verification (all GREEN)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (517 tests, 86 files — +2 new)
+- `npx electron-vite build` → PASS
+
+### Not fixed this run (recorded for a future run — one fix per run)
+- The Diet tab's single-total cardio stepper still **collapses a day's multiple sessions into one entry** when edited (documented/intentional in `utils/cardio.ts`; the per-session type breakdown is lost but the total — what burn math uses — is preserved). Left as-is per the no-redesign rule.
+- The Diet cardio/water steppers and the dashboard still write the shared keys from two code paths; the reconcile above closes the data-loss window, but a future cleanup could route the Diet writes through the store/hook as the sole writer (deferred — larger refactor, out of scope for a focused bug-fix run).
+
+### Files changed
+- `src/store/cardioStore.ts` — new `reloadFromStorage` action (+ interface + doc).
+- `src/pages/Diet/index.tsx` — import `useCardioStore`; reconcile the store after the direct cardio write.
+- `tests/unit/cardioStoreReload.test.ts` — new failing-then-passing regression tests.
+- `change-agent-report.md` — this entry.
+
+---
+
 ## Run: 2026-11-16 #2 ([FIX] — area (a) nutrition + Diet flows: fixed a real, reachable DB↔UI desync where regenerating the meal plan left stale meal-completions in the frontend store, inflating "meals eaten" past the plan size (e.g. "6/4 meals"). Rotated off 11-16 #1's (c), 11-15 #2's (b), #1's (f), 11-14's (a)/(d). Two parallel read-only sub-audits traced the two largest files (planHandlers.ts 1133L, Diet/index.tsx 1903L); I verified every candidate against primary sources myself.)
 
 ### STEP 0 — Requested changes

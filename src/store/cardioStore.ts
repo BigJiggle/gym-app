@@ -15,6 +15,17 @@ interface CardioStore {
   updateEntry: (id: string, type: string, minutes: number) => void
   /** Remove a single session by id. */
   removeEntry: (id: string) => void
+  /**
+   * Re-read `cardio_log` from localStorage into state. The Diet page's cardio
+   * stepper writes this SAME key directly (its single-total `nextCardioLog`
+   * write), bypassing this store. Without reconciling, this store's in-memory
+   * `cardioLog` goes stale the moment the Diet page writes — and a later
+   * `addEntry` would persist from that stale copy, permanently clobbering the
+   * Diet edit (and the dashboard would display a total that no longer matches
+   * storage). The Diet page calls this right after it writes so the store stays
+   * the single source of truth.
+   */
+  reloadFromStorage: () => void
 }
 
 function genId(): string {
@@ -100,4 +111,6 @@ export const useCardioStore = create<CardioStore>((set) => ({
       persist(next)
       return { cardioLog: next }
     }),
+
+  reloadFromStorage: () => set({ cardioLog: loadInitial() }),
 }))

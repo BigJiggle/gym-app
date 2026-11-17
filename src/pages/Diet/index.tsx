@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { useUserStore } from '../../store/userStore'
 import { usePlanStore } from '../../store/planStore'
 import { useSettingsStore } from '../../store/settingsStore'
+import { useCardioStore } from '../../store/cardioStore'
 import { StatCard } from '../../components/ui/Card'
 import Stepper from '../../components/ui/Stepper'
 import Badge from '../../components/ui/Badge'
@@ -126,6 +127,12 @@ export default function Diet() {
       // dashboard widget logged a session since mount. Mirrors updateWater.
       const { log, total } = nextCardioLog(JSON.parse(localStorage.getItem('cardio_log') ?? '[]'), todayStr, delta, 120)
       localStorage.setItem('cardio_log', JSON.stringify(log))
+      // Reconcile the zustand cardioStore (dashboard Cardio widget) with the key
+      // we just wrote directly. Without this, the store's in-memory copy stays
+      // stale and the next dashboard `addEntry` would persist from it, clobbering
+      // this edit (and the dashboard would show a total that disagrees with
+      // storage). See cardioStore.reloadFromStorage.
+      useCardioStore.getState().reloadFromStorage()
       setCardioMin(total)
     } catch {
       setCardioMin(prev => Math.max(0, Math.min(120, prev + delta)))
