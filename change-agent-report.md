@@ -1,5 +1,45 @@
 # Change Agent Report
 
+## Run: 2026-11-18 #2 (NO FIX — area (f) shows/competition + date/week logic re-audited in full, rotating off 11-18 #1's (d), 11-17 #2's (b), #1's (e), 11-16 #2's (a), #1's (c). Extended into the cross-surface metric-consistency sweep (the recurring desync bug class: 11-13 burn, 11-11 sessions, 11-10 weeks-out) across the dashboard widgets vs their Training/Diet-tab twins, plus the DB schema/migrations layer and engine `phase` → CHECK-constraint correctness. Deep-read every SCOPE error path; every candidate traced to a real guard, a non-reachable precondition, or an intentional display overlay. No real reachable defect found, so — per the routine's rule — no fix was fabricated.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` Queue has **zero unchecked (`- [ ]`) items** (all done) → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN, unchanged after audit)
+Clean `master` (already up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (520 tests, 87 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (f) shows/competition + date/week logic (+ cross-surface + DB extensions)
+Deep-read and traced every SCOPE error path across:
+- **Date/week utils** — `utils/dates.ts` (`localDateStr`/`parseLocalDate`/`addDays`/`weekStartMonday` all calendar-day (not ms) arithmetic → DST-stable; `getShowCountdown` clamps `totalDays ≥ 0`, exposes `isPast` separately so a past show can't read "SHOW DAY!" forever), `services/showDates.ts` (`weeksUntilShow` floors from local midnight to match the UI; `localToday` binds the local date so the "nearest upcoming show" query agrees with the countdown), `services/checkinSchedule.ts` + `utils/checkinSchedule.ts` (`countMissedBetween` guards interval ≤ 0 / non-finite against the infinite-loop freeze; `getNextCheckinDate` walk-back anchor; day/interval re-align guards).
+- **Show handlers** — `showHandlers.ts`: `syncPrimaryToNearest` (local-date `>= today`, clears show_date+division when none upcoming), `persistProfileShowDate` (regex-validates date, routes through the shows table so it survives startup rebuild), `setPrimaryShow` (past-show guard + diet regen anchored to the same local day), add/update/delete/cancel all re-sync + regen diet for the new context. `shows:update` falls `division`/`federation`/`notes` back to `null` rather than existing (would wipe on a partial update) — but it is **not reachable**: `updateShow` exists only in the type/preload, no UI calls it (every Settings edit goes through delete+add). Latent, not a live defect.
+- **Cross-surface metric consistency** (the repeatedly-fixed desync class) — verified the dashboard widget and its tab twin read the SAME source + formula for every shared metric:
+  - Training kcal burn: both `TrainingVolumeWidget` and Training-tab "Calorie Burn" use `currentBodyweightKg(latestCheckin,user)` + `weeklyTrainingKcalBurned` + `weekStartMondayStr()` (11-13 fix intact).
+  - Weekly muscle sets / MEV: `WeeklyVolumeWidget`, `MuscleCoverageWidget`, Training-tab volume, and `WorkoutStats.computeWeekMuscleSets` share identical `nameToGroup.get(s.exercise_name)` counting, identical MEV maps, and the same Monday-anchored window.
+  - Sessions-this-week: `weeklySessionProgress` drives both the badge and the squares (11-11 fix intact).
+  - Show countdown: `PeakWeekWidget`/`QuickStatsWidget`/`PrepPaceWidget`/`Progress`/`CheckIn` projection all label weeks-out via the canonical floor-based `getShowCountdown().weeks` (11-10 fix intact), keeping fractional weeks for projection math only.
+  - Weight rate / weeks-tracked: `computeWeeklyWeightRate` (≥1-week span floor, finite guards) and `computeWeeksTracked` (first→last span, not row count) feed every surface identically.
+- **Unit conversions** — `units.ts` (`cmToFeetInches` rounds-then-splits so no "5 ft 12 in"), `water.ts`/`cardio.ts` (`nextWaterMl`/`nextCardioLog`/`cardioMinutesOn` treat corrupt localStorage as 0, write non-destructively, clamp to bounds), Diet water/cardio steppers (`waterTarget` clamped ≥ 4 so the % never divides by 0).
+- **DB schema / migrations / CHECK-constraint correctness** — `schema.ts` (13 idempotent migrations incl. the v9 table rebuild), `db.ts` (one-statement-at-a-time with a per-migration try/catch that never rethrows; `namedParams` undefined→null). Confirmed neither engine can emit a `phase` outside its column's CHECK set: `nutritionEngine.actualPhase ∈ {deficit,surplus,maintenance}` (NaN adjustment → 'maintenance'), `trainingEngine.phase ∈ {hypertrophy,strength,peak,deload}`, off-season transition writes `'strength'` — no INSERT can throw a CHECK violation.
+- **Small/low-traffic widgets** — Sleep/Condition/Supplement/Posing/WeeklyScorecard/CheckinFeedback/RecentCheckins/DailyWeighIn: every average/percentage divides only behind a `length > 0` (or `< 2` early-return) guard; `parseDailyWeightLog` drops non-finite / out-of-range entries; `parseRepMidpoint`/`detectNewPRs`/`swapAlternatives` finite-guarded.
+
+### STEP 3 — Candidates examined and DISPROVEN / deferred (why none is a fix)
+1. **Refeed-day macro divergence: dashboard `TodaysMacrosWidget` shows baseline target/consumed while the Diet page shows the +100 g-carb / +400-kcal refeed-boosted values on the chosen refeed day.** Real and reachable (user sets a refeed day in the Diet tab). But it is **not a code defect**: the refeed boost is explicitly a *display-only overlay* (`utils/refeed.ts`: "callers use this for display on the refeed day only; the input plan is never mutated"). The stored plan is the baseline, and `TodaysMacrosWidget` faithfully renders the stored plan — it is correct relative to persistence. Making the dashboard mirror the overlay means teaching it to read the `refeed_day` localStorage key and apply `applyRefeedToMeals` — new coupling/behavior, i.e. a feature change, which the routine forbids. Neither surface's code is buggy in isolation; left as-is by design.
+2. **`shows:update` wipes division/federation/notes on a partial update** (falls back to `null`, not the existing value). Confirmed **unreachable** — no UI path calls `updateShow`; it exists only in the preload/type surface. Latent, not a live bug; no fix fabricated for dead-but-not-invoked code.
+3. **`checkin:submit` assigns `week_number = max(week_number)+1` without the chronological renumber `submitMissed`/`update` do.** Traced the only caller (`CheckIn/index.tsx:867`) — it always sends `check_in_date: localDateStr()` (today), which is the latest date, so `max+1` IS the correct chronological rank. No reachable path feeds `submit` a back-dated row. Not a defect.
+
+### STEP 4 — Verification (all GREEN; no code changed this run)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (520 tests, 87 files)
+- `npx electron-vite build` → PASS
+
+### Outcome
+No real, reachable, in-scope defect found in area (f) (or the cross-surface / DB extensions). Per the routine's explicit rule, **no fix was fabricated**; only the report is committed so coverage stays visible across runs.
+
+---
+
 ## Run: 2026-11-18 (NO FIX — area (d) onboarding + Settings + reset + data lifecycle re-audited in full, rotating off 11-17 #2's (b), #1's (e), 11-16 #2's (a), #1's (c), 11-15 #1's (f). Extended into (c) check-in + Progress + adaptive nutrition and, via a delegated read-only deep scan, into (a) planHandlers non-AI paths. Deep-read every SCOPE error path in these areas; every candidate traced to a real guard or to a non-reachable precondition. No real reachable defect found, so — per the routine's rule — no fix was fabricated.)
 
 ### STEP 0 — Requested changes
