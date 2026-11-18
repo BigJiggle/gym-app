@@ -1,5 +1,41 @@
 # Change Agent Report
 
+## Run: 2026-11-18 (NO FIX — area (d) onboarding + Settings + reset + data lifecycle re-audited in full, rotating off 11-17 #2's (b), #1's (e), 11-16 #2's (a), #1's (c), 11-15 #1's (f). Extended into (c) check-in + Progress + adaptive nutrition and, via a delegated read-only deep scan, into (a) planHandlers non-AI paths. Deep-read every SCOPE error path in these areas; every candidate traced to a real guard or to a non-reachable precondition. No real reachable defect found, so — per the routine's rule — no fix was fabricated.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` Queue has **zero unchecked (`- [ ]`) items** (all done) → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN, unchanged after audit)
+Clean `master` (already up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (520 tests, 87 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (d) onboarding + Settings + reset + data lifecycle (+ (c) and (a) extensions)
+Deep-read and traced every SCOPE error path across:
+- **Profile write seam** — `userSanitize.ts` (clampAge/Height/Weight/MealCount/SnackCount/BodyFat/TrainingFrequency/ExercisesPerSession/SetsPerExercise all finite-guarded + range-clamped at the `user:update` seam; `show_date`/`division` deliberately dropped so a Settings edit can't ghost-write or desync them; non-finite values dropped so a cleared field never NULLs a required column), `userHandlers.ts` (`user:create` clamps meal/snack/bodyfat; `safeJsonArray`/`parseUser` degrade a corrupt TEXT cell to `[]` so a bad row can't brick `user:get`/startup; `user:resetAll` snapshots check-in weigh-ins before the cascade delete).
+- **Onboarding** — `useOnboarding`, `index.tsx` `validateStep` (age 16–80 / height 100–250 / weight 30–300 all enforced before leaving step 2), `handleSubmit` (double-submit guarded by `disabled={submitting}`; `setSubmitting` reset on error), `Step1Personal` (ft/in + lbs↔kg conversions round-then-split, inches clamped 0–11; cm/kg warn bands), `Step2Goals` (show-date `min={today}`, past date handled by `syncPrimaryToNearest`).
+- **Settings** — `index.tsx` edit-profile form (imperial↔metric height/weight round-trip, Stepper-clamped meal/snack, `handleSaveProfile` body_fat `'' → undefined`), `settingsStore.ts` / `settingsHandlers.ts` (INSERT OR REPLACE; DEFAULTS merge), Add/Cancel/Delete-show flows (`getShowCountdown().isPast`, local-date `>= today` comparisons), double-confirm Reset.
+- **Reset / data lifecycle** — `resetData.ts` (`isValidWeighIn`/`mergeWeighIns` drop bad entries, existing-wins-by-date, preserved-key set), `userStore.resetAllData` (hard reload so zustand/module singletons re-init and can't resurrect deleted data).
+- **DB schema / migrations** — `schema.ts` (13 migrations incl. the v9 table rebuild and v11 meal/snack split) applied one-statement-at-a-time with a per-migration try/catch that never rethrows (a failed migration can't wipe data); `db.ts` `namedParams` undefined→null, lock-clear/wipe recovery.
+- **Check-in (c) extension** — `checkinEngine.ts` (Theil–Sen trend skips non-positive x-gaps so same-day duplicates can't divide-by-zero; bodyweight/`weeksBetweenDates` finite-guarded; `parseAdjustments`/`clampCheckinWeightKg` seam clamps), `checkinHandlers.ts` (same-day duplicate rejection, chronological `week_number`, date-based `previous`/trend window, date-edit renumber), `checkinSchedule.ts` (`countMissedBetween` guards interval≤0 against an infinite loop), `mealCompletionHandlers.ts`/`progressHandlers.ts`, `Progress`/`CheckIn` render math (every division `>0`-guarded; `computeEstimatedBF`/`parseTargetWeightKg`/`computeWeeklyWeightRate`/`computeWeeksTracked` all drop non-finite).
+- **(a) planHandlers non-AI deep scan** (delegated read-only sub-audit, every candidate verified by me against the source): file is unusually hardened — all SQL correctly `user_id`-scoped, every division uses a constant or floored divisor, `generateNutritionPlan` returns `meal_count: meals.length` (total incl. snacks) so `clearOrphanedMealCompletions` purges only true orphans, the reorder completion-remap is a correct permutation recovery, and `weeksUntilShow` floors from local midnight to match the UI countdown (no off-by-one).
+
+### STEP 3 — Candidates examined and DISPROVEN (why none is a fix)
+1. **startupRefresh regenerates a `user_modified` training plan at a phase boundary (active show).** Examined `planHandlers.ts:398–480`. The `user_modified` preservation branch (`:401`) fires only on the off-season transition — exactly as the flag was designed: `plan:updateSession` sets it with the comment *"so show cancellation preserves it"* (`:283`). Regenerating as the athlete crosses hypertrophy→strength→peak during active prep is the intended "evolve the plan as prep progresses" mechanism, not a defect. Changing it would be a behavior/design change ("fixing" correct code) — out of scope.
+2. **`plan:recalculateMacros` / `swapMeal` / `reorderMeals` parse `diet_plans.meals` with a raw, unguarded `JSON.parse` (`:572`/`:1039`/`:1051`), unlike the `getDiet` read seam (`normalizeMeals`).** The precondition is a **non-JSON-text** `meals` cell, which no in-app path can produce (the engine, the AI path, the check-in rescaler, and every reorder/swap all write valid JSON) — it requires hand-editing the SQLite file. Not reachable via normal UI. Moreover, failing the mutation on corrupt input is a defensible fail-closed choice (degrading to `[]` would silently rewrite the plan to garbage). No safe, reachable fix — left as-is.
+3. **`recalculateMacros` per-meal scaling trusts `m.calories` with no finite-guard (`:574`).** Only bites a meal object lacking a finite `calories`, which the rule-based engine + `normalizeMeals` both guarantee against; reachable only on an AI-then-hand-edited/legacy cell, i.e. not on a no-key path. Latent, not reachable.
+
+### STEP 4 — Verification (all GREEN; no code changed this run)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (520 tests, 87 files)
+- `npx electron-vite build` → PASS
+
+### Outcome
+No real, reachable, in-scope defect found in area (d) (or the (c)/(a) extensions). Per the routine's explicit rule, **no fix was fabricated**; only the report is committed so coverage stays visible across runs.
+
+---
+
 ## Run: 2026-11-17 #2 ([FIX] — area (b) training engine + workout/session flows: fixed a real, reachable UI↔UI desync where the Stats-tab Personal-Records list surfaced a meaningless "X kg × 0" PR for a set logged with a weight but reps cleared to 0 — a set every OTHER PR/top-set/last-performance surface in the app correctly ignores. Rotated off 11-17 #1's (e), 11-16 #2's (a), #1's (c), 11-15 #2's (b)/#1's (f). Deep-read the whole training path — trainingEngine, workoutHandlers, planHandlers training branch, WorkoutSession/WorkoutLogEditor/SessionEditor/WorkoutStats/Training index, and the training utils/widgets/date helpers.)
 
 ### STEP 0 — Requested changes
