@@ -1,5 +1,50 @@
 # Change Agent Report
 
+## Run: 2026-11-19 #2 ([FIX] — area (a) nutrition + Diet flows: fixed the documented STRONG lead #1 from run 11-19 #1 — a real, reachable same-screen DB↔UI desync where, after a **mid-week meal-count REDUCTION**, a PAST day's **meal-completion COUNT disagreed with that same day's MACRO TOTAL**. The Diet "This Week" surfaces counted completions raw (`.filter(date).length`) — including orphans at now-removed indices that `clearOrphanedMealCompletions` leaves behind for past days (it purges only `date >= today`) — so a Monday logged 6/6 under a 6-meal plan read **"6/4"**, greened as done, and pushed the Weekly View progress bar past 100%, while the macro totals (which index `meals[idx]`) skipped the 2 orphans and counted only 4 meals. Rotated off 11-19 #1's (b), 11-18 #2's (f)/#1's (d), 11-17 #2's (b)/#1's (e). Two parallel read-only sub-audits (areas d and e) surfaced two NEW leads — folded in below, NOT fixed this run.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` Queue has **zero unchecked (`- [ ]`) items** → bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN before any change)
+Clean `master` + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (522 tests, 87 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (a) nutrition + Diet flows (verifying prior run's lead #1)
+Deep-read the whole check-in/adaptive-nutrition path (`checkinEngine.ts`, `checkinHandlers.ts`, `progressHandlers.ts`, `Progress/index.tsx`, `CheckIn/index.tsx`, `weeklyRate.ts`, `weeksTracked.ts`, `targetWeight.ts`, `refeed.ts`), the nutrition engine (`nutritionEngine.ts` — BMR/TDEE/macro/buildMeals/sanitizers/normalizeMeals all guarded), the date/week layer (`dates.ts`, `showDates.ts`, `showHandlers.ts`, `checkinSchedule.ts` — all clamp/finite-guarded), and the Diet page weekly surfaces. Everything else re-confirmed clean; the one reachable defect was lead #1.
+
+### STEP 2/3 — BUG FOUND + FIXED
+**Per-day meal-completion counts included orphaned completions, desyncing from the macro totals after a mid-week meal-count reduction.**
+
+- **Root cause**: completions are keyed by positional `meal_index`. `clearOrphanedMealCompletions` (`mealCompletionHandlers.ts:15-18`) purges only `date >= today AND meal_index >= newCount`, so a PAST day's completions at the removed indices survive and are loaded into the Weekly View (`loadMealCompletions(mondayStr … todayStr)`). The per-day COUNT surfaces used a raw `mealCompletions.filter(c => c.date === …).length`, while every per-day/weekly MACRO sum uses `dietPlan.meals?.[c.meal_index]?.X ?? 0` (orphan → 0). So the two disagree on the same screen.
+- **Reachable symptom**: 6-meal plan, log all 6 on Monday; Wednesday reduce to 4 meals (Settings / Regenerate / AI refine). Monday's indices 4,5 survive. Diet tab → the "This Week's Diet" strip shows **"6/4" in green** (`index.tsx`), the TabWidgetZone "This Week" panel marks Monday ✓ done, and the Weekly View (`WeeklyMealView.tsx`) day cell shows **"6/4"** with the progress bar at 150% — all while the Weekly Macro Totals count only 4 of Monday's 6 logged meals. The adherence streak had the same flaw via `streakCompletions`.
+- **Fix** (minimal, one concept — count the SAME mapped set the macro totals use):
+  - New `src/utils/mealCompletions.ts` → `countLoggedMeals(completions, date, mealCount)` counts only completions whose `meal_index` is in `[0, mealCount)`.
+  - `WeeklyMealView.tsx`: `completedCountForDay` now delegates to it (fixes the day cell, "X/Y meals logged" header, and `progressPct`).
+  - `Diet/index.tsx`: added `loggedMealsOn(dateStr)` and routed the "This Week" panel day count, the "days on track" badge, the compliance-strip `completed`, the `daysWithMeals` caption, and the adherence-streak day count through it. An INCREASE (4→6) creates no orphans, so this is a no-op there; reorder remaps indices, so it stays valid. The macro-sum seams were already correct and were left untouched.
+- **Tests added**:
+  - `tests/unit/countLoggedMeals.test.ts` (5) — mapped-count rule, grow no-op, exact-full, other-date / negative / out-of-range index drop, zero-meal plan.
+  - `tests/unit/weeklyViewOrphanCount.test.tsx` (1, jsdom) — mounts `WeeklyMealView` with 6 orphaned completions under a 4-meal plan; asserts the day cell / header read **"4/4"** and never "6/4". **Verified FAILING on the pre-fix code** (rendered "6/4") and passing after.
+
+### Sub-audit leads for a future run (NOT verified by me against primary sources this run; do NOT fix without independent confirmation)
+1. **(area e, data-loss — STRONG candidate)** Diet cardio stepper destroys dashboard-logged cardio above the 120-min/day cap. `nextCardioLog` (`src/utils/cardio.ts:60`) clamps `current + deltaMin` to `[0, maxMin]` with **no guard when `current` already exceeds `maxMin`**. The dashboard Cardio widget is an UNBOUNDED, multi-session-per-day writer (`cardioStore.addEntry`; `CardioWidget.save` only rejects `<=0`), so a day legitimately logged >120 min, then nudged by ANY +/- on the Nutrition-tab Cardio stepper (passes `maxMin=120`), snaps the whole day to 120 and collapses it to a single entry — permanently dropping the real sessions and the extra minutes. Two-writers-disagree-on-max desync; contradicts the function's own "never silently drops minutes" contract. (This path is the one the 11-03/11-17 cardio fixes touched — verify carefully; the fix changes delicate dashboard↔Diet reconciliation.)
+2. **(area d, data-loss on relaunch)** Onboarding-selected **Division without a Show Date** is silently wiped on the next launch. The onboarding `user:create` raw INSERT (`userHandlers.ts`) writes `division` verbatim (bypasses `sanitizeUserUpdate`, which deliberately drops division/show_date on the update path). With no show row, `plan:startupRefresh` / `syncPrimaryToNearest` find no upcoming show and run `UPDATE users SET show_date=NULL, division=NULL`, so Settings' Profile card loses the division on first relaunch. No Goals-step validation blocks picking a division without a date.
+
+### STEP 4 — Verification (all GREEN after fix)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (528 tests, 89 files; +6 new)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `src/utils/mealCompletions.ts` — NEW shared `countLoggedMeals` helper + rationale.
+- `src/pages/Diet/WeeklyMealView.tsx` — `completedCountForDay` counts only mapped completions.
+- `src/pages/Diet/index.tsx` — `loggedMealsOn` helper; routed 5 count surfaces (week panel, days-on-track badge, compliance strip, days-fed caption, adherence streak) through it.
+- `tests/unit/countLoggedMeals.test.ts`, `tests/unit/weeklyViewOrphanCount.test.tsx` — 6 new tests.
+- `change-agent-report.md` — this entry.
+
+---
+
 ## Run: 2026-11-19 ([FIX] — area (b) training engine + workout/session flows: fixed a real, reachable UI↔UI desync where the **live "🏆 New Personal Records" celebration at workout completion announced a nonsensical "X kg × 0" PR** for a set logged with a weight but reps cleared to 0 — the one PR surface that still accepted a reps-0 set, which every other surface in the app (and the 11-17 WorkoutStats fix) deliberately ignores. Rotated off 11-18 #2's (f), #1's (d), 11-17 #2's (b)/#1's (e). Deep-read the whole workout-session path; two parallel read-only sub-audits (Diet page; CheckIn + Settings) ran in parallel — findings folded in below.)
 
 ### STEP 0 — Requested changes

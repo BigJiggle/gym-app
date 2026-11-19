@@ -21,6 +21,7 @@ import { nextWaterMl } from '../../utils/water'
 import { cardioMinutesOn, nextCardioLog } from '../../utils/cardio'
 import { foodLabelToExclusionId } from '../../utils/foodId'
 import { applyRefeedToMeals } from '../../utils/refeed'
+import { countLoggedMeals } from '../../utils/mealCompletions'
 import type { Meal, MealCompletion } from '../../types'
 
 type DietTab = 'plan' | 'weekly' | 'grocery'
@@ -347,6 +348,13 @@ export default function Diet() {
   const todayCompletions = mealCompletions.filter((c) => c.date === todayStr)
   const mealsEaten = todayCompletions.length
   const totalMeals = displayMeals.length
+  // Count a day's logged meals the SAME way the weekly macro totals sum them —
+  // only completions whose meal_index still maps to a meal in the current plan.
+  // After a mid-week meal-count reduction, past-day completions at removed indices
+  // survive in the DB (clearOrphanedMealCompletions purges only today/future), so a
+  // raw count would read "6/4", green the day, and disagree with its macro total.
+  const planMealCount = dietPlan.meals?.length ?? 0
+  const loggedMealsOn = (dateStr: string) => countLoggedMeals(mealCompletions, dateStr, planMealCount)
   const consumedCalories = todayCompletions.reduce((acc, c) => acc + (displayMeals[c.meal_index]?.calories ?? 0), 0)
   const consumedProtein = todayCompletions.reduce((acc, c) => acc + (displayMeals[c.meal_index]?.protein_g ?? 0), 0)
   const consumedCarbs = todayCompletions.reduce((acc, c) => acc + (displayMeals[c.meal_index]?.carbs_g ?? 0), 0)
@@ -396,7 +404,10 @@ export default function Diet() {
       const d = new Date(base)
       d.setDate(base.getDate() - i)
       const ds = localDateStr(d)
-      const logged = streakCompletions.filter((c) => c.date === ds).length
+      // Count only completions mapping to a current meal, so a past day whose
+      // orphaned (now-removed-index) completions push the raw count to `required`
+      // can't be miscredited as a fully-logged day after a meal-count reduction.
+      const logged = countLoggedMeals(streakCompletions, ds, required)
       if (logged >= required) {
         streak++
       } else {
@@ -879,7 +890,7 @@ export default function Diet() {
             const pastOrToday = weekDays.filter(({ dateStr }) => dateStr <= todayStr)
             // Per-day completion counts
             const dayData = weekDays.map(({ dateStr, label }) => {
-              const logged = mealCompletions.filter((c) => c.date === dateStr).length
+              const logged = loggedMealsOn(dateStr)
               const isPast = dateStr < todayStr
               const isToday = dateStr === todayStr
               const isFuture = dateStr > todayStr
@@ -1308,7 +1319,7 @@ export default function Diet() {
                 {(() => {
                   const pastDays = weekDays.filter(d => d.dateStr <= todayStr)
                   const fullDays = pastDays.filter(d =>
-                    mealCompletions.filter(c => c.date === d.dateStr).length >= totalMeals
+                    loggedMealsOn(d.dateStr) >= totalMeals
                   ).length
                   return (
                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
@@ -1323,7 +1334,7 @@ export default function Diet() {
               </div>
               <div className="grid grid-cols-7 gap-1">
                 {weekDays.map(({ dateStr, label }) => {
-                  const completed = mealCompletions.filter(c => c.date === dateStr).length
+                  const completed = loggedMealsOn(dateStr)
                   const isFuture = dateStr > todayStr
                   const isToday = dateStr === todayStr
                   const isFull = !isFuture && completed >= totalMeals
@@ -1357,7 +1368,7 @@ export default function Diet() {
           {/* Weekly macro totals — calories, protein, carbs, and fat hit across all logged days this week */}
           {totalMeals > 0 && (() => {
             const pastDays = weekDays.filter(d => d.dateStr <= todayStr)
-            const daysWithMeals = pastDays.filter(({ dateStr }) => mealCompletions.some(c => c.date === dateStr)).length
+            const daysWithMeals = pastDays.filter(({ dateStr }) => loggedMealsOn(dateStr) > 0).length
             const weekCals = pastDays.reduce((acc, { dateStr }) =>
               acc + (dietPlan.meals ?? []).reduce((sum, m, idx) =>
                 sum + (mealCompletions.some(c => c.date === dateStr && c.meal_index === idx) ? m.calories : 0), 0

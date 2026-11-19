@@ -3,6 +3,7 @@ import { useUserStore } from '../../store/userStore'
 import { usePlanStore } from '../../store/planStore'
 import type { MealCompletion } from '../../types'
 import { localDateStr } from '../../utils/dates'
+import { countLoggedMeals } from '../../utils/mealCompletions'
 
 function getWeekBounds(weekOffset: number): { start: string; end: string; days: Date[] } {
   const now = new Date()
@@ -62,7 +63,12 @@ export default function WeeklyMealView({ mealCount, meals }: Props) {
   }
 
   function completedCountForDay(date: string): number {
-    return mealCompletions.filter((c) => c.date === date).length
+    // Count only completions that map to a meal in the CURRENT plan. Orphaned
+    // completions (meal_index >= meals.length) left by a mid-week meal-count
+    // reduction survive in the DB for past days and would otherwise read "6/4",
+    // push progressPct past 100%, and green a day whose dayMacros (which indexes
+    // meals[idx]) skips those orphans — a same-screen count↔macro desync.
+    return countLoggedMeals(mealCompletions, date, meals.length)
   }
 
   function dayMacros(date: string): { cal: number; protein: number } {
