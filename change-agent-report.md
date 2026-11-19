@@ -31,6 +31,33 @@ visible coverage; any candidate they raise is a LEAD only and must be verified a
 primary sources before a future run fixes it (no fix is fabricated from an unverified
 agent candidate). The confirmed fix this run is the `detectNewPRs` reps-0 PR above.
 
+**LEADS for a future run (NOT yet verified against primary sources; do not fix without
+independent confirmation):**
+1. **(area a, STRONG, deterministic — top candidate for next run)** Mid-week meal-count
+   REDUCTION leaves past-day meal-completions orphaned, so a past day reads "6/4 · all
+   meals logged" (green/done) while that same day's Weekly Macro Totals undercount it.
+   `clearOrphanedMealCompletions` (`mealCompletionHandlers.ts:15-18`) purges only
+   `date >= today AND meal_index >= newCount`; a Monday logged 6/6 under the old plan keeps
+   `meal_index` 4 & 5. Weekly strip (`Diet/index.tsx:1325-1349`) renders `completed/totalMeals`
+   = "6/4" and `isFull = completed >= totalMeals` paints it done; but Weekly Macro Totals
+   (`:1361-1380`) sum only over the NEW 4-element `meals` array, so the two removed snacks
+   contribute 0 → the done dot and the macro total disagree (metric-computed-two-ways desync).
+   The 11-16 "reload on regenerate" fix only covers TODAY, not past days. Needs verification
+   that the weekly % and the day dot are actually on screen together.
+2. **(area a, needs Claude API key)** `handleAiRefine` (`Diet/index.tsx:282-312`) reloads the
+   plan + user but never `loadMealCompletions`; `refine_diet` edits meals IN PLACE (same plan
+   id, so the id-keyed reload effect at `:177-180` doesn't fire) and can drop the meal count,
+   leaving orphaned completions → "5/3 meals" inflation until a tab switch reloads. Same class
+   as the 11-16 regenerate fix, different trigger.
+3. **(area d, BORDERLINE — backend drop is intentional/documented)** Settings "Edit Profile"
+   Division `<select>` and Show Date `<input>` (`Settings/index.tsx:384-396`) save via
+   `handleSaveProfile`, but `sanitizeUserUpdate` (`userSanitize.ts:116`) force-sets
+   `division`/`show_date` to `undefined` (they're derived from the shows table), so the write
+   is silently dropped while the button still shows "✓ Saved" and the Profile summary card
+   (`:534-535`) keeps the old values — a false-positive save. A clean fix (disable/remove
+   those two inputs or route them through the shows table) brushes the "no UI/feature changes"
+   boundary, so weigh scope carefully before acting.
+
 ### STEP 4 — Verification (all GREEN after fix)
 - `npx tsc --noEmit` → PASS (exit 0)
 - `npm test` → PASS (522 tests, 87 files; +2 new)
