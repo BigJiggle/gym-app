@@ -54,4 +54,27 @@ describe('detectNewPRs', () => {
     ]
     expect(detectNewPRs(current, prior)).toEqual([{ exerciseName: 'OHP', weight: 55, reps: 5 }])
   })
+
+  it('ignores a done, weighted set whose reps were cleared to 0 (no "X kg × 0" PR)', () => {
+    // The live WorkoutSession reps input is `value={s.reps || ''}` → clearing it
+    // makes `Number('') === 0`, and ✓ marks the set done with weight entered but
+    // reps 0. Every OTHER PR / top-set / last-performance surface in the app
+    // excludes reps===0 (computePRs, exercisePRs, lastPerformance, allTimePR), so
+    // announcing a "110 kg × 0" PR here is a UI↔UI desync: the celebrated record
+    // is one the Stats tab and next session's PR baseline both disown.
+    const prior: Map<string, PRPerf> = new Map([['Bench', { weight: 100, reps: 5 }]])
+    const current: Array<[string, PRExerciseState]> = [
+      ['Bench', state([[110, 0, true]])], // heavy, done, but reps cleared to 0
+    ]
+    expect(detectNewPRs(current, prior)).toEqual([])
+  })
+
+  it('still announces the heaviest VALID (reps>0) set when a reps-0 set is also present', () => {
+    // A bogus reps-0 top set must not suppress a genuine PR carried by a real set.
+    const prior: Map<string, PRPerf> = new Map([['Bench', { weight: 100, reps: 5 }]])
+    const current: Array<[string, PRExerciseState]> = [
+      ['Bench', state([[115, 0, true], [105, 4, true]])], // 115×0 ignored; 105×4 is a real PR
+    ]
+    expect(detectNewPRs(current, prior)).toEqual([{ exerciseName: 'Bench', weight: 105, reps: 4 }])
+  })
 })

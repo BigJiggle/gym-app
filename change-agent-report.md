@@ -1,5 +1,48 @@
 # Change Agent Report
 
+## Run: 2026-11-19 ([FIX] — area (b) training engine + workout/session flows: fixed a real, reachable UI↔UI desync where the **live "🏆 New Personal Records" celebration at workout completion announced a nonsensical "X kg × 0" PR** for a set logged with a weight but reps cleared to 0 — the one PR surface that still accepted a reps-0 set, which every other surface in the app (and the 11-17 WorkoutStats fix) deliberately ignores. Rotated off 11-18 #2's (f), #1's (d), 11-17 #2's (b)/#1's (e). Deep-read the whole workout-session path; two parallel read-only sub-audits (Diet page; CheckIn + Settings) ran in parallel — findings folded in below.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` Queue has **zero unchecked (`- [ ]`) items** (all done) → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN before any change)
+Clean `master` (already up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (520 tests, 87 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (b) training engine + workout/session flows
+Rotated to the training path. Deep-read `WorkoutSession.tsx` (live logging, rest timer, complete/abandon, summary + PR announcement), `detectNewPRs.ts`, `WorkoutStats.tsx` (`computePRs`/e1RM/tonnage), `Training/index.tsx` (`exercisePRs`, top-sets, prev-top-sets), `parseRepMidpoint.ts`, `clampSetCount.ts`, `trainingBurn.ts`, plus the grocery/weekly-rate/progress helpers as cross-checks.
+
+### STEP 2/3 — BUG FOUND + FIXED
+**`detectNewPRs` announced a "X kg × 0" personal record for a weighted set whose reps were cleared to 0.**
+
+- **Root cause** (`src/utils/detectNewPRs.ts:40`): the done-set filter was `s.done && s.weight > 0` — it guarded weight but **not reps**. The live `WorkoutSession` reps input is `value={s.reps || ''}` (`WorkoutSession.tsx:132`), so clearing it makes `Number('') === 0`; tapping ✓ (`markSetDone`, no rep validation) marks the set done with a weight entered but `reps === 0`. If that set's weight beat the athlete's prior all-time best, the completion screen's **"🏆 New Personal Records"** card announced e.g. `Bench 110 kg × 0`.
+- **Why it's a real desync, not cosmetic**: every OTHER PR / top-set / last-performance surface excludes reps-0 via the falsy `!reps` guard — `computePRs` (`WorkoutStats.tsx:38`), `exercisePRs` + top-sets (`Training/index.tsx:155,203,896`), and `lastPerformance`/`allTimePR` (`WorkoutSession.tsx:240,260`). So the celebrated record is one the Stats tab won't list and the NEXT session's PR baseline (`allTimePR`) will disown — the app congratulates the athlete for a record it immediately forgets. This is the identical bug class the 2026-11-17 WorkoutStats fix closed (`cfaff5c`); `detectNewPRs` was the single remaining surface not yet aligned.
+- **Fix**: filter to `s.done && s.weight > 0 && s.reps > 0` (the `> 0` form also rejects NaN), matching the `!reps` convention everywhere else. A bogus reps-0 top set no longer suppresses a genuine PR carried by a real (reps>0) set either — covered by test.
+- **Tests added** (`tests/unit/detectNewPRs.test.ts`): (1) a done, weighted, reps-0 set yields NO PR; (2) when a reps-0 set and a real reps>0 PR set coexist, the real one is still announced with correct weight×reps. Both FAILED before the fix (announced `115 kg × 0`), PASS after.
+
+### Sub-audit coverage (parallel read-only scans — informational; one fix per run)
+To widen coverage beyond area (b), two read-only scans swept the two largest files not
+personally read this run for the same SCOPE bug classes (desync / unguarded edge / NaN
+propagation): the Diet page (`src/pages/Diet/index.tsx`, ~1917 L) and CheckIn + Settings
+(`CheckIn/index.tsx` ~1056 L, `Settings/index.tsx` ~851 L). These extend the rotation's
+visible coverage; any candidate they raise is a LEAD only and must be verified against
+primary sources before a future run fixes it (no fix is fabricated from an unverified
+agent candidate). The confirmed fix this run is the `detectNewPRs` reps-0 PR above.
+
+### STEP 4 — Verification (all GREEN after fix)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (522 tests, 87 files; +2 new)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `src/utils/detectNewPRs.ts` — added `&& s.reps > 0` to the done-set filter + rationale comment.
+- `tests/unit/detectNewPRs.test.ts` — 2 new regression tests.
+- `change-agent-report.md` — this entry.
+
+---
+
 ## Run: 2026-11-18 #2 (NO FIX — area (f) shows/competition + date/week logic re-audited in full, rotating off 11-18 #1's (d), 11-17 #2's (b), #1's (e), 11-16 #2's (a), #1's (c). Extended into the cross-surface metric-consistency sweep (the recurring desync bug class: 11-13 burn, 11-11 sessions, 11-10 weeks-out) across the dashboard widgets vs their Training/Diet-tab twins, plus the DB schema/migrations layer and engine `phase` → CHECK-constraint correctness. Deep-read every SCOPE error path; every candidate traced to a real guard, a non-reachable precondition, or an intentional display overlay. No real reachable defect found, so — per the routine's rule — no fix was fabricated.)
 
 ### STEP 0 — Requested changes

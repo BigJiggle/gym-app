@@ -37,7 +37,15 @@ export function detectNewPRs(
   const prs: NewPR[] = []
   for (const [exerciseName, exState] of currentStates) {
     if (exState.allSkipped) continue
-    const doneSets = exState.sets.filter((s) => s.done && s.weight > 0)
+    // A PR set needs a real weight AND a real rep count. The reps guard (> 0, which
+    // also rejects NaN) matches every other PR / top-set / last-performance surface
+    // in the app (computePRs, exercisePRs, lastPerformance, allTimePR — all use the
+    // falsy `!reps` check). The live WorkoutSession reps input is `value={s.reps || ''}`
+    // → clearing it makes `Number('') === 0` and ✓ marks the set done with a weight
+    // entered but reps 0; without this guard a heavy such set was announced as a
+    // nonsensical "X kg × 0" PR the Stats tab and next session's PR baseline both
+    // disown — a UI↔UI desync.
+    const doneSets = exState.sets.filter((s) => s.done && s.weight > 0 && s.reps > 0)
     if (doneSets.length === 0) continue
     const bestWeight = Math.max(...doneSets.map((s) => s.weight))
     const bestReps = doneSets.find((s) => s.weight === bestWeight)?.reps ?? 0
