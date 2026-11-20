@@ -105,3 +105,48 @@ describe('nextCardioLog — adjusts today total without losing minutes or other 
     expect(nextCardioLog(null, '2026-10-27', 5)).toEqual({ log: [{ date: '2026-10-27', type: 'LISS', minutes: 5 }], total: 5 })
   })
 })
+
+// The dashboard CardioWidget is an UNBOUNDED multi-session writer (each session up to
+// 180 min, several per day, no daily cap), so a day can legitimately total MORE than
+// the Diet stepper's 120-min cap. When it does, the stepper must not retroactively
+// yank the whole day down to 120 — that silently destroys real, logged minutes, the
+// exact failure this helper's contract promises it never causes. The upper bound is
+// therefore max(maxMin, current): the stepper's own "+" taps still can't climb past
+// maxMin from at/under the cap, but a day already over the cap is never reduced except
+// by an explicit "-" tap.
+describe('nextCardioLog — never destroys minutes already logged above the cap', () => {
+  // 145 legit minutes for the day, logged as 3 dashboard sessions.
+  const overCap = [
+    { id: 'a', date: '2026-10-27', type: 'LISS', minutes: 60 },
+    { id: 'b', date: '2026-10-27', type: 'HIIT', minutes: 45 },
+    { id: 'd', date: '2026-10-27', type: 'Stairs', minutes: 40 },
+    { id: 'c', date: '2026-10-26', type: 'Bike', minutes: 40 },
+  ]
+
+  it('a "+" tap on an over-cap day does NOT snap it down to the cap (keeps 145, not 120)', () => {
+    const { total } = nextCardioLog(overCap, '2026-10-27', 5, 120)
+    expect(total).toBe(145) // was 120 before the fix — 25 real minutes silently lost
+  })
+
+  it('a "-" tap still reduces an over-cap day by the delta (145 → 140)', () => {
+    const { total } = nextCardioLog(overCap, '2026-10-27', -5, 120)
+    expect(total).toBe(140)
+  })
+
+  it('a "-" tap can bring an over-cap day down to the cap (145 → 120 via -25)', () => {
+    const { total } = nextCardioLog(overCap, '2026-10-27', -25, 120)
+    expect(total).toBe(120)
+  })
+
+  it('preserves OTHER days untouched when today is over the cap', () => {
+    const { log: out } = nextCardioLog(overCap, '2026-10-27', 5, 120)
+    expect(out.filter((e) => e.date === '2026-10-26')).toEqual([
+      { id: 'c', date: '2026-10-26', type: 'Bike', minutes: 40 },
+    ])
+  })
+
+  it('a day AT/UNDER the cap is still clamped to maxMin by upward taps (118 +5 → 120)', () => {
+    const log = [{ id: 'x', date: '2026-10-27', type: 'LISS', minutes: 118 }]
+    expect(nextCardioLog(log, '2026-10-27', 5, 120).total).toBe(120)
+  })
+})

@@ -42,11 +42,21 @@ export function cardioMinutesOn(log: unknown, date: string): number {
     .reduce((sum, e) => sum + minutesOf(e), 0)
 }
 
-// Apply a ±minute delta to `date`'s TOTAL cardio, clamped to [0, maxMin]. Every
-// entry on a DIFFERENT day is preserved verbatim; the target day collapses to a
-// single entry carrying the new total (reusing an existing session's id/type so
-// the store needn't re-migrate, defaulting to a fresh LISS entry). A zero total
-// removes the day's entries. Returns the rewritten log and the new total.
+// Apply a ±minute delta to `date`'s TOTAL cardio. Every entry on a DIFFERENT day is
+// preserved verbatim; the target day collapses to a single entry carrying the new
+// total (reusing an existing session's id/type so the store needn't re-migrate,
+// defaulting to a fresh LISS entry). A zero total removes the day's entries. Returns
+// the rewritten log and the new total.
+//
+// Clamp: the lower bound is always 0, but the upper bound is max(maxMin, current) —
+// NOT a flat maxMin. The dashboard CardioWidget is an unbounded multi-session writer
+// (several sessions/day, each up to 180 min, no daily cap), so a day can legitimately
+// total more than this single-number stepper's maxMin. A flat `min(maxMin, …)` would
+// yank such a day down to maxMin on ANY tap — even a "+" — silently destroying real
+// logged minutes, the exact failure this helper promises it never causes. With the
+// max(maxMin, current) bound: an at/under-cap day is still capped at maxMin by its own
+// upward taps, while an over-cap day is only ever reduced by an explicit "-" tap (a
+// "+" there is a no-op) and never below 0.
 export function nextCardioLog(
   log: unknown,
   date: string,
@@ -57,7 +67,7 @@ export function nextCardioLog(
   const others = entries.filter((e) => e.date !== date)
   const todays = entries.filter((e) => e.date === date)
   const current = todays.reduce((sum, e) => sum + minutesOf(e), 0)
-  const total = Math.max(0, Math.min(maxMin, current + deltaMin))
+  const total = Math.max(0, Math.min(Math.max(maxMin, current), current + deltaMin))
   if (total <= 0) return { log: others, total: 0 }
   const id = todays.find((e) => typeof e.id === 'string')?.id
   const type = todays.find((e) => typeof e.type === 'string')?.type ?? 'LISS'

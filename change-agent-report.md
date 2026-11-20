@@ -1,5 +1,49 @@
 # Change Agent Report
 
+## Run: 2026-11-20 ([FIX] — area (e) widgets + localStorage stores: fixed the documented STRONG lead #1 from run 11-19 #2 — a real, reachable DATA-LOSS bug where the Diet-tab cardio stepper silently DESTROYS dashboard-logged cardio minutes above the 120-min/day cap. `nextCardioLog` clamped `current + delta` to a flat `[0, maxMin]`, so a day legitimately logged **above** 120 min via the unbounded dashboard CardioWidget would be yanked down to 120 on ANY stepper tap — even a "+". Rotated off 11-19 #2's (a), #1's (b), 11-18 #2's (f)/#1's (d).)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` Queue has **zero unchecked (`- [ ]`) items** (all done) → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN before any change)
+Clean `master` (already up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (528 tests, 89 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (e) widgets (dashboard Cardio widget) + localStorage stores
+Rotated to area (e) to verify prior run's documented STRONG lead #1 against primary sources. Deep-read `src/utils/cardio.ts` (`cardioMinutesOn`, `nextCardioLog`), `src/store/cardioStore.ts` (`addEntry`/`updateEntry`/`sanitizeEntries`/`reloadFromStorage`), `src/components/widgets/CardioWidget.tsx` (the dashboard writer), and `src/pages/Diet/index.tsx` (`updateCardio`, the stepper caller). Confirmed the two-writers-disagree-on-max defect is real and reachable.
+
+### STEP 2/3 — BUG FOUND + FIXED
+**The Diet-tab cardio stepper silently destroys dashboard-logged cardio minutes that exceed the 120-min/day cap (DB↔UI / writer↔writer desync, DATA LOSS).**
+
+- **Root cause**: `nextCardioLog` (`src/utils/cardio.ts:60`) computed `total = Math.max(0, Math.min(maxMin, current + deltaMin))` — a flat upper clamp at `maxMin` (120). But the dashboard `CardioWidget` (`CardioWidget.tsx`) is an **unbounded multi-session writer** into the same `cardio_log` key: it allows several sessions per day, each up to 180 min (`save()` only rejects `mins <= 0`), with no daily cap, and quick-preset buttons that each append a fresh session. So a day can legitimately total **more than 120 min**. When it does, the stepper then collapses the whole day to a single entry sized by the clamped total — so any tap yanks it down to 120.
+- **Reachable symptom**: Dashboard → log e.g. LISS 60 + HIIT 45 + Stairs 40 = **145 min** today (3 itemized sessions). Switch to the Nutrition/Diet tab → tap the cardio stepper **"+"** (expecting *more*): `nextCardioLog(log, today, +5, 120)` returns `total = min(120, 150) = 120`, writes a single 120-min entry, and `reloadFromStorage()` propagates it back to the dashboard store — **permanently dropping 25 real minutes AND the 3 itemized sessions** (dashboard now shows one 120-min entry). A "−5" tap on the same day returns 120 too (expected 140), losing an extra 20. Contradicts the function's own documented contract: *"it never silently drops minutes the way the old read did."*
+- **Fix** (minimal, one concept — never clamp the total below the existing baseline): changed the upper bound from a flat `maxMin` to `Math.max(maxMin, current)`:
+  - `const total = Math.max(0, Math.min(Math.max(maxMin, current), current + deltaMin))`
+  - An at/under-cap day is unchanged: its own upward "+" taps still cap at `maxMin` (e.g. 118 + 5 → 120). An over-cap day is now only ever reduced by an explicit "−" tap (a "+" there is a no-op that keeps the real total), and still never goes below 0. Updated the function's doc comment to describe the `max(maxMin, current)` bound and why.
+- **Tests added** (`tests/unit/cardioLog.test.ts`, new describe block, 5 cases — all **verified FAILING-then-passing** for the two destructive cases):
+  - "+" tap on a 145-min over-cap day keeps 145 (was 120 — 25 min lost). **Verified failing pre-fix.**
+  - "−5" on 145 → 140 (was 120). **Verified failing pre-fix.**
+  - "−25" on 145 → 120 (can bring an over-cap day down to the cap).
+  - over-cap day preserves every OTHER day untouched.
+  - at/under-cap day (118) still clamps to 120 on +5 (regression guard for the normal path).
+
+### Sub-audit leads for a future run (NOT re-verified against primary sources this run; do NOT fix without independent confirmation)
+1. **(area d, data-loss on relaunch — carried over from 11-19 #2, still unfixed)** Onboarding-selected **Division without a Show Date** is silently wiped on the next launch. The onboarding `user:create` raw INSERT (`userHandlers.ts`) writes `division` verbatim (bypassing `sanitizeUserUpdate`, which deliberately drops division/show_date on the update path). With no show row, `plan:startupRefresh` / `syncPrimaryToNearest` find no upcoming show and run `UPDATE users SET show_date=NULL, division=NULL`, so Settings' Profile card loses the division on first relaunch. No Goals-step validation blocks picking a division without a date. (Still a strong candidate; a different area than this run — verify the exact SQL path before fixing.)
+
+### STEP 4 — Verification (all GREEN after fix)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (533 tests, 89 files; +5 new)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `src/utils/cardio.ts` — `nextCardioLog` upper clamp changed from flat `maxMin` to `Math.max(maxMin, current)`; doc comment rewritten to explain the data-loss it prevents.
+- `tests/unit/cardioLog.test.ts` — new describe block with 5 over-cap regression tests.
+- `change-agent-report.md` — this entry.
+
+---
+
 ## Run: 2026-11-19 #2 ([FIX] — area (a) nutrition + Diet flows: fixed the documented STRONG lead #1 from run 11-19 #1 — a real, reachable same-screen DB↔UI desync where, after a **mid-week meal-count REDUCTION**, a PAST day's **meal-completion COUNT disagreed with that same day's MACRO TOTAL**. The Diet "This Week" surfaces counted completions raw (`.filter(date).length`) — including orphans at now-removed indices that `clearOrphanedMealCompletions` leaves behind for past days (it purges only `date >= today`) — so a Monday logged 6/6 under a 6-meal plan read **"6/4"**, greened as done, and pushed the Weekly View progress bar past 100%, while the macro totals (which index `meals[idx]`) skipped the 2 orphans and counted only 4 meals. Rotated off 11-19 #1's (b), 11-18 #2's (f)/#1's (d), 11-17 #2's (b)/#1's (e). Two parallel read-only sub-audits (areas d and e) surfaced two NEW leads — folded in below, NOT fixed this run.)
 
 ### STEP 0 — Requested changes
