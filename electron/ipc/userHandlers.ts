@@ -1,10 +1,14 @@
 import { IpcMain } from 'electron'
 import { getDb, namedParams } from '../database/db'
-import { clampMealCount, clampSnackCount, clampBodyFatPct, sanitizeUserUpdate } from './userSanitize'
+import { clampMealCount, clampSnackCount, clampBodyFatPct, sanitizeUserUpdate, sanitizeUserCreate } from './userSanitize'
 
 export function registerUserHandlers(ipcMain: IpcMain): void {
-  ipcMain.handle('user:create', (_event, data) => {
+  ipcMain.handle('user:create', (_event, rawData) => {
     const db = getDb()
+    // Drop an orphaned division (a division picked in onboarding with no show date);
+    // users.division is derived from the shows table and would be nulled on the next
+    // launch otherwise — see sanitizeUserCreate.
+    const data = sanitizeUserCreate(rawData)
     const stmt = db.prepare(`
       INSERT INTO users (
         name, age, sex, height_cm, weight_kg, body_fat_pct,

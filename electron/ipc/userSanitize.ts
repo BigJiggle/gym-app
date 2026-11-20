@@ -88,6 +88,26 @@ export function clampSetsPerExercise(value: unknown): number | undefined {
   return n === undefined ? undefined : Math.round(n)
 }
 
+// Guard the onboarding `user:create` payload before its raw INSERT.
+// user:create is the ONLY path that writes users.division directly — every other
+// path treats division/show_date as DERIVED columns: sanitizeUserUpdate deliberately
+// drops both on the profile-edit path, and all show flows route through the `shows`
+// table, from which plan:startupRefresh / syncPrimaryToNearest rebuild
+// users.division (and show_date) on EVERY launch, nulling both when there is no
+// upcoming show. Onboarding only creates a backing show row when a show_date was
+// entered (`if (data.show_date) addShow(...)`), yet its Goals step lets an athlete
+// pick a Division with NO show date. That orphaned division is written to the users
+// row, shown in the sidebar / QuickStats for the first session, then SILENTLY WIPED
+// on the next relaunch (a data-loss + DB↔UI desync). Enforce the app-wide invariant
+// at this write seam: persist a division only when a show_date backs it — the exact
+// condition under which onboarding creates the show — so the users row agrees from
+// the start with what startupRefresh will derive. A show-backed payload is returned
+// unchanged; without a show_date the division is dropped (null).
+export function sanitizeUserCreate(data: Record<string, unknown>): Record<string, unknown> {
+  if (data.show_date) return data
+  return { ...data, division: null }
+}
+
 // Serialize + clean a partial user-update payload for binding.
 // - JSON array / boolean fields are stringified/int-coerced (node-sqlite3-wasm
 //   rejects raw arrays/booleans).

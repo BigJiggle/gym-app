@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { sanitizeUserUpdate } from '../../electron/ipc/userSanitize'
+import { sanitizeUserUpdate, sanitizeUserCreate } from '../../electron/ipc/userSanitize'
 
 // node-sqlite3-wasm binds NaN / ±Infinity as NULL. In the Settings profile edit
 // form, clearing a numeric input runs parseInt('')/parseFloat('') → NaN, which
@@ -159,5 +159,47 @@ describe('sanitizeUserUpdate — non-finite numeric guard', () => {
     expect(clean.dietary_restrictions).toBe('["Dairy-free"]')
     expect(clean.meal_count).toBe(20)
     expect(clean.snack_count).toBe(0)
+  })
+})
+
+// users.division is a DERIVED column: plan:startupRefresh / syncPrimaryToNearest
+// rebuild it from the nearest upcoming show in the `shows` table on EVERY launch and
+// NULL it when there is none. user:create (onboarding) is the only path that writes
+// division directly, and onboarding only creates a backing show row when a show_date
+// was entered — yet the Goals step lets an athlete pick a Division with NO date. Such
+// an orphaned division shows in the sidebar for the first session, then is silently
+// wiped on the next relaunch. sanitizeUserCreate must drop a division that has no
+// show_date backing it, and leave a show-backed payload untouched.
+describe('sanitizeUserCreate — orphaned-division guard', () => {
+  it('drops a division picked with no show date (would be wiped on relaunch)', () => {
+    const clean = sanitizeUserCreate({
+      name: 'Alex',
+      division: "Men's Physique",
+      show_date: undefined,
+      goal: 'cut',
+    })
+    expect(clean.division).toBe(null)
+    // Every other onboarding field is preserved untouched.
+    expect(clean.name).toBe('Alex')
+    expect(clean.goal).toBe('cut')
+  })
+
+  it('also drops the division when show_date is an empty string', () => {
+    const clean = sanitizeUserCreate({ division: 'Bikini', show_date: '' })
+    expect(clean.division).toBe(null)
+  })
+
+  it('keeps a show-backed division unchanged (payload returned as-is)', () => {
+    const payload = { name: 'Sam', division: 'Classic Physique', show_date: '2026-09-01', goal: 'cut' }
+    const clean = sanitizeUserCreate(payload)
+    expect(clean.division).toBe('Classic Physique')
+    expect(clean.show_date).toBe('2026-09-01')
+  })
+
+  it('is a no-op for a non-competing athlete (no division, no show)', () => {
+    const clean = sanitizeUserCreate({ name: 'Jo', goal: 'bulk' })
+    expect('division' in clean).toBe(true) // added as null, harmless (binds to NULL)
+    expect(clean.division).toBe(null)
+    expect(clean.name).toBe('Jo')
   })
 })

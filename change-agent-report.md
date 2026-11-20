@@ -1,5 +1,44 @@
 # Change Agent Report
 
+## Run: 2026-11-20 #2 ([FIX] — area (d) onboarding + Settings + data lifecycle: fixed the STRONG lead carried over from run 11-19 #2 (lead #2) / 11-20 (lead #1) — a real, reachable DATA-LOSS + DB↔UI desync where an onboarding-picked **Division without a Show Date** is silently WIPED on the next relaunch. Verified the full chain against primary sources before fixing. Rotated off 11-20's (e), 11-19 #2's (a), 11-19 #1's (b).)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` Queue has **zero unchecked (`- [ ]`) items** (all done; the two `- [ ]` grep hits are the format-doc preamble, not queue items) → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN before any change)
+Clean `master` (already up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (533 tests, 89 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (d) onboarding + Settings + reset + data lifecycle
+Rotated to area (d) to verify the long-carried "Division without a Show Date" lead against primary sources. Deep-read the whole division/show lifecycle: `electron/ipc/userHandlers.ts` (`user:create` raw INSERT), `electron/ipc/userSanitize.ts` (`sanitizeUserUpdate` — deliberately drops `division`/`show_date`), `electron/ipc/showHandlers.ts` (`syncPrimaryToNearest`, `persistProfileShowDate`, `setPrimaryShow`, `shows:add/update/delete/cancelShow`), `electron/ipc/planHandlers.ts` (`plan:startupRefresh`), the renderer onboarding submit (`src/pages/Onboarding/index.tsx`), the Goals step (`src/pages/Onboarding/steps/Step2Goals.tsx`, `Step6Review.tsx`), `src/store/userStore.ts`, and every `division` surface (`NavSidebar.tsx`, `QuickStatsWidget.tsx`, `Settings/index.tsx`). Confirmed the invariant is **real and app-wide**: `users.division`/`users.show_date` are DERIVED columns rebuilt from the `shows` table on every launch; `user:create` is the ONE path that writes `division` directly.
+
+### STEP 2/3 — BUG FOUND + FIXED
+**An onboarding-picked Division with NO Show Date is silently wiped on the next relaunch (data loss + DB↔UI desync).**
+
+- **Root cause**: Onboarding's Goals step (`Step2Goals.tsx:74-94`) exposes Division and Show Date as **independent optional** inputs once "Are you prepping for a competition? → Yes" is toggled; nothing requires a date (the hint even says "You can add more shows later"). On submit (`Onboarding/index.tsx:65-77`), `createUser(data)` writes `division` straight to the users row via the `user:create` raw INSERT (`userHandlers.ts:6-42`), but a backing show row is added **only** `if (data.show_date)`. With a division but no date, the users row gets a division with **no backing show**. On the next launch `plan:startupRefresh` (`planHandlers.ts:367-376`) finds no upcoming show and runs `UPDATE users SET show_date=NULL, division=NULL` — wiping it. `sanitizeUserUpdate` (`userSanitize.ts:116-117`) deliberately drops `division`/`show_date` on every OTHER write path precisely because they're derived; `user:create` was the one seam with no counterpart guard.
+- **Reachable symptom**: Onboard → "Yes, I'm competing" → pick **Men's Physique**, leave Show Date blank → finish. Step 6 Review shows "Men's Physique"; the sidebar (`NavSidebar.tsx:46`) and QuickStats (`QuickStatsWidget.tsx:43`) show the division for the **first session**. Relaunch → `startupRefresh` nulls it → Settings Profile card (`Settings/index.tsx:534`), sidebar, and QuickStats all drop the division permanently. A value shown that doesn't match what survives in the DB.
+- **Fix** (minimal, at the write seam, mirrors the existing `sanitizeUserUpdate` pattern in the purpose-built `userSanitize.ts`): new pure `sanitizeUserCreate(data)` — returns the payload unchanged when a `show_date` backs it, else drops the division (`division: null`). This is the **exact** condition under which onboarding creates the backing show, so the show-backed path is untouched and the orphaned-division path now agrees from the start with what `startupRefresh` will derive (sidebar shows the goal label, as designed, instead of flashing a division that vanishes). Wired into `user:create` (`userHandlers.ts`: `const data = sanitizeUserCreate(rawData)` before the INSERT).
+- **Why the seam, not the UI**: forcing a show date in Goals would contradict the UI's explicit "optional / add later" copy and is a feature/UX change (out of scope). Guarding at the DB write seam enforces the app-wide invariant for every caller with the smallest correct change and no UX shift.
+- **Tests added** (`tests/unit/userSanitize.test.ts`, new `sanitizeUserCreate` describe, 4 cases — the 3 drop/no-op cases **verified FAILING against a pre-fix passthrough stub**, then passing): division + no date → dropped; division + empty-string date → dropped; division + valid date → kept unchanged; non-competing athlete → no-op (division null, other fields intact).
+
+### Sub-audit leads for a future run (NOT re-verified against primary sources beyond this run's reading; confirm before fixing)
+1. **(area d, malformed-date edge — low severity)** Onboarding's show gate is a bare truthy `if (data.show_date)`; `Step2Goals`' `type="date"` input yields only `''` or a valid `YYYY-MM-DD`, so in practice it's safe, but a whitespace/malformed truthy date would still reach `addShow` raw. Not reachable via the current UI; noted only for completeness.
+
+### STEP 4 — Verification (all GREEN after fix)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (537 tests, 89 files; +4 new)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `electron/ipc/userSanitize.ts` — NEW `sanitizeUserCreate` pure helper + rationale.
+- `electron/ipc/userHandlers.ts` — `user:create` now runs the payload through `sanitizeUserCreate` before the raw INSERT.
+- `tests/unit/userSanitize.test.ts` — +4 tests for the orphaned-division guard.
+- `change-agent-report.md` — this entry.
+
+---
+
 ## Run: 2026-11-20 ([FIX] — area (e) widgets + localStorage stores: fixed the documented STRONG lead #1 from run 11-19 #2 — a real, reachable DATA-LOSS bug where the Diet-tab cardio stepper silently DESTROYS dashboard-logged cardio minutes above the 120-min/day cap. `nextCardioLog` clamped `current + delta` to a flat `[0, maxMin]`, so a day legitimately logged **above** 120 min via the unbounded dashboard CardioWidget would be yanked down to 120 on ANY stepper tap — even a "+". Rotated off 11-19 #2's (a), #1's (b), 11-18 #2's (f)/#1's (d).)
 
 ### STEP 0 — Requested changes
