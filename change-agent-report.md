@@ -1,5 +1,48 @@
 # Change Agent Report
 
+## Run: 2026-11-21 ([FIX] — area (c) check-in + Progress + adaptive nutrition: fixed a real, reachable missing-error-handling gap in the manual macro-recalc path (`plan:recalculateMacros`) — the one diet read-and-recompute path that read the stored `diet_plans.meals` cell with a RAW `JSON.parse(...).map(...)` instead of `normalizeMeals`, so a corrupt / hand-edited / legacy / non-array cell crashed the "⟳ Recalculate Macros" button (silent failure, no self-heal). Rotated off 11-20 #2's (d), 11-20's (e), 11-19 #2's (a), 11-19 #1's (b).)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` Queue has **zero unchecked (`- [ ]`) items** (all done; the two `- [ ]` grep hits are the format-doc preamble) → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN before any change)
+Clean `master` (already up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (537 tests, 89 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (c) check-in + Progress + adaptive nutrition
+Rotated to area (c) (last visited 11-16, audited clean). Deep-read the whole adaptive-nutrition + check-in surface and empirically fuzzed the pure cores:
+- `electron/services/checkinEngine.ts` (`parseAdjustments`, `clampCheckinWeightKg`, `weightTrend`, Theil–Sen `weightTrendPct`, `calculateAdjustments`) — **fuzzed 20k random/boundary inputs** (0 / negative / NaN / Infinity / 1e9 weights, missing/garbage dates, 0–5 priors): never produced NaN/Infinity `calories_delta`, always returned `notes[]`. Clean.
+- `electron/services/checkinSchedule.ts` (both renderer + main copies — **diffed identical** apart from comments; `getNextCheckinDate`, `computeMissedSlots`, `countMissedBetween`, `effectiveInterval`) — **fuzzed 5k** schedules incl. interval 0/−1/NaN: terminates (no infinite loop), always a valid Date. Clean.
+- `electron/ipc/checkinHandlers.ts` (submit / submitMissed / update / history / latest) — write-seam weight clamp, one-weigh-in-per-day guard, date-order `previous`/trend-window selection, week renumber on date edit: all well-guarded. Clean.
+- `electron/ipc/progressHandlers.ts`, `src/pages/Progress/index.tsx`, `src/pages/CheckIn/index.tsx`, `src/components/charts/WeightChart.tsx`, `src/utils/{weeklyRate,weeksTracked,dates,units,water,showDates}.ts` — division/NaN/date-boundary paths all guarded. Clean.
+- Adjacent spot-checks: `WorkoutStats`/`detectNewPRs`, `workoutHandlers`, `mealCompletionHandlers` (+ schema `UNIQUE(user_id,date,meal_index)`), all cardio_log / water localStorage parses (all try/catch'd). Clean.
+- Repo-wide `JSON.parse` seam sweep → found the one remaining unguarded stored-cell read (below).
+
+### STEP 2/3 — BUG FOUND + FIXED
+**`plan:recalculateMacros` crashes on a corrupt / non-array `diet_plans.meals` cell (missing error handling on a reachable write path).**
+
+- **Root cause**: `electron/ipc/planHandlers.ts:572` read the stored meals with a raw `JSON.parse(currentPlan.meals).map(...)`. This is the ONLY diet read-and-recompute path that bypassed `normalizeMeals` — its sibling read `plan:getDiet` (`planHandlers.ts:264`) uses `normalizeMeals(plan.meals)`, and `checkin:submit`'s identical in-place meal scaling (`checkinHandlers.ts:153-171`) wraps the same parse in try/catch. `normalizeMeals`' own contract documents the `meals` cell as a reachable corruption surface ("SQLite is dynamically typed and the DB file is user-accessible, so a corrupt / hand-edited / legacy cell can hold non-JSON text" or a non-array `{}`/`5`/`"x"`).
+- **Reachable symptom**: Diet tab → "⟳ Recalculate Macros" button (`src/pages/Diet/index.tsx:474-490`, which recomputes protein/carbs/fat from current body weight). With a corrupt/legacy `meals` cell the handler throws — non-JSON text → `JSON.parse` SyntaxError; valid-but-non-array (`{}`/`5`) → `JSON.parse` succeeds then `.map` throws `"existingMeals.map is not a function"`. The button's `onClick` has `try/finally` but **no `catch`**, so the IPC rejection is swallowed: the button flips back from "Updating…" with no feedback, nothing updates, and the row is never self-healed (the handler's whole purpose). `plan:getDiet` already tolerates the same cell (renders empty meals), so the Diet page itself loads fine — making the recalc-only crash a surface-to-surface inconsistency.
+- **Fix** (minimal, one line + rationale comment; mirrors the sibling read exactly): `const existingMeals = normalizeMeals(currentPlan.meals)` instead of the raw `JSON.parse`. `normalizeMeals` returns `[]` for a corrupt/non-array cell (so recalc still heals `calories_target`/`protein_g`/`fat_g`/`carbs_g` and writes back valid meals `[]`), and is a **shape-preserving no-op for a valid meals array** (name/time/calories/foods preserved; it only coerces malformed fields that a freshly-generated or AI-normalized plan never has). Imported symbol was already in scope (`planHandlers.ts:4`). No tsc/behavior change for valid data.
+- **Why the seam, not the button**: adding a `catch` to the button would only hide the crash with a toast; the handler would still fail and never self-heal the row. Guarding at the stored-cell read seam (the app's established pattern — `normalizeMeals`/`normalizeExercises`/`parseAdjustments`) makes recalc robust for every caller and keeps the row healing as designed.
+- **Tests added** (`tests/unit/recalculateMacrosBadMeals.test.ts`, 3 cases against the REAL handler + in-memory `node-sqlite3-wasm` DB — the two corrupt-cell cases **verified FAILING pre-fix** [`SyntaxError`; `existingMeals.map is not a function`], then passing): non-JSON `meals` text → no throw, macros healed from 85 kg (protein=196); valid-JSON-but-non-array `'{}'` → no throw; valid meals array → shape-preserving no-op (3 meals, names/foods/calories preserved, finite recomputed macros). The sibling `recalculateMacrosZeroTarget.test.ts` still passes (no regression).
+
+### STEP 4 — Verification (all GREEN after fix)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (540 tests, 90 files; +3 new)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `electron/ipc/planHandlers.ts` — `plan:recalculateMacros` now reads stored meals via `normalizeMeals` (was raw `JSON.parse(...).map`).
+- `tests/unit/recalculateMacrosBadMeals.test.ts` — NEW, +3 tests for the corrupt/non-array meals guard.
+- `change-agent-report.md` — this entry.
+
+### Sub-audit leads for a future run (NOT re-verified beyond this run's reading; confirm before fixing)
+1. **(area e, label semantics — low)** `TrainingVolumeWidget.tsx:75` shows "net ~X kcal/day" where `X = calories_target − totalKcalBurned / thisWeekLogs.length` — divides the week's burn by the number of *sessions* (≈ per-training-day), not 7 days; defensible as "net on a training day" but the "/day" label is loose. Cosmetic only; `thisWeekLogs.length ≥ 1` is guarded.
+2. **(area c, cosmetic — low)** Progress "Weekly Rate" caption says "avg last {min(len,4)} check-ins", but `computeWeeklyWeightRate` walks the window further back than 4 for daily-cadence athletes, so the caption can understate the real window. No numeric impact.
+
 ## Run: 2026-11-20 #2 ([FIX] — area (d) onboarding + Settings + data lifecycle: fixed the STRONG lead carried over from run 11-19 #2 (lead #2) / 11-20 (lead #1) — a real, reachable DATA-LOSS + DB↔UI desync where an onboarding-picked **Division without a Show Date** is silently WIPED on the next relaunch. Verified the full chain against primary sources before fixing. Rotated off 11-20's (e), 11-19 #2's (a), 11-19 #1's (b).)
 
 ### STEP 0 — Requested changes

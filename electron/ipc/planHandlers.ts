@@ -569,7 +569,15 @@ Ensure every exercise respects the constraints above while maintaining phase-app
     // so any food swaps the athlete made are preserved.
     const proteinCalRatio = (protein_g * 4) / calories
     const fatCalRatio = (fat_g * 9) / calories
-    const existingMeals = JSON.parse(currentPlan.meals as string) as Array<Record<string, unknown>>
+    // Read the stored meals through normalizeMeals (exactly like plan:getDiet), not a
+    // raw JSON.parse(...).map(...). The diet_plans.meals cell is a reachable corruption
+    // surface (user-accessible SQLite file, hand-edited / legacy / pre-sanitize rows):
+    // non-JSON text throws in JSON.parse, and a valid-but-non-array cell ({} / 5 / "x")
+    // throws "map is not a function". The Diet "Recalculate Macros" button's onClick has
+    // no catch, so either crash silently fails the recalc and never heals the row.
+    // normalizeMeals returns [] for a corrupt/non-array cell (so recalc still self-heals
+    // the macro columns) and is a shape-preserving no-op for a valid meals array.
+    const existingMeals = normalizeMeals(currentPlan.meals) as Array<Record<string, unknown>>
     const meals = existingMeals.map((m) => {
       const cal = m.calories as number
       const pro = Math.round((cal * proteinCalRatio) / 4)
