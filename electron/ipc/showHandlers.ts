@@ -72,6 +72,34 @@ export function persistProfileShowDate(
   syncPrimaryToNearest(db, userId, today)
 }
 
+// Persist a DIVISION set OUTSIDE the "My Shows" UI WITHOUT a new show date —
+// currently the AI assistant's plan:applyAIRequest, whose settingChanges can carry
+// a bare `division` ("switch me to Classic Physique"). users.division is a DERIVED
+// column: syncPrimaryToNearest and plan:startupRefresh rebuild it from the nearest
+// upcoming show on EVERY launch. So writing division to the users row ALONE (as
+// plan:applyAIRequest did) is silently reverted on the next launch — back to the
+// backing show's OLD division if one exists (losing the user's edit), or to NULL if
+// none does (a value shown now that vanishes). Stamp the division onto the nearest
+// upcoming show so the derivation reproduces it, then re-sync. With no upcoming show
+// there is nothing to back a division, so syncPrimaryToNearest nulls it (matching the
+// state the next launch would derive) instead of leaving an orphan that flashes then
+// disappears. Mirrors persistProfileShowDate / shows:add. `today` is injectable for
+// deterministic tests; undefined keeps syncPrimaryToNearest's local-date default.
+export function persistProfileDivision(
+  db: ReturnType<typeof getDb>,
+  userId: number,
+  division: string,
+  today?: string,
+): void {
+  const nearest = db.prepare(
+    "SELECT id FROM shows WHERE user_id=? AND show_date >= ? ORDER BY show_date ASC LIMIT 1"
+  ).get([userId, today ?? localToday()]) as { id: number } | undefined
+  if (nearest) {
+    db.prepare('UPDATE shows SET division=? WHERE id=?').run([division, nearest.id])
+  }
+  syncPrimaryToNearest(db, userId, today)
+}
+
 // Computes weeks_out from a show_date string. Returns undefined if no date.
 // Delegates to the shared local-midnight helper so the generated plan's weeks-out
 // matches the UI countdown (see weeksUntilShow) instead of drifting with time of day.

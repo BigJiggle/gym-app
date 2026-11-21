@@ -3,7 +3,7 @@ import { getDb, namedParams } from '../database/db'
 import { generateTrainingPlan, getExerciseLibraryForUI, determinePhase, normalizeExercises } from '../services/trainingEngine'
 import { generateNutritionPlan, buildMealsPublic, calcBMR, getPhaseAwareDeficit, ACTIVITY_MULTIPLIERS, clampWeightKg, clampMealCount, sanitizeCalorieTarget, sanitizeMacroGrams, normalizeMeals, MIN_CALORIE_TARGET } from '../services/nutritionEngine'
 import { generateDietWithClaude, generateWorkoutWithClaude, refineDietPlan, refineWorkoutWithClaude, processAIRequest, refineWorkoutForSafety } from '../services/claudeService'
-import { regenerateDietForGoal, persistProfileShowDate } from './showHandlers'
+import { regenerateDietForGoal, persistProfileShowDate, persistProfileDivision } from './showHandlers'
 import { weeksUntilShow, localToday } from '../services/showDates'
 import { clearOrphanedMealCompletions } from './mealCompletionHandlers'
 
@@ -879,6 +879,14 @@ Ensure every exercise respects the constraints above while maintaining phase-app
           changes.show_date,
           typeof changes.division === 'string' ? changes.division : null,
         )
+      } else if (typeof changes.division === 'string') {
+        // A division changed WITHOUT a new show_date (e.g. "switch me to Classic
+        // Physique" while a show is already on the calendar) is written raw to the
+        // users row above, but users.division is derived from the nearest show on every
+        // launch — so the raw write is reverted next launch (to the show's old division,
+        // or NULL with no show). Route it through the shows table so it survives, exactly
+        // like an AI-set show_date does.
+        persistProfileDivision(db, userId, changes.division)
       }
     }
 

@@ -1,5 +1,47 @@
 # Change Agent Report
 
+## Run: 2026-11-21 #2 ([FIX] — area (f) shows/competition + date/week logic: fixed a real, reachable DATA-LOSS + DB↔UI-desync bug where an AI-assistant DIVISION change made WITHOUT a new show date is silently reverted on the next relaunch. `plan:applyAIRequest` whitelists `division` and writes it straight to the DERIVED `users.division` column; with no backing-show update, the next launch's `syncPrimaryToNearest` rebuilds `users.division` from the nearest show — reverting the user's edit (or nulling it). This is a SECOND raw-write seam that the 11-20 #2 onboarding fix (`sanitizeUserCreate`) missed; its report wrongly claimed `user:create` was "the ONE path that writes division directly". Rotated off this morning's (c), 11-20 #2's (d), 11-20's (e), 11-19 #2's (a).)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` Queue has **zero unchecked (`- [ ]`) items** (all 13 done; the two `- [ ]` grep hits are the format-doc preamble, not queue items) → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN before any change)
+Clean `master` (already up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (540 tests, 90 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (f) shows/competition + date/week logic
+Rotated to area (f) (last fully audited 11-18 #2, clean). Deep-read the whole show/date/week surface and traced the SCOPE error paths:
+- `electron/services/showDates.ts` (`weeksUntilShow`, `localToday`), `src/utils/dates.ts` (`getShowCountdown`, `weekStartMonday`, `addDays`, DST/UTC handling) — all local-midnight/noon anchored, DST-safe. Clean.
+- `electron/ipc/showHandlers.ts` (`syncPrimaryToNearest`, `persistProfileShowDate`, `shows:add/update/delete/cancelShow`, `setPrimaryShow`, `regenerateDietForGoal`, `transitionTrainingToOffSeason`) — show-context changes all regenerate diet + re-sync primary; past-show guard consistent; division/show_date derived from the `shows` table. Clean except the seam below.
+- `electron/ipc/planHandlers.ts` `plan:startupRefresh` (show-passing, phase-boundary + context-change detection, user-modified plan preservation) and `plan:applyAIRequest` (settingChanges whitelist, numeric clamps, `persistProfileShowDate` routing) — reviewed deeply; found the division-only gap below.
+- `src/data/competitionPrep.ts` (`buildPrepTimeline`, `getWeekGuidance`, `PEAK_WEEK_PROTOCOL`), widgets (`PeakWeekWidget`, `PrepPaceWidget`, `PrepGuidanceWidget`, `ConditionWidget`, `SessionsWeekWidget`, `WeeklyScorecardWidget`), `src/utils/{weeklyRate,weeksTracked,weeklySessionProgress}.ts`, `src/components/widgets/competitionLogs.ts` (localStorage sanitizers) — division/NaN/date-boundary/week-rollover paths all guarded. Clean.
+
+### STEP 2/3 — BUG FOUND + FIXED
+**An AI-assistant division change with NO new show date is silently reverted on the next relaunch (data loss + DB↔UI desync).**
+
+- **Root cause**: `plan:applyAIRequest` (`electron/ipc/planHandlers.ts`) lets Claude's `settingChanges` carry `division` (it's in `ALLOWED_COLUMNS`) and writes it straight to the users row via the dynamic `UPDATE users SET … division = @division`. But `users.division` is a **DERIVED** column: `syncPrimaryToNearest` / `plan:startupRefresh` rebuild it from the nearest upcoming show on **every launch** (the app-wide invariant the 11-20 #2 onboarding fix enforced). An AI-set **show_date** was already routed through the `shows` table (`persistProfileShowDate`, fixed earlier), but a **division changed on its own** had no such reconciliation — the `persistProfileShowDate` call is gated on `show_date` being a string. So a bare division write is reverted next launch: to the backing show's OLD division when a show exists (silently losing the user's edit), or to NULL when none does (a value shown now that vanishes). The 11-20 #2 report claimed `user:create` was "the ONE path that writes division directly" — this AI path is a **second raw-write seam** it missed.
+- **Reachable symptom**: an athlete with a show on the calendar opens the AI assistant and says "switch my division to Classic Physique". `processAIRequest` returns `settingChanges: { division: "Classic Physique" }` (no show_date). The handler writes it to the users row; the sidebar / QuickStats / Settings Profile card immediately show "Classic Physique". On the next relaunch `plan:startupRefresh` re-derives division from the (unchanged) primary show and it flips back to "Men's Physique" — the user's change is gone with no feedback. (With no show at all, it's nulled, matching the onboarding data-loss class.)
+- **Fix** (minimal, at the write seam, mirrors `persistProfileShowDate`): new pure exported helper `persistProfileDivision(db, userId, division, today?)` in `showHandlers.ts` — stamps the new division onto the **nearest upcoming show** (the row `syncPrimaryToNearest` will pick), then re-syncs, so the launch derivation reproduces it. With no upcoming show there's nothing to back a division, so `syncPrimaryToNearest` nulls it (matching the eventual derived state) rather than leaving an orphan that flashes then vanishes. Wired into `plan:applyAIRequest` as an `else if (typeof changes.division === 'string')` branch after the existing `show_date` routing, so the dual (show_date + division) case still flows through `persistProfileShowDate` unchanged.
+- **Why the seam, not the whitelist**: removing `division` from `ALLOWED_COLUMNS` would silently drop a legitimate, designed AI capability (division IS user-editable and is sent in the AI context). Reconciling at the shows table enforces the derived-column invariant for this caller with the smallest correct change, exactly as the sibling `persistProfileShowDate` / `sanitizeUserCreate` fixes did.
+- **Tests added** (`tests/unit/aiDivisionPersist.test.ts`, 4 cases against the REAL exported helper + in-memory `node-sqlite3-wasm` DB with an injected `today`, mirroring `aiShowDatePersist.test.ts`): (1) **reproduces** the data loss — a raw users-only division write reverts to the show's old division after `syncPrimaryToNearest`; (2) `persistProfileDivision` stamps the show so the new division survives the launch sync (no duplicate show); (3) with no upcoming show the orphaned division is dropped to null (no flash-then-vanish), stable across the next sync; (4) a PAST show is not stamped (syncs off the nearest UPCOMING show only).
+
+### STEP 4 — Verification (all GREEN after fix)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (544 tests, 91 files; +4 new)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `electron/ipc/showHandlers.ts` — NEW `persistProfileDivision` pure helper + rationale.
+- `electron/ipc/planHandlers.ts` — `plan:applyAIRequest` now routes a bare division change through `persistProfileDivision`; imported the helper.
+- `tests/unit/aiDivisionPersist.test.ts` — NEW, +4 tests.
+- `change-agent-report.md` — this entry.
+
+### Sub-audit leads for a future run (NOT re-verified beyond this run's reading; confirm before fixing)
+1. **(area d, cosmetic/UX — low)** Settings' Profile **edit** form exposes Show Date + Division inputs, but `updateUser` → `sanitizeUserUpdate` deliberately **drops** both (derived columns). Editing them there appears to save (no error) yet has no effect — a silent no-op the user can't tell from a real save. Not a crash/data-loss; arguably by-design, but the inputs mislead. Consider routing those two fields through the shows table (like the AI path now does) or removing them from the edit form.
+2. **(area f, cosmetic — low)** `src/pages/Training/index.tsx:395` computes the show countdown with `Math.round` over two `T00:00:00` anchors, where canonical `getShowCountdown` uses `Math.floor` over a midnight→noon offset. Both are DST-safe and agree on every normal day; they could differ only inside a DST-transition week. Not worth a change.
+
 ## Run: 2026-11-21 ([FIX] — area (c) check-in + Progress + adaptive nutrition: fixed a real, reachable missing-error-handling gap in the manual macro-recalc path (`plan:recalculateMacros`) — the one diet read-and-recompute path that read the stored `diet_plans.meals` cell with a RAW `JSON.parse(...).map(...)` instead of `normalizeMeals`, so a corrupt / hand-edited / legacy / non-array cell crashed the "⟳ Recalculate Macros" button (silent failure, no self-heal). Rotated off 11-20 #2's (d), 11-20's (e), 11-19 #2's (a), 11-19 #1's (b).)
 
 ### STEP 0 — Requested changes
