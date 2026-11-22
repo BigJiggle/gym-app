@@ -1,5 +1,21 @@
 # Change Agent Report
 
+## Run: 2026-11-22 #2 ([FIX] — area (b) training engine + workout/session flows: fixed a real, reachable "X kg × 0" PR + stale last-performance bug on the dashboard `TodaysSessionWidget`. This is the SAME reps-0 bug class the 11-19 run fixed on the live WorkoutSession PR celebration and the 11-17 #2 run fixed on the Stats-tab PR list — `TodaysSessionWidget` was the remaining surface that still used the `reps_actual == null` / `!= null` guard instead of the app's falsy `!reps_actual` convention, so it INCLUDED reps-0 sets.
+
+**Root cause.** The live WorkoutSession stores a set completed with a weight entered but reps cleared to 0 as `reps_actual: 0` (its reps input is `value={s.reps || ''}` → `Number('') === 0`, and the ✓ button isn't rep-gated; `sanitizeReps(0)` persists 0). Every other PR / top-set / last-performance surface in the app ignores such a set via the falsy `!s.reps_actual` guard (WorkoutStats `computePRs`/`computeExerciseProgression`/`trackableExercises`/tonnage, Training/index `exercisePRs`/`lastPerfBySession`/history `topSets`, WorkoutSession `lastPerformance`/`allTimePR`, `detectNewPRs`). `TodaysSessionWidget` used `== null`, letting the 0 through on THREE seams:
+- `lastPerformanceMap` (`src/components/widgets/TodaysSessionWidget.tsx:38,41`) — a reps-0 heavy set became the dashboard's "last: 100kg × 0" reference and fed `progressionTarget` (→ a bogus "→ target: 102.5kg").
+- `todayPRs` history baseline + today's bests (`:75,:82`) — a reps-0 set today that out-weighed history (or had no history) was announced as "🏆 New PRs Today! Bench Press: 100kg × 0" on the dashboard, a nonsensical record the WorkoutSession summary and Stats tab both disown (UI↔UI desync).
+
+Rendered proof (pre-fix, from the new test): `…✓ Workout Complete🏆 New PRs Today!Bench Press: 100kg × 0Bench Presslast: 100kg × 0→ target: 102.5kg…`.
+
+**Fix.** Aligned all three guards to the app convention `!set.weight_kg || !set.reps_actual` (also drops weight-0 bodyweight sets, matching `exercisePRs`/WorkoutSession which exclude `weight_kg === 0`). Minimal, one-file change; no behavior change for real weighted sets with real reps.
+
+**Test.** Added `tests/unit/todaysSessionWidgetRepsZeroPR.test.tsx` (jsdom): a today's log with a `reps_actual: 0, weight_kg: 100` set must NOT render "New PRs Today" or any "× 0", and a legitimate `120kg × 8` set MUST still announce as a PR. Failed before the fix (showed the "100kg × 0" PR + target), passes after.
+
+**Verification:** `tsc --noEmit` PASS · `npm test` PASS (92 files / 547 tests, +2) · `electron-vite build` PASS.
+
+Rotated off 11-22's (a), 11-21 #2's (f), 11-21's (c), 11-20 #2's (d), 11-20's (e). Area (b) was last audited 11-19.)
+
 ## Run: 2026-11-22 ([FIX] — area (a) nutrition engine + Diet flows: fixed a real, reachable, DETERMINISTIC grocery-list arithmetic bug. When the same food appears across a day in MIXED gram / non-gram formats, the weekly-quantity fallback fed the first-seen gram string into `multiplyQty`, which multiplied that per-meal gram amount by the whole 7-day span — e.g. a vegan plan (>=2 snacks) renders `banana` as `Banana (100g)` at breakfast AND `Banana (half)` in the afternoon snack, producing a bogus `Banana (1400g/wk)` on the Grocery List tab. Rotated off 11-21 #2's (f), 11-21's (c), 11-20 #2's (d), 11-20's (e), 11-19 #2's (a — re-entered here but a different surface: this is the client-side Grocery List, not the engine itself).)
 
 ### STEP 0 — Requested changes

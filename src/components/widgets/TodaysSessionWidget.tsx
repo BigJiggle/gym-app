@@ -35,10 +35,16 @@ export default function TodaysSessionWidget() {
     const sorted = [...workoutHistory].filter(l => l.status === 'completed').sort((a, b) => b.date.localeCompare(a.date))
     for (const log of sorted) {
       for (const set of log.sets ?? []) {
-        if (set.skipped || set.weight_kg == null || set.reps_actual == null) continue
+        // Ignore skipped sets, bodyweight (weight 0) sets, and reps-0 sets — the
+        // same falsy guard every other PR / last-performance surface uses
+        // (computePRs, exercisePRs, lastPerfBySession, WorkoutSession's
+        // lastPerformance/allTimePR, detectNewPRs). A `== null` guard let a
+        // `reps_actual: 0` set (weight entered, reps cleared in the live session)
+        // through, surfacing a meaningless "X kg × 0" last-performance/target.
+        if (set.skipped || !set.weight_kg || !set.reps_actual) continue
         if (!map.has(set.exercise_name)) {
           const best = (log.sets ?? [])
-            .filter(s => s.exercise_name === set.exercise_name && !s.skipped && s.weight_kg != null && s.reps_actual != null)
+            .filter(s => s.exercise_name === set.exercise_name && !s.skipped && !!s.weight_kg && !!s.reps_actual)
             .reduce<{ weight_kg: number; reps: number } | null>(
               (b, s) => !b || s.weight_kg! > b.weight_kg ? { weight_kg: s.weight_kg!, reps: s.reps_actual! } : b, null)
           if (best) map.set(set.exercise_name, best)
@@ -72,14 +78,14 @@ export default function TodaysSessionWidget() {
     const historyPRMap = new Map<string, number>()
     for (const log of workoutHistory.filter(l => l.status === 'completed' && l.date !== todayStr)) {
       for (const set of log.sets ?? []) {
-        if (set.skipped || set.weight_kg == null || set.reps_actual == null) continue
+        if (set.skipped || !set.weight_kg || !set.reps_actual) continue
         const prev = historyPRMap.get(set.exercise_name)
         if (prev == null || set.weight_kg > prev) historyPRMap.set(set.exercise_name, set.weight_kg)
       }
     }
     const todayBests = new Map<string, { weight_kg: number; reps: number }>()
     for (const set of todayWorkoutLog.sets ?? []) {
-      if (set.skipped || set.weight_kg == null || set.reps_actual == null) continue
+      if (set.skipped || !set.weight_kg || !set.reps_actual) continue
       const prev = todayBests.get(set.exercise_name)
       if (!prev || set.weight_kg > prev.weight_kg) todayBests.set(set.exercise_name, { weight_kg: set.weight_kg, reps: set.reps_actual })
     }
