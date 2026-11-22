@@ -57,4 +57,19 @@ describe('buildGroceryItems — weekly quantity', () => {
     const items = buildGroceryItems([meal('Mid-Morning', ['Soy Milk (200ml)'])])
     expect(items.find((i) => i.baseName === 'Soy Milk')!.weeklyQty).toBe('Soy Milk (200ml) ×7/wk')
   })
+
+  it('mixed gram + non-gram occurrences of one food fall back to a COUNT, not a multiplied gram', () => {
+    // Reachable deterministically: a vegan plan with >=2 snacks renders banana as a
+    // gram-format fruit at breakfast ("Banana (100g)") AND as a fixed non-gram label
+    // in the afternoon snack ("Banana (half)"). Same baseName, mixed formats, so grams
+    // can't be summed. The old code fed the first-seen gram string into multiplyQty,
+    // which multiplied the 100g by the 7-day span → a bogus "Banana (1400g/wk)".
+    const items = buildGroceryItems([
+      meal('Breakfast', ['Banana (100g)']),
+      meal('Afternoon Snack', ['Banana (half)']),
+    ])
+    const banana = items.find((i) => i.baseName === 'Banana')
+    expect(banana).toBeDefined()
+    expect(banana!.weeklyQty).toBe('Banana ×14/wk')
+  })
 })

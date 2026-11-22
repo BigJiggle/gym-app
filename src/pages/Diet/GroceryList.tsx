@@ -101,7 +101,14 @@ export function buildGroceryItems(meals: Meal[]): GroceryItem[] {
       weeklyQty = `${baseName} x${fixedUnitsPerDay * 7}/wk`
     } else {
       // Plain names / "(200ml)" etc.: each occurrence is one unit, so count × 7 days.
-      weeklyQty = multiplyQty(food, count * 7)
+      // Strip any GRAM token first. totalGPerDay fell to -1 because occurrences mixed
+      // gram and non-gram formats (so grams can't be summed) — but the first-seen
+      // `food` may still carry a "(100g)" token, which multiplyQty would wrongly treat
+      // as the per-unit amount and multiply by the 7-day span (a vegan plan's
+      // "Banana (100g)" breakfast + "Banana (half)" snack rendered "Banana (1400g/wk)").
+      // Removing only the gram token keeps other descriptors like "(half)" or "(200ml)".
+      const countBase = food.replace(/\s*\((\d+(?:\.\d+)?)\s*g(?:[^)]*)\)/g, '').trim()
+      weeklyQty = multiplyQty(countBase, count * 7)
     }
     return { food, baseName, weeklyQty, category, checked: false }
   })

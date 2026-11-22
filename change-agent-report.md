@@ -1,5 +1,46 @@
 # Change Agent Report
 
+## Run: 2026-11-22 ([FIX] — area (a) nutrition engine + Diet flows: fixed a real, reachable, DETERMINISTIC grocery-list arithmetic bug. When the same food appears across a day in MIXED gram / non-gram formats, the weekly-quantity fallback fed the first-seen gram string into `multiplyQty`, which multiplied that per-meal gram amount by the whole 7-day span — e.g. a vegan plan (>=2 snacks) renders `banana` as `Banana (100g)` at breakfast AND `Banana (half)` in the afternoon snack, producing a bogus `Banana (1400g/wk)` on the Grocery List tab. Rotated off 11-21 #2's (f), 11-21's (c), 11-20 #2's (d), 11-20's (e), 11-19 #2's (a — re-entered here but a different surface: this is the client-side Grocery List, not the engine itself).)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` Queue has **zero unchecked (`- [ ]`) items** (all 13 done; the two `- [ ]` grep hits are the format-doc preamble) → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN before any change)
+Clean `master` (already up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (544 tests, 91 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Areas audited: (b) training + workout/session, then (a) nutrition + Diet flows
+Rotated toward (b) first (last fully re-audited 11-15 #2, with the 11-19 detectNewPRs + 11-17 WorkoutStats PR fixes since). Deep-read the whole training/workout surface and traced the SCOPE error paths — all found guarded by prior fixes:
+- `electron/services/trainingEngine.ts` (`generateTrainingPlan` freq/exPerSession/sets/maxSets NaN+non-positive guards; `normalizeExercises`; all six split builders incl. `rotateOne`/`.filter(Boolean)` for low-equipment empties), `electron/ipc/workoutHandlers.ts` (`sanitizeReps`/`sanitizeWeightKg` write-seam clamps, dynamic UPDATE whitelist), `plan:updateSession` EMPTY_SESSION guard.
+- `src/pages/Training/{WorkoutSession,WorkoutLogEditor,SessionEditor,WorkoutStats}.tsx`, `src/utils/{clampSetCount,parseRepMidpoint,detectNewPRs,prevSessionLog,weeklySessionProgress,trainingBurn}.ts`, Training/index memo blocks (exercisePRs/exerciseTrend/lastPerfBySession/trainingStreak) — division/NaN/null-session/DST/week-rollover paths all guarded. No reachable bug.
+- Then rotated into (a): `nutritionEngine.ts` (`calcBMR`/`clampWeightKg`/`sanitizeCalorieTarget`/`sanitizeMacroGrams`/`normalizeMeals`/`clampMealCount`, `buildMeals` MIN_CALORIE_TARGET floor, `getMealTemplates` main/snack cycling, `applyCookingStyle`/`applyPrepStyle`, `getPhaseAwareDeficit`), `src/utils/refeed.ts`, `src/utils/mealCompletions.ts`, `electron/ipc/mealCompletionHandlers.ts` + `plan:swapMeal`/`plan:reorderMeals` (permutation remap), `src/pages/Diet/index.tsx` (refeed day display, activeMealIndex, weekly macro totals, water/cardio stores), `src/pages/Diet/swapAlternatives.ts`. All guarded EXCEPT the grocery aggregator below.
+
+### STEP 2/3 — BUG FOUND + FIXED
+**Grocery List shows a wildly inflated weekly quantity (e.g. `Banana (1400g/wk)`) when one food appears in mixed gram / non-gram formats across a day.**
+
+- **Root cause**: `buildGroceryItems` (`src/pages/Diet/GroceryList.tsx`) sums per-day grams when every occurrence of a food carries a `(Ng)` token, and uses a count-based fallback otherwise. When occurrences MIX formats, `entry.totalGPerDay` is set to `-1` ("can't sum grams") — correct — but the fallback branch then called `multiplyQty(food, count * 7)` on the **first-seen** occurrence string, which may still carry a `(100g)` token. `multiplyQty`'s gram regex multiplies that 100g by the 7-day span (`count*7 = 14`), yielding `Banana (1400g/wk)` instead of a count. The gram amount is per-single-meal, so multiplying it by the whole span is simply wrong units.
+- **Reachable, deterministic symptom**: a **vegan** plan with **≥2 snacks** (both selectable in onboarding/Settings; snack index 7 = Afternoon Snack) always renders `banana` twice with the same baseName but different formats — `Banana (100g)` (Breakfast, role `fruit` → `ROLE_FIXED_G.fruit=100`) and `Banana (half)` (Afternoon Snack, `fixedLabel`). Breakfast (07:00) sorts before the snack (15:00), so the gram string is first-seen. The Grocery List tab then lists `Banana (1400g/wk)` — ~1.4 kg of banana, from 100 g + half a banana a day. `banana` is the only library food with BOTH a gram-fruit and a non-gram fixed rendering, so it is the concrete reachable case; AI/hand-edited plans can hit it with other foods too.
+- **Fix** (minimal, one-branch, at the aggregation seam): in the count-based fallback, strip only the GRAM token from the first-seen food before handing it to `multiplyQty` — `food.replace(/\s*\((\d+(?:\.\d+)?)\s*g(?:[^)]*)\)/g, '').trim()`. This yields the intended count-based `Banana ×14/wk` while PRESERVING every other descriptor: `(half)`, `(200ml)`, plain names and `xN` are untouched (verified by the four existing sibling tests, which still pass unchanged — including `Soy Milk (200ml) ×7/wk`). The gram-sum branch and the `anyFixedCount` branch are not touched, so correctly-formatted plans are byte-identical.
+- **Why the seam, not multiplyQty**: `multiplyQty` is generic and correct for a true single-format string; the defect is that the mixed-format fallback shouldn't carry a meaningless per-meal gram into it. Stripping at the one call site keeps the fix local and leaves the plain/ml/`xN` paths unchanged.
+- **Tests added** (`tests/unit/groceryListQty.test.ts`, +1 case against the REAL `buildGroceryItems`, **verified FAILING pre-fix** [`Banana (1400g/wk)`], passing post-fix): `Banana (100g)` breakfast + `Banana (half)` snack → `Banana ×14/wk`. The six existing grocery-qty tests (gram-sum, fixed-count sum, plain, ml) still pass unchanged.
+
+### STEP 4 — Verification (all GREEN after fix)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (545 tests, 91 files; +1 new)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `src/pages/Diet/GroceryList.tsx` — mixed-format fallback strips the stray gram token before the count-based multiplier.
+- `tests/unit/groceryListQty.test.ts` — NEW mixed gram/non-gram case (+1).
+- `change-agent-report.md` — this entry.
+
+### Sub-audit leads for a future run (NOT fixed; confirm reachability before acting)
+1. **(area a, Grocery List — low)** The same mixed-format fallback also drops non-gram descriptors in the no-gram-ever case only if a future change routes through `baseName`; current fix preserves them. Also, two DIFFERENT foods whose names reduce to the same `baseName` would still merge — not observed in the deterministic library, but possible via AI plans.
+2. **(area b, Training — low)** `workout:history`/`workout:active`/`workout:sessionSummary` fetch `exercise_logs` with no `ORDER BY set_number`; relies on rowid=insertion order, which can diverge from `set_number` only after delete+re-add in the log editor (transient display ordering, no data loss).
+3. **(area b, Training — low)** An in-progress `workout_logs` row whose `session_id` is nulled by a mid-workout plan regen (phase boundary) can't be resumed or cancelled from the Training overlay (auto-resume matches on session id); it's shadowed by any new workout and excluded from history — dead data, not a block.
+
 ## Run: 2026-11-21 #2 ([FIX] — area (f) shows/competition + date/week logic: fixed a real, reachable DATA-LOSS + DB↔UI-desync bug where an AI-assistant DIVISION change made WITHOUT a new show date is silently reverted on the next relaunch. `plan:applyAIRequest` whitelists `division` and writes it straight to the DERIVED `users.division` column; with no backing-show update, the next launch's `syncPrimaryToNearest` rebuilds `users.division` from the nearest show — reverting the user's edit (or nulling it). This is a SECOND raw-write seam that the 11-20 #2 onboarding fix (`sanitizeUserCreate`) missed; its report wrongly claimed `user:create` was "the ONE path that writes division directly". Rotated off this morning's (c), 11-20 #2's (d), 11-20's (e), 11-19 #2's (a).)
 
 ### STEP 0 — Requested changes
