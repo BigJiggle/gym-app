@@ -1,5 +1,48 @@
 # Change Agent Report
 
+## Run: 2026-11-23 ([FIX] — area (a) nutrition + Diet flows: fixed a real, reachable DB↔UI-desync in the meal **swap** and **reorder** paths. `plan:swapMeal` and `plan:reorderMeals` were the two remaining diet read-and-write seams that still read the stored `diet_plans.meals` cell with a RAW `JSON.parse` instead of `normalizeMeals` — the exact gap the 11-10 run closed on `plan:getDiet` and the 11-21 run closed on `plan:recalculateMacros`. The Diet page renders and swaps/reorders against the NORMALIZED meal list `plan:getDiet` returns (which FILTERS droppable `null`/non-object entries), so when a legacy / pre-sanitize (pre-getDiet-normalize) / hand-edited cell carries such an entry the two views diverge: swapMeal's display index points at a different raw-array slot (the swap lands on the WRONG meal, the intended one is left unchanged, and the null is revived as a junk "Meal"), and reorderMeals' raw `existing.length` exceeds the visible count so a valid reorder of the displayed cards throws "Meal count mismatch" and is silently reverted. Rotated away from 11-22 #2's (b); this re-enters (a) but on untouched handlers (prior (a) runs covered the engine, Grocery List, and weekly views, never these two IPC seams).)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` Queue has **zero unchecked (`- [ ]`) items** (all done; the two `- [ ]` grep hits are the format-doc preamble) → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN before any change)
+Clean `master` (already up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (547 tests, 92 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Areas audited (deep-read + SCOPE error-path trace)
+Rotated OFF 11-22 #2's (b). Audited, found already-hardened (no new bug):
+- **(c) check-in + Progress + adaptive nutrition**: `checkinEngine.ts` (Theil–Sen trend, clamps, weeksBetweenDates), `checkinHandlers.ts` (submit/submitMissed/update week-number & date ordering, duplicate/early guards, per-meal macro rescale), `checkinSchedule.ts` (next-date walk, infinite-loop guard on interval≤0), `progressHandlers.ts`, `Progress/index.tsx` (rate/projection/required-rate), `weeklyRate.ts`, `weeksTracked.ts`, `targetWeight.ts`.
+- **(d) onboarding + Settings + reset + lifecycle**: `userSanitize.ts` (all profile clamps + sanitizeUserCreate/Update derived-column drops), `settingsHandlers.ts`, `resetData.ts`, `units.ts`, `Onboarding/index.tsx` + `Step1Personal.tsx` (ft/in + lbs seeding, 5ft12 guard).
+- **(e) widgets + localStorage stores**: `localStore.ts`, `competitionLogs.ts` sanitizers, `cardioStore.ts`/`cardio.ts`, `water.ts`/`useWaterLog.ts`, `DailyWeighInWidget.tsx`, `SleepWidget.tsx`, `TodaysMacrosWidget.tsx`, `WeeklyScorecardWidget.tsx`, `MuscleCoverageWidget.tsx`, `SessionsWeekWidget.tsx`, `NextMealWidget.tsx`, `PrepGuidanceWidget.tsx`, `Education/index.tsx` pose-log.
+- **(f) shows/competition + date/week**: `dates.ts` (getShowCountdown noon-anchor), `competitionPrep.ts` (buildPrepTimeline currentWeek-surfacing).
+- **(b) spot-check**: `workoutHandlers.ts` (reps/weight sanitize), `WorkoutStats.tsx` (PR/e1rm/tonnage/adherence all reps-0-guarded), `trainingEngine.ts` (freq/exPerSession/sets/maxSets guards), Training/index memo blocks.
+- **(a) where the bug was**: `nutritionEngine.ts` (full read — buildMeals/getMealTemplates/clamps/normalizeMeals all solid), `refeed.ts`, `GroceryList.tsx` (11-22 mixed-format fix verified correct), `mealCompletionHandlers.ts`, then `planHandlers.ts` swap/reorder/recalc — **found the raw-parse gap below**.
+
+### STEP 2/3 — BUG FOUND + FIXED
+**Meal swap writes to the wrong meal, and meal reorder fails with "Meal count mismatch", when `diet_plans.meals` holds a droppable (legacy/corrupt) entry.**
+
+- **Root cause**: `plan:swapMeal` (`electron/ipc/planHandlers.ts:1065`) did `JSON.parse(plan.meals).map/index`, and `plan:reorderMeals` (`:1085`) did `JSON.parse(plan.meals)` for its `existing.length` check and permutation match. Both then compare against the renderer's list, which is the NORMALIZED output of `plan:getDiet` (`normalizeMeals` drops `null`/non-object entries). A legacy/pre-sanitize/hand-edited cell with a droppable entry makes the raw array LONGER than the displayed list, so the shared positional-index contract breaks: (1) swap's `mealIndex` (a display index) lands on a different raw slot → wrong meal edited, intended meal unchanged, null revived as a junk "Meal" on the Diet page (DB↔UI desync); (2) reorder's `existing.length !== newMeals.length` → throws, so a valid drag-reorder of the visible cards is silently reverted.
+- **Reachable**: same user-accessible-SQLite / "legacy / pre-sanitize" threat model `normalizeMeals`' own contract documents and that the 11-10 getDiet and 11-21 recalculateMacros fixes already acted on. The getDiet normalize seam was added 11-10 — any diet row written by an earlier app version (AI diet paths persisted model `meals` verbatim) can carry an entry `normalizeMeals` now filters. swap (every meal card's "swap foods") and reorder (drag snack cards) are both reachable from the normally-rendered Diet page.
+- **Fix** (minimal, 2 lines + comments): read the cell through `normalizeMeals(plan.meals)` in both handlers — exactly like `plan:getDiet`/`plan:recalculateMacros` — so the backend's meal list matches what the Diet page shows (and the write-back heals the row). `normalizeMeals` is a shape-preserving no-op for a valid array, so the normal path is byte-identical.
+- **Tests added** (`tests/unit/swapReorderBadMeals.test.ts`, +3, exercise the REAL handlers against an in-memory `node-sqlite3-wasm` DB, **verified FAILING pre-fix**): a `[Breakfast, null, Dinner]` cell → swapping visible index 1 must change **Dinner** (pre-fix hit the null, left Dinner unchanged); a valid reorder of the two visible cards must NOT throw "Meal count mismatch" (pre-fix threw); plus a clean 3-meal regression no-op case (passes either way).
+
+### STEP 4 — Verification (all GREEN after fix)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (550 tests, 93 files; +3 new)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `electron/ipc/planHandlers.ts` — `plan:swapMeal` + `plan:reorderMeals` read stored meals through `normalizeMeals`.
+- `tests/unit/swapReorderBadMeals.test.ts` — NEW (+3).
+- `change-agent-report.md` — this entry.
+
+### Sub-audit leads for a future run (NOT fixed; confirm reachability before acting)
+1. **(area a, swapMeal — low)** swapMeal doesn't update the `diet_plans.meal_count` column; after a normalize-heal shrinks the stored array, `meal_count` could lag the new length. Only matters for an already-corrupt row (the Diet page lays out from `meals.length` anyway); not observed to misrender.
+2. **(area b, Training — low)** `Training/index.tsx:817` Edit-Session re-`.find`s by `day_of_week`; a plan hand-edited to two sessions sharing a day would open the first one's editor. Not reachable from generated plans (DAY_SCHEDULES assign distinct days).
+3. **(area b, Training — low, carried)** `workout:history`/`active`/`sessionSummary` fetch `exercise_logs` with no `ORDER BY set_number` (relies on rowid=insertion order; diverges only after delete+re-add in the log editor — transient display ordering, no data loss).
+
 ## Run: 2026-11-22 #2 ([FIX] — area (b) training engine + workout/session flows: fixed a real, reachable "X kg × 0" PR + stale last-performance bug on the dashboard `TodaysSessionWidget`. This is the SAME reps-0 bug class the 11-19 run fixed on the live WorkoutSession PR celebration and the 11-17 #2 run fixed on the Stats-tab PR list — `TodaysSessionWidget` was the remaining surface that still used the `reps_actual == null` / `!= null` guard instead of the app's falsy `!reps_actual` convention, so it INCLUDED reps-0 sets.
 
 **Root cause.** The live WorkoutSession stores a set completed with a weight entered but reps cleared to 0 as `reps_actual: 0` (its reps input is `value={s.reps || ''}` → `Number('') === 0`, and the ✓ button isn't rep-gated; `sanitizeReps(0)` persists 0). Every other PR / top-set / last-performance surface in the app ignores such a set via the falsy `!s.reps_actual` guard (WorkoutStats `computePRs`/`computeExerciseProgression`/`trackableExercises`/tonnage, Training/index `exercisePRs`/`lastPerfBySession`/history `topSets`, WorkoutSession `lastPerformance`/`allTimePR`, `detectNewPRs`). `TodaysSessionWidget` used `== null`, letting the 0 through on THREE seams:

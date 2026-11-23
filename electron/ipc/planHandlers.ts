@@ -1052,7 +1052,17 @@ Ensure every exercise respects the constraints above while maintaining phase-app
     const db = getDb()
     const plan = db.prepare('SELECT * FROM diet_plans WHERE user_id = ? ORDER BY id DESC LIMIT 1').get(userId) as Record<string, unknown> | undefined
     if (!plan) throw new Error('No diet plan found')
-    const meals = JSON.parse(plan.meals as string) as Array<Record<string, unknown>>
+    // Read the stored meals through normalizeMeals (exactly like plan:getDiet), not a
+    // raw JSON.parse. The renderer indexes into the NORMALIZED meal list getDiet
+    // returns, so the raw stored array must agree with it. A legacy / pre-sanitize /
+    // hand-edited diet_plans.meals cell (the same reachable corruption surface the
+    // getDiet + recalculateMacros seams already normalize) can hold a droppable entry
+    // (null / non-object) that normalizeMeals filters out — so a raw parse here makes
+    // mealIndex point at a DIFFERENT meal than the one the user tapped "swap" on (the
+    // swap lands on the wrong meal and the intended one is left unchanged, a DB↔UI
+    // desync), and a non-JSON cell throws. normalizeMeals is a shape-preserving no-op
+    // for a valid array, so the normal path is unchanged.
+    const meals = normalizeMeals(plan.meals) as unknown as Array<Record<string, unknown>>
     if (mealIndex < 0 || mealIndex >= meals.length) throw new Error('Invalid meal index')
     meals[mealIndex] = { ...meals[mealIndex], foods: newFoods }
     db.prepare('UPDATE diet_plans SET meals = ? WHERE id = ?').run([JSON.stringify(meals), plan.id as number])
@@ -1064,7 +1074,15 @@ Ensure every exercise respects the constraints above while maintaining phase-app
     const db = getDb()
     const plan = db.prepare('SELECT * FROM diet_plans WHERE user_id = ? ORDER BY id DESC LIMIT 1').get(userId) as Record<string, unknown> | undefined
     if (!plan) throw new Error('No diet plan found')
-    const existing = JSON.parse(plan.meals as string) as unknown[]
+    // Normalize the stored meals (like plan:getDiet) before the count check and the
+    // permutation match. `newMeals` is the reordered copy of the NORMALIZED list the
+    // Diet page holds (getDiet already normalized it); if the stored cell is a legacy /
+    // pre-sanitize / hand-edited row carrying a droppable entry (null / non-object),
+    // a raw JSON.parse makes `existing.length` exceed the visible count, so a perfectly
+    // valid reorder of the displayed cards throws "Meal count mismatch" and is silently
+    // reverted. normalizeMeals filters those entries so the counts agree (and the write
+    // below heals the row); it's a shape-preserving no-op for a valid array.
+    const existing = normalizeMeals(plan.meals) as unknown[]
     if ((newMeals as unknown[]).length !== existing.length) throw new Error('Meal count mismatch')
 
     // Meal completions are keyed by POSITIONAL meal_index, so reordering the meals
