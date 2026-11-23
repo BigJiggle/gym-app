@@ -1,5 +1,44 @@
 # Change Agent Report
 
+## Run: 2026-11-23 #2 ([FIX] — area (c) check-in + adaptive nutrition: closed the LAST stored-`diet_plans.meals` read seam still using a RAW `JSON.parse` — the in-place meal rescale inside `checkin:submit`. Rotated INTO (c) (11-23 #1 fixed (a); 11-22 #2 fixed (b)). Prior runs put every other diet read-and-recompute path through `normalizeMeals` (`plan:getDiet` 11-10, `plan:recalculateMacros` 11-21, `plan:swapMeal`/`plan:reorderMeals` 11-23 #1); `checkin:submit` was overlooked because its raw parse sits inside a try/catch, so a corrupt entry never CRASHED — it silently caused a DB↔UI desync instead.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` Queue has **zero unchecked (`- [ ]`) items** (all done; the two `- [ ]` grep hits are the format-doc preamble) → proceeded to a bug hunt.
+
+### STEP 1 — Baseline / regression guard (all GREEN before any change)
+Clean `master` (already up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (550 tests, 93 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Areas audited (deep-read + SCOPE error-path trace)
+Rotated toward (f) first, then (c) where the bug was:
+- **(f) shows/competition + date/week** — found hardened: `showDates.ts` (`weeksUntilShow` local-midnight floor, `localToday` en-CA), `showHandlers.ts` (`syncPrimaryToNearest`/`persistProfileShowDate`/`persistProfileDivision`/`setPrimaryShow` past-guards, malformed-date reject, diet regen on every show-context change), `dates.ts` (`getShowCountdown` isPast split, `addDays`/`weekStartMonday` DST-safe), `competitionPrep.ts` (`buildPrepTimeline` currentWeek-surfacing cap), `PeakWeekWidget` (daysOut = totalDays+1), `PrepPaceWidget`/`Progress` (`weeksUntil` null-on-≤0, floor-based `getShowCountdown().weeks` label), `weeklyRate.ts` (MIN_SPAN_WEEKS divide-guard), `units.ts`/`water.ts` (unit edges), `parseRepMidpoint.ts`, `refeed.ts`, `trainingEngine.ts` split builders (`.filter(Boolean)` + `rotateOne`, freq/exPerSession/sets/maxSets guards). All guarded.
+- **(c) check-in + adaptive nutrition** — read `checkinSchedule.ts` (interval≤0 infinite-loop guard), `checkinEngine.ts`, then `checkinHandlers.ts` submit/submitMissed/update: the per-meal macro rescale in `checkin:submit` was the one meal read still on a raw parse — **the bug below**.
+
+### STEP 2/3 — BUG FOUND + FIXED
+**After a weekly check-in, the diet plan's calorie/macro TARGETS advance but the meal cards keep their stale per-meal macros (and the corrupt entry never heals) when `diet_plans.meals` holds a droppable `null`/non-object entry.**
+
+- **Root cause**: `checkin:submit` (`electron/ipc/checkinHandlers.ts:162`) rescales each meal in place via `JSON.parse(mealsJson).map((m) => … m.calories …)` — a RAW parse, not `normalizeMeals`. The renderer's meal source (`plan:getDiet`) returns the NORMALIZED list, which filters droppable `null`/non-object entries. A legacy / pre-sanitize (pre-`getDiet`-normalize) / AI-verbatim / hand-edited cell can carry such an entry; the raw `.map` then throws `Cannot read properties of null (reading 'calories')`. Unlike `plan:recalculateMacros` (whose onClick had no catch → visible crash, fixed 11-21), this scaling sits inside a `try/catch` that **swallows** the throw — so the handler writes the ORIGINAL, UNSCALED `meals` cell back (null and all) while the header `calories_target`/`protein_g`/`carbs_g`/`fat_g` (computed before the try) still advance from the new weigh-in. The Diet page then shows updated targets beside meal cards whose per-meal macros didn't move and no longer sum to them — a silent DB↔UI desync that never self-heals across future check-ins.
+- **Reachable**: the same user-accessible-SQLite / "legacy / pre-sanitize / hand-edited" threat model `normalizeMeals`' own contract documents and that the 11-10 / 11-21 / 11-23 #1 fixes all acted on, triggered by the single most routine action in the app (submitting a check-in). AI diet paths persisted model `meals` verbatim before the 11-10 normalize seam, so any such pre-existing row qualifies.
+- **Fix** (minimal, 1 import + 1 line + comment): read the cell through `normalizeMeals(mealsJson)` — exactly like `plan:getDiet`/`plan:recalculateMacros`/`plan:swapMeal`/`plan:reorderMeals` — so the null is filtered BEFORE the map; the real meals are scaled and written back consistent with the new targets, and the corrupt entry is healed out of the row. `normalizeMeals` is a shape-preserving no-op for a valid array, so the normal check-in path is byte-identical.
+- **Tests added** (`tests/unit/checkinSubmitBadMeals.test.ts`, +2, exercise the REAL handler against an in-memory `node-sqlite3-wasm` DB, **first test verified FAILING pre-fix**): a `[Meal0, null, Meal1]` cell → after submit the stored cell must contain NO null (healed to 2 scaled meals with finite macros) while the header protein still recomputes to `round(85*2.3)=196` (pre-fix the null survived unscaled); plus a clean 3-meal regression that stays 3 scaled meals (passes either way).
+
+### STEP 4 — Verification (all GREEN after fix)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (552 tests, 94 files; +2 new)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `electron/ipc/checkinHandlers.ts` — `checkin:submit` reads stored meals through `normalizeMeals` (+ import).
+- `tests/unit/checkinSubmitBadMeals.test.ts` — NEW (+2).
+- `change-agent-report.md` — this entry.
+
+### Sub-audit leads for a future run (NOT fixed; confirm reachability before acting)
+1. **(area a, swapMeal — low, carried from 11-23 #1)** `plan:swapMeal` doesn't update the `diet_plans.meal_count` column; after a normalize-heal shrinks the stored array, `meal_count` could lag the new length. Only matters for an already-corrupt row.
+2. **(area b, Training — low, carried)** `Training/index.tsx` Edit-Session re-`.find`s by `day_of_week`; a plan hand-edited to two sessions sharing a day would open the first one's editor. Not reachable from generated plans (DAY_SCHEDULES assign distinct days).
+3. **(area b, Training — low, carried)** `workout:history`/`active`/`sessionSummary` fetch `exercise_logs` with no `ORDER BY set_number` (relies on rowid=insertion order; diverges only after delete+re-add).
+
 ## Run: 2026-11-23 ([FIX] — area (a) nutrition + Diet flows: fixed a real, reachable DB↔UI-desync in the meal **swap** and **reorder** paths. `plan:swapMeal` and `plan:reorderMeals` were the two remaining diet read-and-write seams that still read the stored `diet_plans.meals` cell with a RAW `JSON.parse` instead of `normalizeMeals` — the exact gap the 11-10 run closed on `plan:getDiet` and the 11-21 run closed on `plan:recalculateMacros`. The Diet page renders and swaps/reorders against the NORMALIZED meal list `plan:getDiet` returns (which FILTERS droppable `null`/non-object entries), so when a legacy / pre-sanitize (pre-getDiet-normalize) / hand-edited cell carries such an entry the two views diverge: swapMeal's display index points at a different raw-array slot (the swap lands on the WRONG meal, the intended one is left unchanged, and the null is revived as a junk "Meal"), and reorderMeals' raw `existing.length` exceeds the visible count so a valid reorder of the displayed cards throws "Meal count mismatch" and is silently reverted. Rotated away from 11-22 #2's (b); this re-enters (a) but on untouched handlers (prior (a) runs covered the engine, Grocery List, and weekly views, never these two IPC seams).)
 
 ### STEP 0 — Requested changes

@@ -2,7 +2,7 @@ import { IpcMain } from 'electron'
 import { getDb, namedParams } from '../database/db'
 import { calculateAdjustments, clampCheckinWeightKg, parseAdjustments } from '../services/checkinEngine'
 import { getNextCheckinDate, computeMissedSlots } from '../services/checkinSchedule'
-import { clampWeightKg, MIN_CALORIE_TARGET } from '../services/nutritionEngine'
+import { clampWeightKg, MIN_CALORIE_TARGET, normalizeMeals } from '../services/nutritionEngine'
 
 export { getNextCheckinDate, computeMissedSlots }
 
@@ -159,7 +159,18 @@ export function registerCheckinHandlers(ipcMain: IpcMain): void {
         const ratio = newCalories / Math.max(MIN_CALORIE_TARGET, Number(dietPlan.calories_target) || 0)
         const proteinCalRatio = (protein_g * 4) / newCalories
         const fatCalRatio = (fat_g * 9) / newCalories
-        const existingMeals = JSON.parse(mealsJson) as Array<Record<string, unknown>>
+        // Read the stored meals through normalizeMeals (exactly like plan:getDiet /
+        // plan:recalculateMacros / plan:swapMeal / plan:reorderMeals), not a raw
+        // JSON.parse(...).map(...). The diet_plans.meals cell is a reachable corruption
+        // surface (user-accessible SQLite, hand-edited / legacy / pre-sanitize / AI-verbatim
+        // rows) that can carry a droppable null / non-object entry which the renderer's
+        // source (plan:getDiet) FILTERS OUT. A raw map here throws on such an entry
+        // ("Cannot read properties of null") — the try/catch then swallows it and writes the
+        // ORIGINAL, UNSCALED cell back while the header macros below still advance, so the
+        // plan targets and the meal cards desync and the corrupt entry never heals.
+        // normalizeMeals filters the entry before the map, so the real meals are scaled and
+        // the row is healed; it is a shape-preserving no-op for a valid meals array.
+        const existingMeals = normalizeMeals(mealsJson) as unknown as Array<Record<string, unknown>>
         const scaledMeals = existingMeals.map((m) => {
           const newMealCal = Math.round((m.calories as number) * ratio)
           const pro = Math.round((newMealCal * proteinCalRatio) / 4)
