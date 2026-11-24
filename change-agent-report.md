@@ -1,5 +1,83 @@
 # Change Agent Report
 
+## Run: 2026-11-24 #2 ([FIX] — area (e) widgets + localStorage stores: closed the LAST unrouted meal-completion count surface — the dashboard **Weekly Prep Scorecard**'s Meals tile. It still counted weekly completions RAW (`mealCompletions.filter(c => weekDates.includes(c.date)).length`) instead of the mapped `countLoggedMeals` helper the 11-19 #2 run introduced and routed every Diet "This Week" surface through. So the exact mid-week-meal-count-reduction orphan desync the 11-19 fix closed still lived on the dashboard. Rotated OFF 11-24 #1's (d), 11-23 #2's (c), 11-23's (a), 11-22 #2's (b); (e) was the oldest-covered area, last fixed 11-20.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` Queue has **zero unchecked (`- [ ]`) items** (all 13 done; last
+AI-tailored onboarding 2026-07-07). So this was a bug hunt, not a backlog item.
+
+### STEP 1 — Baseline / regression guard (all GREEN before any change)
+Clean `master` (already up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (555 tests, 95 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Bug hunt (area (e), rotating off (d)/(c)/(a)/(b))
+Deep-read the whole widget + localStorage-store layer: the reactive store factories
+(`localStore.ts`, `createWidgetStore.ts`, `useWidgets.ts`), the log stores
+(`cardioStore.ts` + `cardio.ts`, `competitionLogs.ts`, `useWaterLog.ts` + `water.ts`),
+the drag/reorder zones (`WidgetZone.tsx`, `TabWidgetZone.tsx`, `tabWidgets.ts`), and
+every computing widget (Cardio/Posing/Sleep/Supplement, DailyWeighIn, QuickStats,
+SessionsWeek, MuscleCoverage, WeeklyVolume, NextMeal, WeeklyScorecard). Almost
+everything was already hardened by prior runs: every store sanitizes corrupt entries
+(validPosing/validSleep/sanitizeEntries/parseDailyWeightLog), `nextCardioLog`/`nextWaterMl`
+clamp + preserve other days, `normalizeMeals` guarantees meal `time` matches `\d{1,2}:\d{2}`
+so NextMealWidget's `.split(':')` is safe, and both drag zones reorder on the REAL
+stored index so hidden/non-rendered slots stay aligned.
+
+**Found a real, reachable DB↔UI desync** in `WeeklyScorecardWidget`
+(`src/components/widgets/WeeklyScorecardWidget.tsx:47`). Meal completions are keyed by
+positional `meal_index`. A mid-week meal-count REDUCTION (Settings meal-count change,
+Regenerate Meals, or an AI refine that drops meals) leaves PAST-day completions at the
+now-removed indices in the DB — `clearOrphanedMealCompletions` purges only `date >= today`.
+The 11-19 #2 run fixed this exact class on the Diet "This Week" surfaces by introducing
+`countLoggedMeals(completions, date, mealCount)` (counts only completions whose index still
+maps to a current meal) and routing every per-day count through it. **The dashboard Weekly
+Prep Scorecard was never routed through it** — its Meals tile computed
+`loggedMeals = mealCompletions.filter(c => weekDates.includes(c.date)).length`, a raw
+week-wide count that still includes the orphans.
+
+**Reachable symptom**: 6-meal plan; log all 6 meals on Monday; Wednesday reduce to 4 meals.
+Monday's `meal_index` 4 & 5 survive. The scorecard's Meals tile then reads e.g. "6/4" for a
+single-day window (or an inflated weekly "logged/expected" like "14/12") and greens the pill —
+a value-shown-doesn't-match-what's-stored desync, the single most-common reduction flow. The
+`mealScore` % is `Math.min(100, …)`-capped so the bar doesn't overflow, but the raw
+`loggedMeals/expectedMeals` text still shows more meals logged than the plan can hold.
+
+### STEP 3 — Fix
+`src/components/widgets/WeeklyScorecardWidget.tsx`: import the existing
+`countLoggedMeals` from `../../utils/mealCompletions` and compute `loggedMeals` as
+`weekDates.reduce((sum, date) => sum + countLoggedMeals(mealCompletions, date, totalMealsPerDay), 0)`.
+This counts the SAME mapped set every macro surface uses, so a day's orphans no longer
+inflate the weekly total. An INCREASE in meal count creates no orphans, so the normal
+path is unchanged. Minimal, at the count seam, reusing the helper the Diet surfaces already use.
+
+### Tests added
+`tests/unit/scorecardOrphanMealCount.test.tsx` (1, jsdom; mirrors
+`weeklyViewOrphanCount.test.tsx`): mounts `WeeklyScorecardWidget` with a 4-meal plan and
+6 same-day completions (indices 4 & 5 orphaned), computes the widget's own Mon–today window
+for a day-independent denominator, and asserts the Meals tile shows `4/<expected>` and never
+`6/<expected>`. **Verified FAILING pre-fix** (rendered "6/8") and passing after.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (556 tests, +1 new; 96 files)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `src/components/widgets/WeeklyScorecardWidget.tsx` — Meals tile counts via `countLoggedMeals` (+ import).
+- `tests/unit/scorecardOrphanMealCount.test.tsx` — NEW (+1).
+- `change-agent-report.md` — this entry.
+
+### Deferred (noted, NOT fixed — one focused fix per run)
+- `plan:applyAIRequest` `refine_diet` branch (planHandlers, ~line 777) reads
+  `diet_plans.meals` with a raw `JSON.parse` before handing to `refineDietPlan` (carried
+  from 11-24 #1; area a/c). Same corrupt-meals-cell class.
+- `plan:swapMeal` doesn't update `diet_plans.meal_count` after a normalize-heal shrinks
+  the array (carried from 11-23 #2; area a, only matters for an already-corrupt row).
+
+---
+
 ## Run: 2026-11-24 ([FIX] — area (d) onboarding + Settings + data lifecycle: closed the LAST raw-`JSON.parse` seam on the user's JSON-array columns (`dietary_restrictions` / `food_exclusions` / `food_preferences`) — the additive/replace merge inside `plan:applyAIRequest`. Rotated OFF 11-23 #2's (c), 11-23 #1's (a), 11-22 #2's (b); (d) was the oldest-covered area (last fixed 11-20 #2). This is the same bug class the `safeJsonArray` run already closed on the user READ path (`parseUser`/`user:get`): the AI apply path still read the same columns with a raw `JSON.parse`.)
 
 ### STEP 0 — Requested changes

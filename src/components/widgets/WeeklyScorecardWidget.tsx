@@ -2,6 +2,7 @@ import { usePlanStore } from '../../store/planStore'
 import { useCardioStore } from '../../store/cardioStore'
 import { posingStore, sleepStore } from './competitionLogs'
 import { localDateStr } from '../../utils/dates'
+import { countLoggedMeals } from '../../utils/mealCompletions'
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -44,7 +45,16 @@ export default function WeeklyScorecardWidget() {
 
   const totalMealsPerDay = dietPlan?.meals?.length ?? 0
   const expectedMeals = daysElapsed * totalMealsPerDay
-  const loggedMeals = mealCompletions.filter(c => weekDates.includes(c.date)).length
+  // Count only completions whose positional meal_index still maps to the current
+  // plan — the SAME mapped set every macro surface uses. A mid-week meal-count
+  // REDUCTION leaves PAST-day orphans at the removed indices (clearOrphanedMealCompletions
+  // purges only date >= today), and a raw week-wide `.filter(date).length` would
+  // count them, inflating "logged/expected" past the real displayable count (the
+  // bug the 11-19 countLoggedMeals fix closed on the Diet "This Week" surfaces).
+  const loggedMeals = weekDates.reduce(
+    (sum, date) => sum + countLoggedMeals(mealCompletions, date, totalMealsPerDay),
+    0,
+  )
   const mealScore = expectedMeals > 0 ? Math.min(100, Math.round(loggedMeals / expectedMeals * 100)) : null
 
   const cardioDays = weekDates.filter(d => cardioLog.some(e => e.date === d)).length
