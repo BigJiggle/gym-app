@@ -6,6 +6,7 @@ import { generateDietWithClaude, generateWorkoutWithClaude, refineDietPlan, refi
 import { regenerateDietForGoal, persistProfileShowDate, persistProfileDivision } from './showHandlers'
 import { weeksUntilShow, localToday } from '../services/showDates'
 import { clearOrphanedMealCompletions } from './mealCompletionHandlers'
+import { safeJsonArray } from './userHandlers'
 
 export function registerPlanHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('plan:generateTraining', async (_event, userId: number) => {
@@ -826,7 +827,15 @@ Ensure every exercise respects the constraints above while maintaining phase-app
         if (JSON_ARRAY_COLS.has(k)) {
           // Merge with existing array if request is additive
           const existing = db.prepare(`SELECT ${k} FROM users WHERE id=?`).get(userId) as Record<string,unknown>
-          const current: string[] = JSON.parse((existing[k] as string) ?? '[]')
+          // Read the stored cell through safeJsonArray, NOT a raw JSON.parse. These
+          // three columns are exactly the ones safeJsonArray was created to tolerate:
+          // a legacy / hand-edited / corrupt cell can hold a bare token (`Dairy-free`)
+          // or valid-JSON-of-the-wrong-shape (`5`). A bare token makes JSON.parse THROW
+          // (rejecting the whole AI request with an opaque SyntaxError), and a non-array
+          // value makes the `[...current, ...toAdd]` spread below throw "not iterable".
+          // The same columns are already read defensively a few lines up when building
+          // the AI context; this is the matching guard on the merge/write path.
+          const current: string[] = safeJsonArray(existing[k]) as string[]
           let next = Array.isArray(v) ? (v as string[]) : current
           // Handle add/remove sub-keys (e.g. dietary_restrictions_add)
           const toAdd = (raw[`${k}_add`] as string[] | undefined) ?? []

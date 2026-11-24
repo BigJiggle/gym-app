@@ -1,5 +1,87 @@
 # Change Agent Report
 
+## Run: 2026-11-24 ([FIX] — area (d) onboarding + Settings + data lifecycle: closed the LAST raw-`JSON.parse` seam on the user's JSON-array columns (`dietary_restrictions` / `food_exclusions` / `food_preferences`) — the additive/replace merge inside `plan:applyAIRequest`. Rotated OFF 11-23 #2's (c), 11-23 #1's (a), 11-22 #2's (b); (d) was the oldest-covered area (last fixed 11-20 #2). This is the same bug class the `safeJsonArray` run already closed on the user READ path (`parseUser`/`user:get`): the AI apply path still read the same columns with a raw `JSON.parse`.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` has **zero unchecked (`- [ ]`) items** (all 13 done; last
+AI-tailored onboarding 2026-07-07). So this was a bug hunt, not a backlog item.
+
+### STEP 1 — Regression guard
+Clean pull of `master`, `npm ci` with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`. No
+regressions on baseline: `tsc` clean, `npm test` 552 passing (94 files),
+`electron-vite build` OK.
+
+### STEP 2 — Bug hunt (area (d), rotating off (c)/(a)/(b))
+Deep-read the (d) / data-lifecycle surfaces: `dates.ts`, `showDates.ts`,
+`weeksTracked.ts`, `weeklyRate.ts`, `checkinSchedule.ts`, `resetData.ts`,
+`units.ts`, `water.ts`, the Settings page (profile-edit numeric inputs, add-show
+form, reset), the Onboarding flow + `Stepper`, `userSanitize.ts`, `userHandlers.ts`,
+`showHandlers.ts`, `plan:startupRefresh`, and the nutrition/training/checkin engines'
+boundary paths. Almost everything was already hardened by prior runs (every numeric
+write seam clamps; every stored-cell read on the renderer-facing paths runs through
+`normalizeMeals` / `normalizeExercises` / `safeJsonArray` / `parseAdjustments`;
+date math is DST/UTC-safe; `countMissedBetween` guards the interval-0 infinite loop).
+
+**Found a real, reachable backend defect** in `plan:applyAIRequest`
+(`electron/ipc/planHandlers.ts:829`). When the AI assistant turns a request into a
+change to one of the user's three JSON-array columns (`dietary_restrictions` /
+`food_exclusions` / `food_preferences`) — e.g. "I'm shellfish-free now" — the handler
+reads the existing stored cell to merge/replace it, using a **raw**
+`JSON.parse((existing[k] as string) ?? '[]')`.
+
+Those are the exact columns `safeJsonArray` (userHandlers) was written to tolerate:
+a legacy / hand-edited / corrupt cell can hold a bare token (`Dairy-free` instead of
+`["Dairy-free"]`) or valid-JSON-of-the-wrong-shape (`5`). Two reachable crash modes:
+- **Bare-token / non-JSON cell** → `JSON.parse` THROWS a `SyntaxError`, rejecting the
+  whole AI request (the assistant can no longer adjust that user's diet at all until
+  the cell is hand-repaired). This fires even on a plain full-replace payload, because
+  the parse runs unconditionally.
+- **Valid-JSON-but-non-array cell** (`5`, `{}`) on an additive request → the parse
+  survives but the `[...current, ...toAdd]` spread (line 835) throws
+  "current is not iterable".
+
+The glaring tell: the SAME handler already reads these same three columns
+**defensively** ~110 lines earlier (lines 719–721, try/catch → `[]`) when building the
+AI context — only the merge/write path was left raw. This is the backend twin of the
+`safeJsonArray` read-path fix; that run's report noted the user read path had no
+per-cell guard and added one for `parseUser`, but this AI apply seam reads the columns
+independently and kept the raw parse.
+
+### STEP 3 — Fix
+`electron/ipc/planHandlers.ts`: import `safeJsonArray` from `./userHandlers`
+(cross-handler imports are already the norm here — `clearOrphanedMealCompletions`,
+`regenerateDietForGoal`; no circular dep: userHandlers doesn't import planHandlers)
+and replace the raw parse at line 829 with `safeJsonArray(existing[k]) as string[]`.
+`safeJsonArray` returns `[]` for any non-string / unparseable / non-array value and
+passes a well-formed array through unchanged — so it fixes BOTH crash modes at once
+and is a no-op for the normal (well-formed) case. Minimal, at the read seam.
+
+### Tests added
+`tests/unit/applyAIRequestDietaryArrayCorrupted.test.ts` (3 cases, exercises the REAL
+handler against an in-memory `node-sqlite3-wasm` DB, `processAIRequest` stubbed —
+mirrors `applyAIRequestTrainingFieldClamp.test.ts`):
+1. full-replace onto a bare-token (`Dairy-free`) cell → no throw, persists `["Shellfish"]`
+   (failed pre-fix with `SyntaxError: ... "Dairy-free" is not valid JSON`).
+2. additive change onto a valid-JSON-non-array cell (`5`) → no throw, persists `["Peanuts"]`
+   (failed pre-fix with `TypeError: current is not iterable`).
+3. additive change onto a well-formed `["Dairy-free"]` cell → `["Dairy-free","Shellfish"]`
+   (unchanged behavior; passed both before and after).
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (555 tests, +3 new; 95 files)
+- `npx electron-vite build` → PASS
+
+### Deferred (noted, NOT fixed — one focused fix per run)
+- `plan:applyAIRequest` `refine_diet` branch (line ~777) reads
+  `diet_plans.meals` with a raw `JSON.parse` before handing it to `refineDietPlan`
+  (Claude). Same class, different cell; a corrupt meals cell would throw there too.
+  Candidate for a future (a)/(c) run.
+- Minor: `determinePhase`/refine default-sets fallback uses `?? 3` in a couple of
+  spots where other seams use `?? 4` (cosmetic, not a defect).
+
+---
+
 ## Run: 2026-11-23 #2 ([FIX] — area (c) check-in + adaptive nutrition: closed the LAST stored-`diet_plans.meals` read seam still using a RAW `JSON.parse` — the in-place meal rescale inside `checkin:submit`. Rotated INTO (c) (11-23 #1 fixed (a); 11-22 #2 fixed (b)). Prior runs put every other diet read-and-recompute path through `normalizeMeals` (`plan:getDiet` 11-10, `plan:recalculateMacros` 11-21, `plan:swapMeal`/`plan:reorderMeals` 11-23 #1); `checkin:submit` was overlooked because its raw parse sits inside a try/catch, so a corrupt entry never CRASHED — it silently caused a DB↔UI desync instead.)
 
 ### STEP 0 — Requested changes
