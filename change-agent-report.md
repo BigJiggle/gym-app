@@ -1,5 +1,89 @@
 # Change Agent Report
 
+## Run: 2026-11-25 ([FIX] — area (f) shows/competition + date/week logic: removed the LAST live surface that could silently discard a show-context edit — the Settings "Edit Profile" form's editable **Show Date** + **Division** inputs. `users.show_date`/`users.division` are DERIVED columns (plan:startupRefresh/syncPrimaryToNearest rebuild them from the `shows` table every launch) and `user:update`→`sanitizeUserUpdate` deliberately DROPS both, so typing into those two inputs was a silent no-op / reverted-on-launch data loss — a value-entered-isn't-stored desync. The 11-24 #1 run closed the AI-path equivalent; the sanitizeUserUpdate comment itself flagged that "the Settings 'Edit profile' form still exposes editable Show Date / Division inputs." Rotated OFF 11-24 #2's (e), 11-24 #1's (d), 11-23 #2's (c), 11-23's (a), 11-22 #2's (b); (f) was the oldest-covered area.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` Queue has **zero unchecked (`- [ ]`) items** (all 13 done; last
+AI-tailored onboarding 2026-07-07). So this was a bug hunt, not a backlog item.
+
+### STEP 1 — Baseline / regression guard (all GREEN before any change)
+Clean `master` (already up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (556 tests, 96 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Bug hunt (area (f), rotating off (e)/(d)/(c)/(a)/(b))
+Deep-read the whole show/competition + date/week surface: `electron/services/showDates.ts`
+(`weeksUntilShow`/`localToday`), `electron/ipc/showHandlers.ts` (sync/persist/add/update/
+delete/cancel/setPrimary + off-season transition), `plan:startupRefresh`, `src/utils/dates.ts`
+(`getShowCountdown`/`weekStartMonday`/`addDays`), `competitionPrep.ts` (`getWeekGuidance`/
+`buildPrepTimeline`/`PEAK_WEEK_PROTOCOL`), `weeksTracked.ts`, `weeklyRate.ts`,
+`weeklySessionProgress.ts`, the competition widgets (PeakWeek/PrepPace/PrepGuidance/QuickStats),
+`NavSidebar`, the Training-tab countdown, the Progress-page countdown, the Education timeline
+(incl. multi-show bridge math), and the Settings "My Shows" + "Edit Profile" forms. Nearly
+everything was already hardened by prior runs: every countdown is local-midnight/noon-anchored
+and DST/UTC-safe and agrees cross-surface (floor-based weeks everywhere); `weeksUntilShow`/
+`localToday` fixed the UTC-vs-local show-day drift; `syncPrimaryToNearest`/`persistProfileShowDate`/
+`persistProfileDivision` route every programmatic show-context write through the `shows` table
+so it survives the startup rebuild; add/update/delete/cancel/setPrimary all regenerate the diet
+for the new weeks-out; `PeakWeekWidget` maps `daysOut = totalDays + 1` correctly; `buildPrepTimeline`
+surfaces the current week even past the 24-week cap.
+
+**Found a real, reachable value-entered-isn't-stored desync** in the Settings "Edit Profile"
+editor (`src/pages/Settings/index.tsx:383-396`). It rendered an editable **Division** `<select>`
+and an editable **Show Date** `<input type="date">` alongside the other profile fields, saving
+through `updateUser` → the `user:update` IPC handler. But `sanitizeUserUpdate`
+(`electron/ipc/userSanitize.ts`) **deliberately drops `show_date` and `division`** (they are
+DERIVED columns — `plan:startupRefresh`/`syncPrimaryToNearest` rebuild them from the `shows`
+table on every launch, nulling them when no upcoming show backs them). `shows:update` is not
+even wired to any UI, so these two inputs were the only live show-context controls outside
+"My Shows" — and they were **completely inert**: a user who typed a show date or picked a
+division in Edit Profile and hit Save had their input silently discarded (and, had it ever
+persisted to the users row alone, it would be reverted on the next launch — the exact
+revert-on-launch data-loss the AI path's `persistProfileShowDate` was written to fix in 11-24).
+The store's `updateUser` sets `user` to the backend's returned (unchanged) row, so after save
+the sidebar/countdown still showed the OLD value while the input had shown the typed one — a
+textbook "value shown doesn't match what's stored." This was explicitly foreseen in the
+sanitizeUserUpdate comment ("the Settings 'Edit profile' form still exposes editable Show Date /
+Division inputs that save through user:update — that write is silently reverted…"); the backend
+was patched defensively but the dead UI controls were never removed.
+
+### STEP 3 — Fix
+`src/pages/Settings/index.tsx`: removed the Division `<select>` and the Show Date
+`<input type="date">` from the Edit Profile "Goals" grid (the Goal select stays), replacing them
+with a comment documenting the invariant. Shows and their divisions are managed in the dedicated
+"My Shows" section directly below (and by onboarding / the AI assistant), all of which route
+through the `shows` table and persist correctly. Minimal change at the exact seam; no behavior
+removed (those inputs never did anything), no backend touched.
+
+### Tests added
+`tests/unit/settingsEditProfileNoShowFields.test.tsx` (1, jsdom; mirrors
+`settingsShowDayNotPast.test.tsx`): seeds a user with a primary show, mounts `<Settings/>`,
+opens the Edit Profile editor, and asserts the Goal select is present but the dead Division
+options (`Open Bodybuilding`, `Men's Physique`) and any `input[type="date"]` are gone (the
+My Shows add-form is closed, so a date input could only be the profile editor's). **Verified
+FAILING pre-fix** (`expected <option> to be null`) and passing after.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (557 tests, +1 new; 97 files)
+- `npx electron-vite build` → PASS
+
+### Files changed
+- `src/pages/Settings/index.tsx` — removed dead Show Date + Division inputs from Edit Profile.
+- `tests/unit/settingsEditProfileNoShowFields.test.tsx` — NEW (+1).
+- `change-agent-report.md` — this entry.
+
+### Deferred (noted, NOT fixed — one focused fix per run)
+- `shows:update` (showHandlers) is exposed in preload/types but has no UI caller; if ever
+  wired up, editing the only upcoming show's date to a PAST value nulls `users.show_date`
+  without transitioning training to off-season (unlike `shows:delete`/`cancelShow`). Not
+  reachable today.
+- `plan:applyAIRequest` `refine_diet` branch reads `diet_plans.meals` with a raw `JSON.parse`
+  (carried from prior runs; area a/c).
+
+---
+
 ## Run: 2026-11-24 #2 ([FIX] — area (e) widgets + localStorage stores: closed the LAST unrouted meal-completion count surface — the dashboard **Weekly Prep Scorecard**'s Meals tile. It still counted weekly completions RAW (`mealCompletions.filter(c => weekDates.includes(c.date)).length`) instead of the mapped `countLoggedMeals` helper the 11-19 #2 run introduced and routed every Diet "This Week" surface through. So the exact mid-week-meal-count-reduction orphan desync the 11-19 fix closed still lived on the dashboard. Rotated OFF 11-24 #1's (d), 11-23 #2's (c), 11-23's (a), 11-22 #2's (b); (e) was the oldest-covered area, last fixed 11-20.)
 
 ### STEP 0 — Requested changes

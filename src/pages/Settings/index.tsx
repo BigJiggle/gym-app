@@ -380,20 +380,13 @@ export default function Settings() {
                     <option value="maintain">Maintain</option>
                     <option value="recomp">Recomposition</option>
                   </select></div>
-                <div><label className="text-xs text-gray-500 mb-1 block">Division</label>
-                  <select value={editForm.division} onChange={(e) => setEditForm({...editForm, division: e.target.value})} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200">
-                    <option value="">Not competing / Unsure</option>
-                    <option value="Men's Physique">Men's Physique</option>
-                    <option value="Classic Physique">Classic Physique</option>
-                    <option value="Open Bodybuilding">Open Bodybuilding</option>
-                    <option value="212 Bodybuilding">212 Bodybuilding</option>
-                    <option value="Bikini">Bikini</option>
-                    <option value="Wellness">Wellness</option>
-                    <option value="Figure">Figure</option>
-                    <option value="Women's Physique">Women's Physique</option>
-                  </select></div>
-                <div><label className="text-xs text-gray-500 mb-1 block">Show Date</label>
-                  <input type="date" value={editForm.show_date} onChange={(e) => setEditForm({...editForm, show_date: e.target.value})} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200" /></div>
+                {/* Division + Show Date are NOT edited here. users.division/show_date
+                    are DERIVED columns that plan:startupRefresh / syncPrimaryToNearest
+                    rebuild from the `shows` table on every launch, and user:update
+                    (sanitizeUserUpdate) deliberately drops both — so an edit here was
+                    silently discarded (a value-entered-isn't-stored desync). Shows and
+                    their divisions are managed in "My Shows" below (and via onboarding /
+                    the AI assistant), all of which route through the shows table. */}
               </div>
             </div>
 
