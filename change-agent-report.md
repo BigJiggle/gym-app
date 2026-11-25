@@ -1,5 +1,66 @@
 # Change Agent Report
 
+## Run: 2026-11-25 #2 ([FIX] — area (b) training engine + workout/session flows: closed the LAST training surface that still folded a **reps-0 weighted phantom set** into a strength metric — the Training-tab per-exercise **strength-trend arrow** (`exerciseTrend` in `src/pages/Training/index.tsx`). Every sibling strength surface excludes a reps-0 set via the falsy `!s.reps_actual` guard (`exercisePRs`, `lastPerfBySession`, `computePRs`, WorkoutSession's `lastPerformance`/`allTimePR`, `detectNewPRs` — all enumerated in prior reps-0 fix comments), but `exerciseTrend` guarded only `!s.weight_kg || s.weight_kg === 0`, so it was the one overlooked surface. Rotated OFF 11-25 #1's (f); (b) was the oldest-covered area, last fixed 11-22 #2.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` Queue has **zero unchecked (`- [ ]`) items** (all 13 done; last
+AI-tailored onboarding 2026-07-07). So this was a bug hunt, not a backlog item.
+
+### STEP 1 — Baseline / regression guard (all GREEN before any change)
+Clean `master` (already up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (557 tests, 97 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Bug hunt (area (b), rotating off 11-25 #1's (f))
+Deep-read the entire training path end-to-end: `electron/services/trainingEngine.ts`
+(generation, all six split builders, freq/exPerSession/sets/maxSets guards, `normalizeExercises`),
+`electron/ipc/workoutHandlers.ts` (`sanitizeReps`/`sanitizeWeightKg` write seams),
+`WorkoutSession.tsx` (live session, `detectNewPRs`, summary volume), `WorkoutStats.tsx`
+(`computePRs`/tonnage/progression/adherence), `WorkoutLogEditor.tsx`, `SessionEditor.tsx`,
+`Training/index.tsx` (PRs, trend, streak, weekly progress, calorie burn), the training widgets
+(`TrainingVolume`/`SessionsWeek`/`WeeklyVolume`/`MuscleCoverage`/`TodaysSession`), and the shared
+utils (`prevSessionLog`, `weeklySessionProgress`, `trainingBurn`, `detectNewPRs`,
+`parseRepMidpoint`, `weeksTracked`, `dates`). Extended into `checkinEngine.ts` and a
+`nutritionEngine.ts` spot-check. Every seam was already clamped/NaN-guarded and every shared
+metric reads from one source — **except** the strength-trend arrow.
+
+### STEP 3 — The bug (real, reachable, user-visible UI↔UI desync)
+**Where:** `src/pages/Training/index.tsx` → the inline `exerciseTrend` useMemo (now extracted,
+see below). Its per-session top-weight filter was
+`if (s.skipped || !s.weight_kg || s.weight_kg === 0) continue` — **no reps guard**.
+
+**Why it's a defect:** The live `WorkoutSession` stores a set completed with a weight entered
+but the reps field cleared as `reps_actual: 0` (the reps input is `value={s.reps || ''}` →
+`Number('') === 0`, and the ✓ button is not rep-gated — the exact reachable scenario every prior
+reps-0 fix targeted). Because `exerciseTrend` counted that phantom set's weight, a newest
+`120 kg × 0` set became the session's top weight and produced a green **↑ "improving"** arrow —
+rendered **directly beside** the `PR:`/`Last:` lines (from `exercisePRs`/`lastPerfBySession`),
+which *correctly* ignore the very same set. So the Training tab showed e.g. `PR: 100 kg × 8 ↑`:
+a green up-arrow claiming improvement next to a PR that never moved — a visible cross-surface
+contradiction driven by a lift that was never really performed.
+
+**Fix (minimal, convention-aligning):** extracted the trend logic verbatim into a pure,
+testable util `src/utils/exerciseTrend.ts` (`computeExerciseTrend`), mirroring how the app
+already extracts `detectNewPRs`/`weeklySessionProgress`/`computePRs` for testing, and added the
+one missing clause to the set filter: `|| !s.reps_actual`. This matches `exercisePRs`
+(`index.tsx:155`) and every other strength surface exactly. Valid data is unchanged (a real set
+always has `reps_actual > 0`), so no correct plan/trend is altered.
+
+### Files changed
+- `src/utils/exerciseTrend.ts` — NEW pure util `computeExerciseTrend(history)` with the reps-0 guard.
+- `src/pages/Training/index.tsx` — import + replace the inline `exerciseTrend` useMemo with the util.
+- `tests/unit/exerciseTrend.test.ts` — 5 new tests (up/down/stable, <2-session no-trend, and the
+  core regression: a reps-0 phantom set must not flip the trend — verified it FAILS without the
+  guard and PASSES with it).
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (562 tests, +5 new; 98 files)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-11-25 ([FIX] — area (f) shows/competition + date/week logic: removed the LAST live surface that could silently discard a show-context edit — the Settings "Edit Profile" form's editable **Show Date** + **Division** inputs. `users.show_date`/`users.division` are DERIVED columns (plan:startupRefresh/syncPrimaryToNearest rebuild them from the `shows` table every launch) and `user:update`→`sanitizeUserUpdate` deliberately DROPS both, so typing into those two inputs was a silent no-op / reverted-on-launch data loss — a value-entered-isn't-stored desync. The 11-24 #1 run closed the AI-path equivalent; the sanitizeUserUpdate comment itself flagged that "the Settings 'Edit profile' form still exposes editable Show Date / Division inputs." Rotated OFF 11-24 #2's (e), 11-24 #1's (d), 11-23 #2's (c), 11-23's (a), 11-22 #2's (b); (f) was the oldest-covered area.)
 
 ### STEP 0 — Requested changes

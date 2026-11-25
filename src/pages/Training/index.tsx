@@ -16,6 +16,7 @@ import { parseLocalDate, weekStartMondayStr } from '../../utils/dates'
 import { findPrevSessionLog } from '../../utils/prevSessionLog'
 import { weeklySessionProgressFromLogs } from '../../utils/weeklySessionProgress'
 import { currentBodyweightKg, weeklyTrainingKcalBurned } from '../../utils/trainingBurn'
+import { computeExerciseTrend } from '../../utils/exerciseTrend'
 
 const DAY_NAMES = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const PHASE_COLOR: Record<string, string> = {
@@ -162,32 +163,10 @@ export default function Training() {
     return bests
   }, [workoutHistory])
 
-  // Strength trend: compare top-set weight across last 3 completed sessions per exercise
-  // workoutHistory is newest-first; we collect up to 3 distinct log entries per exercise
-  const exerciseTrend = useMemo(() => {
-    const workoutsPerExercise = new Map<string, number[]>()
-    for (const log of workoutHistory) {
-      if (log.status !== 'completed') continue
-      const logBest = new Map<string, number>()
-      for (const s of log.sets ?? []) {
-        if (s.skipped || !s.weight_kg || s.weight_kg === 0) continue
-        const cur = logBest.get(s.exercise_name) ?? 0
-        if (s.weight_kg > cur) logBest.set(s.exercise_name, s.weight_kg)
-      }
-      for (const [name, best] of logBest) {
-        if (!workoutsPerExercise.has(name)) workoutsPerExercise.set(name, [])
-        const arr = workoutsPerExercise.get(name)!
-        if (arr.length < 3) arr.push(best)
-      }
-    }
-    const result = new Map<string, 'up' | 'down' | 'stable'>()
-    for (const [name, weights] of workoutsPerExercise) {
-      if (weights.length < 2) continue
-      const diff = weights[0] - weights[weights.length - 1]
-      result.set(name, diff > 0 ? 'up' : diff < 0 ? 'down' : 'stable')
-    }
-    return result
-  }, [workoutHistory])
+  // Strength trend: compare top-set weight across last 3 completed sessions per
+  // exercise (reps-0 phantom sets excluded, matching every other strength surface
+  // — see computeExerciseTrend). workoutHistory is newest-first.
+  const exerciseTrend = useMemo(() => computeExerciseTrend(workoutHistory), [workoutHistory])
 
   // Top-set weight per exercise from the most recent completed log for each plan session.
   // Gives the athlete a pre-workout "what to beat" reference without opening the workout overlay.
