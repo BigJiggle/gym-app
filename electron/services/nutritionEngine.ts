@@ -938,6 +938,38 @@ export function clampMealCount(n: number | undefined | null): number {
   return Number.isFinite(n) ? Math.max(1, Math.min(20, Math.round(n as number))) : 4
 }
 
+// Calorie-only preview for the GoalPickerModal (plan:previewGoalCalories). Estimates
+// each goal's daily target WITHOUT building meals, and MUST mirror
+// generateNutritionPlan's calorie math exactly — clampWeightKg(weight) → calcBMR →
+// TDEE → getPhaseAwareDeficit → MIN_CALORIE_TARGET floor — so the kcal badge the
+// athlete taps matches the plan they actually receive on selection. The handler
+// previously inlined this but passed the RAW stored weight to calcBMR with no
+// clampWeightKg, unlike every other weight→calorie seam (generateNutritionPlan,
+// recalculateMacros, regenerateDietForGoal). On the app's acknowledged corrupt /
+// out-of-range stored-weight surface (hand-edited / legacy SQLite cell — the same one
+// calcBMR's NaN guard and clampWeightKg already defend), an 850-kg weight drove the
+// preview to a ~13k-kcal badge while plan:selectOffSeasonGoal → generateNutritionPlan
+// clamped the weight to 300 kg and generated a far lower target — a preview↔plan
+// desync. Extracted here (pure, testable) so the one remaining unclamped seam is
+// closed and provably agrees with the generated plan. Identity for any in-range weight.
+export function previewGoalCalories(
+  weight_kg: number,
+  height_cm: number,
+  age: number,
+  sex: string,
+  activity_level: string,
+  goals: string[],
+  weeks_out?: number
+): Record<string, number> {
+  const bmr = calcBMR(clampWeightKg(weight_kg), height_cm, age, sex)
+  const tdee = Math.round(bmr * (ACTIVITY_MULTIPLIERS[activity_level] ?? 1.55))
+  const preview: Record<string, number> = {}
+  for (const goal of goals) {
+    preview[goal] = Math.max(MIN_CALORIE_TARGET, tdee + getPhaseAwareDeficit(weeks_out, goal))
+  }
+  return preview
+}
+
 export function generateNutritionPlan(input: NutritionInput): NutritionPlan {
   const safeWeightKg = clampWeightKg(input.weight_kg)
   input = { ...input, weight_kg: safeWeightKg }

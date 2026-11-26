@@ -1,7 +1,7 @@
 import { IpcMain } from 'electron'
 import { getDb, namedParams } from '../database/db'
 import { generateTrainingPlan, getExerciseLibraryForUI, determinePhase, normalizeExercises } from '../services/trainingEngine'
-import { generateNutritionPlan, buildMealsPublic, calcBMR, getPhaseAwareDeficit, ACTIVITY_MULTIPLIERS, clampWeightKg, clampMealCount, sanitizeCalorieTarget, sanitizeMacroGrams, normalizeMeals, MIN_CALORIE_TARGET } from '../services/nutritionEngine'
+import { generateNutritionPlan, buildMealsPublic, previewGoalCalories, clampWeightKg, clampMealCount, sanitizeCalorieTarget, sanitizeMacroGrams, normalizeMeals, MIN_CALORIE_TARGET } from '../services/nutritionEngine'
 import { generateDietWithClaude, generateWorkoutWithClaude, refineDietPlan, refineWorkoutWithClaude, processAIRequest, refineWorkoutForSafety } from '../services/claudeService'
 import { regenerateDietForGoal, persistProfileShowDate, persistProfileDivision } from './showHandlers'
 import { weeksUntilShow, localToday } from '../services/showDates'
@@ -1160,17 +1160,18 @@ Ensure every exercise respects the constraints above while maintaining phase-app
     const db = getDb()
     const user = db.prepare('SELECT * FROM users WHERE id=?').get([userId]) as Record<string, unknown>
     if (!user) throw new Error('User not found')
-    const bmr = calcBMR(
+    // Delegate to the shared engine preview so the badge math clamps weight exactly
+    // like generateNutritionPlan (weeks_out undefined = off-season, matching
+    // selectOffSeasonGoal). Previously inlined here WITHOUT clampWeightKg, so a
+    // corrupt/out-of-range stored weight made this preview diverge from the plan the
+    // user actually receives on selection — see previewGoalCalories' comment.
+    return previewGoalCalories(
       user.weight_kg as number,
       user.height_cm as number,
       user.age as number,
-      user.sex as string
+      user.sex as string,
+      user.activity_level as string,
+      ['bulk', 'maintain', 'cut', 'recomp']
     )
-    const tdee = Math.round(bmr * (ACTIVITY_MULTIPLIERS[user.activity_level as string] ?? 1.55))
-    const preview: Record<string, number> = {}
-    for (const goal of ['bulk', 'maintain', 'cut', 'recomp']) {
-      preview[goal] = Math.max(1200, tdee + getPhaseAwareDeficit(undefined, goal))
-    }
-    return preview
   })
 }

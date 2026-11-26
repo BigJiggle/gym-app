@@ -1,5 +1,74 @@
 # Change Agent Report
 
+## Run: 2026-11-26 ([FIX] — area (a) nutrition engine + Diet flows: closed the LAST `calcBMR`/weight→calorie seam that did NOT clamp bodyweight — the **GoalPickerModal calorie preview** (`plan:previewGoalCalories`). Every other weight→calorie path clamps (`generateNutritionPlan`/`regenerateDietForGoal` via `clampWeightKg`, `recalculateMacros` via `clampWeightKg`), but this handler inlined the BMR→TDEE math passing the RAW stored `user.weight_kg` to `calcBMR`. On the app's acknowledged corrupt/out-of-range stored-weight surface (hand-edited/legacy SQLite cell — the same one `calcBMR`'s NaN guard + `clampWeightKg` already defend), the "~N kcal" badge diverged from the plan the user actually gets on selection: an 850-kg weight showed **14,344 kcal** in the picker while tapping it generated a **5,819 kcal** plan (weight clamped to 300). Rotated OFF 11-25 #2's (b); (a) was the oldest-covered area, last fixed 11-23.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` Queue has **zero unchecked (`- [ ]`) items** (all 13 done; last
+AI-tailored onboarding 2026-07-07). So this was a bug hunt, not a backlog item.
+
+### STEP 1 — Baseline / regression guard (all GREEN before any change)
+Clean `master` (already up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (562 tests, 98 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Bug hunt (area (a), rotating off 11-25 #2's (b))
+Deep-read the whole nutrition + Diet surface: `electron/services/nutritionEngine.ts`
+(generation, `buildMeals`/portions/`calcPortionStr`, cook-time + meal-prep styling,
+exclusions/`isExcluded`/substitutes/`getFood`, culture foods/`getCultureFood`, the clamps
+`clampWeightKg`/`clampMealCount`, the sanitizers `sanitizeCalorieTarget`/`sanitizeMacroGrams`,
+`normalizeMeals`, `getPhaseAwareDeficit`), the Diet page (`src/pages/Diet/index.tsx` water/cardio
+logging via `utils/water.ts`+`utils/cardio.ts`, refeed via `utils/refeed.ts`, Today's Intake
+math, swap/reorder drop handlers, `GroceryList.tsx`/`WeeklyMealView.tsx`/`recipeSteps.ts`/
+`swapAlternatives.ts`/`mealAccordion.ts`), and the diet IPC paths (`plan:generateDiet`,
+`refineDietWithPrompt`, `recalculateMacros`, `swapMeal`, `reorderMeals`, `regenerateDiet`,
+`startupRefresh`, `previewGoalCalories`), plus the write seams `userSanitize.ts` /
+`userHandlers.ts` and onboarding `validateStep`. I also ran a throwaway edge-matrix probe
+(3 diet prefs × 9 cultures × meal counts {1,2,3,4,5,6,7,10,20} × snack counts {0,1,2,3,5},
+plus heavy exclusion/restriction sets × cook×prep styles): every combo produced finite,
+non-negative, correctly-counted meals with non-empty food lists — the engine core is clean.
+
+**Found one real seam** that breaks the "clamp bodyweight at every weight→calorie site"
+invariant the codebase enforces everywhere else: `plan:previewGoalCalories`
+(`electron/ipc/planHandlers.ts:1159`). It computed `calcBMR(user.weight_kg, …)` with NO
+`clampWeightKg`, unlike `generateNutritionPlan` (`clampWeightKg(input.weight_kg)` before BMR)
+and `plan:recalculateMacros`/`regenerateDietForGoal`. For a VALID in-range weight the clamp is
+identity, so normal users were unaffected. But the GoalPickerModal (shown when a show is
+cancelled/off-season) renders a `~N kcal` badge per goal from this preview, then
+`plan:selectOffSeasonGoal` → `generateNutritionPlan` builds the actual plan with the weight
+CLAMPED to ≤300. On the corrupt/out-of-range stored-weight surface this codebase treats as
+reachable (the `userSanitize`/`calcBMR` comments both call it out explicitly), the badge
+(e.g. 14,344 kcal for 850 kg) never matched the plan the athlete received (5,819 kcal) —
+a textbook "value shown doesn't match what's generated" desync.
+
+### STEP 3 — Fix (minimal, convention-aligning)
+Extracted the preview math into a pure, testable engine function
+`previewGoalCalories(weight_kg, height_cm, age, sex, activity_level, goals, weeks_out?)` in
+`nutritionEngine.ts` — mirroring how the app already extracts `computeExerciseTrend`/
+`detectNewPRs`/`weeklySessionProgress` for testing — that runs the SAME
+`clampWeightKg(weight) → calcBMR → round(bmr*activity) → getPhaseAwareDeficit → MIN_CALORIE_TARGET`
+floor as `generateNutritionPlan`. The handler now delegates to it (passing `weeks_out` undefined
+= off-season, matching `selectOffSeasonGoal`). No behavior change for any in-range weight; the
+only change is that a corrupt/out-of-range stored weight now yields a preview that equals the
+generated plan's target. Removed the now-unused `calcBMR`/`getPhaseAwareDeficit`/
+`ACTIVITY_MULTIPLIERS` imports from `planHandlers.ts`.
+
+### Files changed
+- `electron/services/nutritionEngine.ts` — NEW pure `previewGoalCalories(...)` (clamps weight).
+- `electron/ipc/planHandlers.ts` — `plan:previewGoalCalories` delegates to it; import trimmed.
+- `tests/unit/previewGoalCalories.test.ts` — 4 new tests: preview == generated plan for an
+  in-range weight (no behavior change); the core regression (an 850-kg corrupt weight's badge
+  now equals the clamped plan AND the 300-kg ceiling badge — verified it DIVERGED 14,344 vs
+  5,819 kcal before the clamp); too-low/missing weight (0/10/NaN) agrees with the plan fallback;
+  and the 1200-kcal floor holds.
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (566 tests, +4 new; 99 files)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-11-25 #2 ([FIX] — area (b) training engine + workout/session flows: closed the LAST training surface that still folded a **reps-0 weighted phantom set** into a strength metric — the Training-tab per-exercise **strength-trend arrow** (`exerciseTrend` in `src/pages/Training/index.tsx`). Every sibling strength surface excludes a reps-0 set via the falsy `!s.reps_actual` guard (`exercisePRs`, `lastPerfBySession`, `computePRs`, WorkoutSession's `lastPerformance`/`allTimePR`, `detectNewPRs` — all enumerated in prior reps-0 fix comments), but `exerciseTrend` guarded only `!s.weight_kg || s.weight_kg === 0`, so it was the one overlooked surface. Rotated OFF 11-25 #1's (f); (b) was the oldest-covered area, last fixed 11-22 #2.)
 
 ### STEP 0 — Requested changes
