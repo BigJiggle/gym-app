@@ -108,6 +108,42 @@ describe('checkinEngine', () => {
     expect(adj.calories_delta).toBe(0)
   })
 
+  // Regression: a stalling cut stages a -100 kcal reduction, but low recovery
+  // (energy+sleep too low) bumps calories back up by 100, netting a 0 delta that
+  // leaves the diet target UNCHANGED and hides the success-screen "Calorie
+  // Adjustment" box (it only renders when calories_delta !== 0). The feedback
+  // notes must not then claim "reduced calories by 100 kcal" — that's a
+  // note-vs-applied-delta desync (a value shown that doesn't match what's stored).
+  it('does not claim a stall reduction that low recovery cancels (note matches applied delta)', () => {
+    const adj = calculateAdjustments(
+      { ...GOOD_CHECKIN, weight_kg: 84, energy_level: 2, sleep_quality: 2 },
+      { weight_kg: 84, week_number: 1 },
+      2000,
+      'cut'
+    )
+    // stall (flat weight) wants -100; low recovery (recoveryScore 2 < 2.5) cancels
+    // it back to 0 — so nothing is actually applied to the plan.
+    expect(adj.calories_delta).toBe(0)
+    // ...and the coaching note must reflect that: no false "reduced calories" claim.
+    expect(adj.notes.some((n) => n.includes('reduced calories by 100 kcal'))).toBe(false)
+    // recovery feedback (volume reduction) is still present.
+    expect(adj.training_volume_change).not.toBe('no change')
+  })
+
+  // A real +100 recovery surplus (weight on-track / not being cut) is unaffected:
+  // the delta still moves and the recovery note stays.
+  it('still applies the +100 recovery surplus when no stall reduction was staged', () => {
+    const adj = calculateAdjustments(
+      { ...GOOD_CHECKIN, weight_kg: 83.5, energy_level: 2, sleep_quality: 2 },
+      { weight_kg: 84, week_number: 1 },
+      2000,
+      'cut'
+    )
+    // on-track loss → cut branch leaves delta 0, low recovery adds +100.
+    expect(adj.calories_delta).toBe(100)
+    expect(adj.notes.some((n) => n.toLowerCase().includes('recovery'))).toBe(true)
+  })
+
   describe('multi-check-in weight trend (adaptive)', () => {
     // A single noisy weigh-in (a 2 kg water spike last week) reads as a fast drop
     // week-over-week, but the multi-week trend is flat → the smoothed logic treats

@@ -200,6 +200,10 @@ export function calculateAdjustments(
   // "Weight" vs "Weight trend" so the note reflects which signal drove the change.
   const w = usingTrend ? 'Weight trend' : 'Weight'
 
+  // Index of the "stalling — reduced calories by 100 kcal" note, if one is pushed,
+  // so the recovery branch below can retract it when low recovery cancels the cut.
+  let stallNoteIndex = -1
+
   if (goal === 'cut' || goal === 'recomp') {
     if (pctChange < -1.5) {
       calories_delta = 150
@@ -207,7 +211,7 @@ export function calculateAdjustments(
     } else if (pctChange > -0.1 && (previous || usingTrend)) {
       if (currentCalories > 1400) {
         calories_delta = -100
-        notes.push(`${w} stalling — reduced calories by 100 kcal.`)
+        stallNoteIndex = notes.push(`${w} stalling — reduced calories by 100 kcal.`) - 1
       } else {
         cardio_change = '+1 session per week (20 min moderate intensity)'
         notes.push('Calories already low — added a cardio session to increase deficit.')
@@ -220,8 +224,25 @@ export function calculateAdjustments(
   const recoveryScore = (current.energy_level + current.sleep_quality) / 2
   if (recoveryScore < 2.5) {
     training_volume_change = 'Reduce working sets by 20% this week'
-    if (calories_delta <= 0) calories_delta += 100
-    notes.push('Recovery is low — volume reduced and calories adjusted to support recovery.')
+    // Low recovery takes priority over deepening the deficit. If a stall reduction
+    // was just staged (calories_delta < 0, only ever -100 here), cancel it: the
+    // athlete is under-recovered, so hold calories rather than cut further. The
+    // numeric result is identical to the previous `calories_delta += 100` (−100 → 0),
+    // but the old code LEFT the "reduced calories by 100 kcal" note in place while
+    // the applied delta was 0 — the diet target stayed unchanged and the success
+    // screen's Calorie Adjustment box (shown only when delta !== 0) was hidden, so
+    // the note claimed a reduction that never reached the plan. Retract that stale
+    // note so the feedback matches what's actually stored/applied.
+    if (calories_delta < 0) {
+      calories_delta = 0
+      if (stallNoteIndex !== -1) notes.splice(stallNoteIndex, 1)
+      notes.push('Recovery is low — holding calories steady and reducing volume to support recovery.')
+    } else {
+      // Not cutting (delta 0 or a protective surplus): add a small surplus to aid
+      // recovery, exactly as before (+100 only when nothing is already pushing up).
+      if (calories_delta === 0) calories_delta += 100
+      notes.push('Recovery is low — volume reduced and calories adjusted to support recovery.')
+    }
   } else if (recoveryScore >= 4) {
     notes.push('Recovery is excellent. Consider pushing intensity slightly.')
   }

@@ -1,5 +1,54 @@
 # Change Agent Report
 
+## Run: 2026-11-26 #2 ([FIX] — area (c) check-in + Progress + adaptive nutrition: fixed a real, reachable **note-vs-applied-delta desync** in `calculateAdjustments` (`electron/services/checkinEngine.ts`). When a cut is **stalling** (stages a −100 kcal reduction) AND **recovery is low** (energy+sleep avg < 2.5), the recovery branch bumped calories back up by +100, netting a **0** delta — so the diet target was left UNCHANGED and the Check-In success screen's "Calorie Adjustment" box (rendered only when `calories_delta !== 0`) was hidden — yet the feedback still showed the stale note **"Weight trend stalling — reduced calories by 100 kcal."** The athlete reads that calories were cut while the plan's calories never moved: a value-shown-doesn't-match-what's-stored defect. The fix retracts that note when low recovery cancels the cut and pushes an accurate "holding calories steady" note instead; the numeric `calories_delta` is **identical to before in every branch** (−100→0, on-track 0→+100, too-fast +150 unchanged, cardio/bulk/maintain unchanged). Rotated OFF 11-26 #1's (a); (c) was the oldest-covered area (last fixed 11-23 #2).)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` Queue has **zero unchecked (`- [ ]`) items** (all done). So this was a bug hunt, not a backlog item.
+
+### STEP 1 — Baseline / regression guard (all GREEN before any change)
+Clean `master` (already up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (566 tests, 99 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Bug hunt (area (c), rotating off 11-26 #1's (a))
+Deep-read the whole check-in / Progress / adaptive-nutrition surface: `checkinEngine.ts`
+(`parseAdjustments`, `clampCheckinWeightKg`, `weightTrend`/Theil–Sen `weightTrendPct`,
+`calculateAdjustments`), `checkinHandlers.ts` (submit / submitMissed / update — same-day
+dupe guards, week_number renumbering by (date,id), the diet re-scale through `normalizeMeals`
+with a floored ratio divisor), `checkinSchedule.ts` (`countMissedBetween` 0-on-bad-interval),
+`progressHandlers.ts`, the Progress page (`first→latest` vs `checkinHistory` DESC orderings,
+`computeWeeklyWeightRate`/`computeWeeksTracked`, `computeEstimatedBF` YMCA, measurement-change
+weekly rate, 8-week diet consistency, wellness trends, `WeightChart`/`MeasurementsChart`), the
+Check-In page (toKg/toCm clamps, auto-fill adherence, `MissedSlotPanel`, edit/duplicate guards),
+and the dashboard check-in widgets (`CheckinFeedbackWidget`, `RecentCheckinsWidget`,
+`DailyWeighInWidget`). Confirmed `normalizeMeals` coerces every meal `calories` to a finite
+number, so the submit meal-rescale can't produce NaN. The surface is heavily hardened by prior
+runs; the ONE genuine defect left was the recovery-cancels-stall note contradiction described
+above (prior (c) audits treated the recovery `+100` as correct but never checked the NOTE it
+leaves behind).
+
+### STEP 3 — Fix (minimal, numerically behavior-preserving)
+`electron/services/checkinEngine.ts` — recorded the stall note's index when it's pushed
+(`stallNoteIndex = notes.push(...) - 1`), and restructured the `recoveryScore < 2.5` branch:
+when `calories_delta < 0` (a staged stall cut, only ever −100), set it to 0, splice out the now-
+false stall note, and push "Recovery is low — holding calories steady and reducing volume to
+support recovery."; otherwise keep the exact prior behavior (`+100` only when `calories_delta === 0`).
+Every net `calories_delta` is unchanged — only the notes now match the applied delta.
+
+### Files changed
+- `electron/services/checkinEngine.ts` — retract the stall note when low recovery cancels the cut.
+- `tests/unit/checkinEngine.test.ts` — 2 new tests: the regression (stall + low recovery → delta 0
+  AND no "reduced calories by 100 kcal" note, volume still reduced — FAILED before the fix), and a
+  guard that a genuine +100 recovery surplus (on-track loss + low recovery) is unchanged (delta 100).
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (568 tests, +2 new; 99 files)
+- `npx electron-vite build` → PASS
+
+---
+
 ## Run: 2026-11-26 ([FIX] — area (a) nutrition engine + Diet flows: closed the LAST `calcBMR`/weight→calorie seam that did NOT clamp bodyweight — the **GoalPickerModal calorie preview** (`plan:previewGoalCalories`). Every other weight→calorie path clamps (`generateNutritionPlan`/`regenerateDietForGoal` via `clampWeightKg`, `recalculateMacros` via `clampWeightKg`), but this handler inlined the BMR→TDEE math passing the RAW stored `user.weight_kg` to `calcBMR`. On the app's acknowledged corrupt/out-of-range stored-weight surface (hand-edited/legacy SQLite cell — the same one `calcBMR`'s NaN guard + `clampWeightKg` already defend), the "~N kcal" badge diverged from the plan the user actually gets on selection: an 850-kg weight showed **14,344 kcal** in the picker while tapping it generated a **5,819 kcal** plan (weight clamped to 300). Rotated OFF 11-25 #2's (b); (a) was the oldest-covered area, last fixed 11-23.)
 
 ### STEP 0 — Requested changes
