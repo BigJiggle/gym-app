@@ -5,6 +5,7 @@ import { usePlanStore } from '../../store/planStore'
 import Button from '../../components/ui/Button'
 import WidgetZone from '../../components/widgets/WidgetZone'
 import { localDateStr } from '../../utils/dates'
+import { computeAdherenceStreak } from '../../utils/adherenceStreak'
 
 export default function Dashboard() {
   const { user } = useUserStore()
@@ -50,24 +51,15 @@ export default function Dashboard() {
 
   // Adherence streak — consecutive days (counting back from yesterday) where every
   // planned meal was logged AND any scheduled session that day was completed.
-  const adherenceStreak = (() => {
-    const totalMeals = dietPlan?.meals?.length ?? 0
-    const sessions = trainingPlan?.sessions ?? []
-    if (totalMeals === 0) return 0
-    let streak = 0
-    for (let offset = 1; offset <= 60; offset++) {
-      const d = new Date()
-      d.setDate(d.getDate() - offset)
-      const dateStr = localDateStr(d)
-      const loggedCount = mealCompletions.filter(c => c.date === dateStr).length
-      if (loggedCount < totalMeals) break
-      const dow = d.getDay() === 0 ? 7 : d.getDay()
-      const hadSession = sessions.some(s => s.day_of_week === dow)
-      if (hadSession && !workoutHistory.some(l => l.status === 'completed' && l.date === dateStr)) break
-      streak++
-    }
-    return streak
-  })()
+  // Counts only completions that map to a CURRENT meal (via computeAdherenceStreak
+  // → countLoggedMeals) so a past day's orphaned completions can't inflate it after
+  // a meal-count reduction — matching the Diet streak and Weekly Scorecard.
+  const adherenceStreak = computeAdherenceStreak(
+    mealCompletions,
+    dietPlan?.meals?.length ?? 0,
+    trainingPlan?.sessions ?? [],
+    workoutHistory,
+  )
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">

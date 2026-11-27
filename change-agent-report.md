@@ -1,5 +1,35 @@
 # Change Agent Report
 
+## Run: 2026-11-27 #2 ([FIX] — area (e) widgets + dashboard localStorage stores: fixed a real, reachable **orphaned-meal-count desync** in the Dashboard "N-day streak" badge (`src/pages/Dashboard/index.tsx`). The adherence-streak loop counted each past day's meal completions RAW — `mealCompletions.filter(c => c.date === dateStr).length` — the exact bug `countLoggedMeals` was created to close on the Diet "This Week" streak (11-19) and the Weekly Prep Scorecard (11-24). The dashboard streak was the last surface still counting raw. Completions are keyed by positional `meal_index`; a mid-week meal-count **reduction** (Settings / Regenerate / AI refine) leaves PAST-day completions at the now-removed indices in the DB because `clearOrphanedMealCompletions` purges only `date >= today`. So a past day that logged only 2 of the **current** 4 meals, plus 2 orphaned index-4/5 rows, has a raw count of 4 and was **miscredited as a fully-logged day**, inflating the dashboard 🔥 streak — while the Diet page's streak (which already uses `countLoggedMeals`) showed the correct, shorter streak: a cross-surface + value-shown-doesn't-match-stored desync. Extracted the streak into a pure, testable `computeAdherenceStreak` helper (mirroring the `countLoggedMeals`/`trainingBurn` extraction pattern) that routes the per-day meal check through `countLoggedMeals`; Dashboard now calls it. Rotated to (e) — the oldest-covered area (last touched ~6 runs back); (d) was last run.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` Queue has **zero unchecked (`- [ ]`) items** (all 13 done). So this was a bug hunt, not a backlog item.
+
+### STEP 1 — Baseline / regression guard (all GREEN before the fix)
+Clean `master` (up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS · `npm test` → PASS (568 tests, 99 files) · `npx electron-vite build` → PASS
+
+### STEP 2 — Bug hunt (area (e), rotating off 11-27's (d))
+Deep-read the whole widget + dashboard localStorage-store surface and traced the SCOPE error paths:
+- **Stores / infra** — `localStore` (top-level shape guard + per-entry `sanitize`, stable `getSnapshot` cache for `useSyncExternalStore`, empty-array ≠ absent), `createWidgetStore`/`useWidgets` (unknown-id drop + de-dupe, migration fold-in, bounds-checked `reorder`), `cardioStore` (`sanitizeEntries` coerces `minutes` via `Number()` + drops non-finite, legacy-id migration, try/catch load), `competitionLogs` (`validPosing`/`validSleep`/`validCondition`/`validSupplementDay` entry sanitizers), `useWaterLog`/`water.ts` (`isNaN`/non-finite guards, clamp), `useSidebar`.
+- **Widgets** — all ~22: each handles empty/first-run data; numeric inputs (sleep/cardio/posing/water/daily-weigh-in) validated (`isNaN`/`<=0`/range); all percentage/`reduce` divisions guarded against 0/∞/NaN; drag-reorder uses real stored indices; competition widgets self-hide; `trainingBurn`/`weeklyRate`/`getShowCountdown`/`weekStartMonday` all DST- and NaN-safe.
+- **The defect** — Dashboard `adherenceStreak` (the only surface left using a raw `.filter(date).length` for a per-day completion count). The sibling Diet `mealAdherenceStreak` and the Weekly Prep Scorecard both already use `countLoggedMeals`; the dashboard badge did not, so the two streak surfaces disagree after any meal-count reduction.
+
+### STEP 3 — Fix
+`src/utils/adherenceStreak.ts` (new): pure `computeAdherenceStreak(mealCompletions, totalMeals, sessions, workoutHistory, from=now)` — same loop as before (count back from yesterday, meal-adherence + scheduled-session completion), but the per-day meal check now goes through `countLoggedMeals(mealCompletions, dateStr, totalMeals)` so orphaned completions at removed indices no longer credit a day. `src/pages/Dashboard/index.tsx`: replaced the inline IIFE with a call to the helper (`localDateStr` still used for `todayStr`).
+
+### STEP 3 — Test
+`tests/unit/adherenceStreak.test.ts` (new, 4 cases): (1) the orphan case — 4-meal plan, yesterday logged indices 0,1 (real) + 4,5 (orphans): raw count 4 would read 4/4 and streak 2, mapped count is 2 so the streak correctly breaks to 0 — **this case FAILS against the old raw-count logic and PASSES with the fix** (verified by temporarily reverting the helper); (2) three genuinely full days → streak 3; (3) a scheduled-but-not-completed session breaks the streak; (4) no plan → 0.
+
+### STEP 4 — Verify (all GREEN)
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (**572** tests, 100 files; +4 new)
+- `npx electron-vite build` → PASS
+
+### Sub-audit leads for a future run (NOT fixed; confirm reachability/scope before acting)
+1. **(area e — low, cosmetic)** `PrepGuidanceWidget` reads `milestones_<show>_<weeksOut>` from localStorage and shows `checkedMilestones.filter(Boolean).length/guidance.milestones.length`; if a milestone-list definition ever shrinks for an already-checked week, stored stale `true`s could read e.g. "5/3 done". Requires a source-data change to reach; not a user-input path.
+2. **(area e — very low)** `localStore`'s top-level shape guard only distinguishes array vs non-array, so a scalar store (only `sidebar_collapsed: boolean`) would pass a hand-edited non-boolean through; harmless — it only coerces in a `!x` toggle / truthy className and never crashes.
+
 ## Run: 2026-11-27 (NO-BUG — area (d) onboarding + Settings + reset + data lifecycle: deep-read the full area and every adjacent seam; found it already hardened by prior runs — no real, reachable defect to fix. Rotated OFF 11-26 #2's (c); (d) was the oldest-covered area, last fixed 11-24 #1. Did NOT fabricate a fix per STEP 5.)
 
 ### STEP 0 — Requested changes
