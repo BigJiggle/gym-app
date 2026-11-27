@@ -1,5 +1,78 @@
 # Change Agent Report
 
+## Run: 2026-11-27 (NO-BUG — area (d) onboarding + Settings + reset + data lifecycle: deep-read the full area and every adjacent seam; found it already hardened by prior runs — no real, reachable defect to fix. Rotated OFF 11-26 #2's (c); (d) was the oldest-covered area, last fixed 11-24 #1. Did NOT fabricate a fix per STEP 5.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` Queue has **zero unchecked (`- [ ]`) items** (all 13 done). So this was a bug hunt, not a backlog item.
+
+### STEP 1 — Baseline / regression guard (all GREEN, no changes made)
+Clean `master` (already up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS (exit 0)
+- `npm test` → PASS (568 tests, 99 files)
+- `npx electron-vite build` → PASS
+
+### STEP 2 — Bug hunt (area (d), rotating off 11-26 #2's (c))
+Deep-read the whole onboarding + Settings + reset + data-lifecycle surface and traced the
+SCOPE error paths. Every one was already guarded by a prior run:
+
+- **Reset flow** — `src/utils/resetData.ts` (`isPreservedKey`/`mergeWeighIns`/`resetLocalData`),
+  `userStore.resetAllData` (hard-reload so module/zustand singletons re-init; try/catch around
+  localStorage), `userHandlers.user:resetAll` (snapshots `weekly_checkins` weigh-ins before the
+  cascade delete, preserves `daily_weight_log` + `water_ml_*` + `water_target_ml`). Checked the
+  `isValidWeighIn` (`>0`) vs `parseDailyWeightLog` (30–300) bound asymmetry — **unreachable**:
+  all stored check-in weights are already clamped to 30–300 at the write seam
+  (`clampCheckinWeightKg`), so the merge never sees an out-of-range value.
+- **Profile write seam** — `userSanitize.ts`: `sanitizeUserUpdate` drops `undefined`/non-finite
+  (cleared field → NaN can't NULL a required column) and the derived `show_date`/`division`;
+  `clampAge`/`clampHeightCm`/`clampWeightKgField`/`clampTrainingFrequency`/
+  `clampExercisesPerSession`/`clampSetsPerExercise`/`clampBodyFatPct`/meal+snack clamps all bound
+  Settings' typed-in extremes (HTML min/max only bind the spinner). `sanitizeUserCreate` drops an
+  orphan division. `user:create` clamps meal/snack/body_fat; onboarding `validateStep` bounds
+  age/height/weight and the UI sliders/steppers bound the rest, so the only `user:create` caller
+  (onboarding) can't persist an out-of-range value.
+- **Onboarding** — all 7 steps (AiSetup key persist-before-plan-gen + graceful blank-key
+  fallback; Step1 ft/in + lbs conversions via shared `cmToFeetInches` round-then-split; Step2
+  show/division toggle; Step3 freq slider 2–6; Step4 Stepper-bounded meals 1–20 / snacks 0–20;
+  index validateStep at step 2 + submit). `Stepper` commits only clamped finite integers.
+- **Settings** — edit-profile numeric inputs (parseInt/parseFloat → NaN dropped by sanitize),
+  Show Date / Division inputs already REMOVED from the edit form (left as read-only rows);
+  `claude_api_key` trimmed at every read seam; `ui_zoom`/`checkin_day` parseInt with fallbacks;
+  `GoalPickerModal` preview delegates to the clamped engine `previewGoalCalories`.
+- **DB** — `db.ts` (migrations wrapped so a failure never wipes data; stale-lock recovery;
+  `namedParams` undefined→null), `schema.ts` v1–v13 (column-order of the v9 users rebuild matches
+  the ALTER history; v11 historical UPDATEs correct), `settingsHandlers` (INSERT OR REPLACE),
+  `progressHandlers`/`mealCompletionHandlers` SQL (all carry `WHERE user_id`, correct
+  ordering/UNIQUE-conflict handling, orphan-completion purge scoped to date>=today).
+
+### STEP 2 (adjacent coverage, same read pass)
+Also re-verified the localStorage stores (area e) and date logic (area f) that touch data
+lifecycle: `useWidgets`/`createWidgetStore`/`localStore`/`competitionLogs` (array-shape + per-entry
+sanitizers, stable `getSnapshot` for `useSyncExternalStore`, empty-array ≠ absent), `cardioStore`
+(sanitize+migrate, try/catch load), `useWaterLog`/`water.ts` (isNaN + non-finite guards),
+`DailyWeighInWidget`/`Sleep`/`Supplement` widgets, `WeeklyScorecardWidget`/`MuscleCoverageWidget`
+(mapped `countLoggedMeals`, no unguarded division), `dates.ts` (`getShowCountdown` noon-vs-midnight
+DST buffer, `weekStartMonday` calendar-day math), `checkinSchedule.ts` (0-interval infinite-loop
+guard), `buildPrepTimeline` (current-week flagging past the 24-week cap), and the Education
+posing/milestone raw parses (all in try/catch). The check-in weight seam — the strongest candidate
+— is already clamped at all three handlers (`checkin:submit`/`submitMissed`/`update`) via
+`clampCheckinWeightKg` (fixed 2026-07-30).
+
+### STEP 3–4 — No fix (no defect found); baseline re-confirmed GREEN
+No code changed. Working tree holds only this report entry.
+- `npx tsc --noEmit` → PASS · `npm test` → PASS (568) · `npx electron-vite build` → PASS
+
+### Sub-audit leads for a future run (NOT fixed; confirm reachability/scope before acting)
+1. **(area d/c — UX, likely out of scope)** The Check-In weight input (frontend `toKg` + the three
+   submit/edit handlers) rejects only `<=0`; a fat-fingered extreme (e.g. "850") is **silently
+   clamped to 300** by the backend `clampCheckinWeightKg` and stored, with no user-facing "out of
+   range" message (the sibling `DailyWeighInWidget` silently drops <30/>300 instead). Data integrity
+   is protected (the deliberate 2026-07-30 clamp design); a frontend range message would be a UX
+   improvement, not a correctness fix — left as a lead to avoid "fixing" intended behaviour.
+2. **(area a — low, defensive)** `plan:selectOffSeasonGoal` returns `JSON.parse(diet.meals)` raw
+   rather than via `normalizeMeals`; unreachable in practice (the row was just regenerated by
+   `regenerateDietForGoal` so the cell is always fresh valid JSON), but it is the last diet-read
+   seam not routed through `normalizeMeals`.
+
 ## Run: 2026-11-26 #2 ([FIX] — area (c) check-in + Progress + adaptive nutrition: fixed a real, reachable **note-vs-applied-delta desync** in `calculateAdjustments` (`electron/services/checkinEngine.ts`). When a cut is **stalling** (stages a −100 kcal reduction) AND **recovery is low** (energy+sleep avg < 2.5), the recovery branch bumped calories back up by +100, netting a **0** delta — so the diet target was left UNCHANGED and the Check-In success screen's "Calorie Adjustment" box (rendered only when `calories_delta !== 0`) was hidden — yet the feedback still showed the stale note **"Weight trend stalling — reduced calories by 100 kcal."** The athlete reads that calories were cut while the plan's calories never moved: a value-shown-doesn't-match-what's-stored defect. The fix retracts that note when low recovery cancels the cut and pushes an accurate "holding calories steady" note instead; the numeric `calories_delta` is **identical to before in every branch** (−100→0, on-track 0→+100, too-fast +150 unchanged, cardio/bulk/maintain unchanged). Rotated OFF 11-26 #1's (a); (c) was the oldest-covered area (last fixed 11-23 #2).)
 
 ### STEP 0 — Requested changes
