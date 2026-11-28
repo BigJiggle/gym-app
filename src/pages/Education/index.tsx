@@ -10,6 +10,7 @@ import {
   buildPrepTimeline,
 } from '../../data/competitionPrep'
 import { getShowCountdown } from '../../utils/dates'
+import { computeCarbLoad } from '../../utils/carbLoad'
 
 type Tab = 'posing' | 'prep' | 'peakweek' | 'firsttimer' | 'timeline'
 
@@ -983,22 +984,20 @@ export default function Education() {
                   className="w-28 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200"
                 />
               </div>
-              {carbWeight && !isNaN(parseFloat(carbWeight)) && (
-                <div className="flex-1 bg-brand-900/20 border border-brand-800/30 rounded-xl p-3">
-                  {(() => {
-                    const kg = isImperial ? parseFloat(carbWeight) * 0.453592 : parseFloat(carbWeight)
-                    const low = Math.round(kg * 8)
-                    const high = Math.round(kg * 12)
-                    return (
-                      <>
-                        <p className="text-xs text-gray-400">Total 3-day carb load:</p>
-                        <p className="text-xl font-bold text-brand-400">{low}–{high}g</p>
-                        <p className="text-xs text-gray-500">≈ {Math.round(low/3)}–{Math.round(high/3)}g per day</p>
-                      </>
-                    )
-                  })()}
-                </div>
-              )}
+              {(() => {
+                // Guard non-positive / non-finite bodyweight (typed negative or 0)
+                // so the calculator never renders a nonsensical negative/zero carb
+                // target. See computeCarbLoad.
+                const carbLoad = computeCarbLoad(carbWeight, isImperial)
+                if (!carbLoad) return null
+                return (
+                  <div className="flex-1 bg-brand-900/20 border border-brand-800/30 rounded-xl p-3">
+                    <p className="text-xs text-gray-400">Total 3-day carb load:</p>
+                    <p className="text-xl font-bold text-brand-400">{carbLoad.low}–{carbLoad.high}g</p>
+                    <p className="text-xs text-gray-500">≈ {carbLoad.perDayLow}–{carbLoad.perDayHigh}g per day</p>
+                  </div>
+                )
+              })()}
             </div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Best Carb Load Foods</p>
             <ul className="space-y-1 mb-4">

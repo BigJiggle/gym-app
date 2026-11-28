@@ -1,5 +1,40 @@
 # Change Agent Report
 
+## Run: 2026-11-28 #2 ([FIX] — audited area (b) training engine + workout/session flows (clean); fixed a real, reachable **user-input boundary bug** in the Education "Peak Week" **Carb Load Calculator** (`src/pages/Education/index.tsx`). The Bodyweight field is a free `<input type="number">` with no `min`, and the render guard was `carbWeight && !isNaN(parseFloat(carbWeight))`. A typed **negative** bodyweight (e.g. `-80`) is a non-empty truthy string that parses to a finite number, so it passed the guard and rendered **nonsensical negative carb targets** — "−640–−960g" total, "≈ −213–−320g per day" — on a figure a prep athlete peaking for a show actually relies on. A typed **`0`** slipped through too: `"0"` is a truthy string (only `""` is falsy), rendering a meaningless "0–0g". **Fix:** extracted the 8–12 g/kg three-day carb-load math into a pure, unit-testable helper `src/utils/carbLoad.ts` (`computeCarbLoad(rawWeight, isImperial)`) that returns `null` for any non-finite or non-positive bodyweight, and replaced the inline guard+IIFE with `const carbLoad = computeCarbLoad(carbWeight, isImperial); if (!carbLoad) return null`. Any positive weight behaves exactly as before (same imperial→kg conversion, same ×8/×12 and /3 rounding); only negative/zero/garbage now render nothing — identical to an empty field. Mirrors the codebase's established "extract inline math into a guarded util + test" pattern (computeAdherenceStreak, countLoggedMeals, clampSetCount, parseRepMidpoint). This was the exact lead the 11-28 #1 run flagged for a future run.)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` Queue has **zero unchecked (`- [ ]`) items** (all done). So this was a bug hunt, not a backlog item.
+
+### STEP 1 — Baseline / regression guard (all GREEN before the fix)
+Clean `master` (up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS · `npm test` → PASS (573 tests, 100 files) · `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (b) training engine + workout/session flows (rotating off 11-28 #1's (f); (b) was the oldest-covered area)
+Deep-read the whole training surface and traced every SCOPE error path — all already hardened by prior runs:
+- **Engine** — `services/trainingEngine.ts` (`generateTrainingPlan` NaN/out-of-range guards on frequency / exercises-per-session / sets-per-exercise / max-sets; `normalizeExercises` read-seam coercion; every split builder floors counts and `.filter(Boolean)`s, never emits an empty session — verified even for minimal-equipment full-body variant B/C where some group lookups return `undefined`).
+- **IPC** — `ipc/workoutHandlers.ts` (`sanitizeReps`/`sanitizeWeightKg` clamp 0–9999 at the write seam across logSet / updateSet / saveSetsBatch; `workout:history` limit guard), `ipc/planHandlers.ts` (`plan:updateSession` rejects empty sessions; `getTraining`/`getSessions` normalize; refine paths skip `exercises.length===0`; `maxSetsOverride` sanitized).
+- **Live session** — `WorkoutSession.tsx` (`clampSetCount`/`parseRepMidpoint` set-seed guards, rest-timer single-interval effect, `saving`/`canComplete` double-submit guards, display↔kg conversion symmetry, `detectNewPRs`/`allTimePR` all in display units), `WorkoutLogEditor.tsx` (auto-save + toggle double-submit guards), `SessionEditor.tsx` (clampSetCount, empty-session save disabled).
+- **Stats / widgets** — `WorkoutStats.tsx` (all tonnage/adherence divisions floored), `exerciseTrend.ts` / `computePRs` / `lastPerfBySession` / `TodaysSessionWidget` / `TrainingVolumeWidget` / `SessionsWeekWidget` / `WeeklyVolumeWidget` (uniform `!s.weight_kg || !s.reps_actual` phantom-set guard; `currentBodyweightKg`/`weeklyTrainingKcalBurned` NaN-safe; `weeklySessionProgress` planned-DOW-based).
+No real, reachable defect found in (b). The only in-scope boundary bug still open app-wide was the Education carb-load one flagged by 11-28 #1 — fixed this run.
+
+### STEP 3 — The fix
+- New `src/utils/carbLoad.ts`: `computeCarbLoad(rawWeight: string | number, isImperial)` → `{ low, high, perDayLow, perDayHigh } | null`; `null` when `!Number.isFinite(parsed) || parsed <= 0`.
+- `src/pages/Education/index.tsx`: import the helper; replace the `carbWeight && !isNaN(...)` guard + inline IIFE (≈ lines 986–1001) with a `computeCarbLoad(...)` call that renders `null` on a bad weight.
+
+### Tests added
+`tests/unit/carbLoad.test.ts` (5 cases): valid metric (84 kg → 672–1008 g / 224–336 g/day), imperial→kg conversion, **negative → null** (the bug; old inline logic rendered −640–−960g), **zero → null** (old logic rendered 0–0g), empty/non-numeric → null. +5 tests (573 → 578).
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (578 tests, 101 files; +5 new)
+- `npx electron-vite build` → PASS
+
+### Leads for future runs (NOT fixed — one fix per run)
+- **(area e/b — very low)** Dashboard `TodaysSessionWidget` "New PRs Today" reads only the FIRST completed log on today's date; two completed workouts the same day (e.g. "Redo") compare the later log's bests against history that excludes *both* today logs, so a lower second workout could still announce a PR the first already beat. Requires two same-day completed workouts; cosmetic.
+- **(area b — cosmetic)** Dashboard `SessionsWeekWidget` denominator is "scheduled Mon–today" while the Training-tab "Sessions This Week" badge uses all planned sessions for the full week, so mid-week the two surfaces can show different denominators (e.g. 1/2 vs 1/3). Both are labelled, likely intentional; confirm intent before touching.
+
+---
+
 ## Run: 2026-11-28 ([FIX] — area (f) shows/competition + date/week logic: fixed a real, reachable **show-day DB↔UI desync** on the **Progress page "Weight Trend" card** (`src/pages/Progress/index.tsx`). The Show-Countdown / Projected-Show-Weight sub-block was gated on `weeksToShow !== null`, where the page-local `weeksUntil()` returns `null` whenever show-noon ≤ `now` — i.e. **from local noon onward on the athlete's actual show day** (also for any past date still sitting in `user.show_date` before relaunch). Because `syncPrimaryToNearest` keeps a **same-day** show as primary (`show_date >= localToday()` includes today), `user.show_date` is set to today on show day, yet from noon the block flipped to the literal empty state **"Show Date — Not set — add a show in Settings to see projection."** Stored value present → UI claims "not set", on the single most important day of prep. Progress was the lone show surface with this gap: `PrepPaceWidget` hides only its projection row via `weeksToShow > 0` (keeps its card), `QuickStatsWidget`/`PeakWeekWidget` key off the canonical `getShowCountdown()` (`isPast=false, totalDays=0` on show day), and the CheckIn success state guards `weeksToShow <= 0`. **Fix:** gate the block on `showActive = !!user.show_date && !getShowCountdown(user.show_date).isPast` (the canonical helper already imported and computed into `showWeeksOut`), and render the countdown value from `showWeeksOut ?? 0` (type-safe now that `weeksToShow` can be null in-branch — `showWeeksOut` is always a finite number when `show_date` is set). The fractional `weeksToShow` still drives the projection/required-rate math unchanged (those already guard `weeksToShow !== null / > 0`, so the projection sub-card self-hides on show day — correct, a 0-week projection is meaningless). Behavior changes ONLY for show-day-afternoon (now shows "0 wks" instead of "Not set"); no-show and past-show both still render the empty state exactly as before. Found via a focused read + parallel reachability audit; verified against the actual render branch before fixing. Rotated to (f) — oldest-covered (last fixed 11-25); 11-27 #2 was (e).)
 
 ### STEP 0 — Requested changes
