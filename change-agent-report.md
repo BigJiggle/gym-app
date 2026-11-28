@@ -1,5 +1,36 @@
 # Change Agent Report
 
+## Run: 2026-11-28 ([FIX] — area (f) shows/competition + date/week logic: fixed a real, reachable **show-day DB↔UI desync** on the **Progress page "Weight Trend" card** (`src/pages/Progress/index.tsx`). The Show-Countdown / Projected-Show-Weight sub-block was gated on `weeksToShow !== null`, where the page-local `weeksUntil()` returns `null` whenever show-noon ≤ `now` — i.e. **from local noon onward on the athlete's actual show day** (also for any past date still sitting in `user.show_date` before relaunch). Because `syncPrimaryToNearest` keeps a **same-day** show as primary (`show_date >= localToday()` includes today), `user.show_date` is set to today on show day, yet from noon the block flipped to the literal empty state **"Show Date — Not set — add a show in Settings to see projection."** Stored value present → UI claims "not set", on the single most important day of prep. Progress was the lone show surface with this gap: `PrepPaceWidget` hides only its projection row via `weeksToShow > 0` (keeps its card), `QuickStatsWidget`/`PeakWeekWidget` key off the canonical `getShowCountdown()` (`isPast=false, totalDays=0` on show day), and the CheckIn success state guards `weeksToShow <= 0`. **Fix:** gate the block on `showActive = !!user.show_date && !getShowCountdown(user.show_date).isPast` (the canonical helper already imported and computed into `showWeeksOut`), and render the countdown value from `showWeeksOut ?? 0` (type-safe now that `weeksToShow` can be null in-branch — `showWeeksOut` is always a finite number when `show_date` is set). The fractional `weeksToShow` still drives the projection/required-rate math unchanged (those already guard `weeksToShow !== null / > 0`, so the projection sub-card self-hides on show day — correct, a 0-week projection is meaningless). Behavior changes ONLY for show-day-afternoon (now shows "0 wks" instead of "Not set"); no-show and past-show both still render the empty state exactly as before. Found via a focused read + parallel reachability audit; verified against the actual render branch before fixing. Rotated to (f) — oldest-covered (last fixed 11-25); 11-27 #2 was (e).)
+
+### STEP 0 — Requested changes
+`docs/change-backlog.md` Queue has **zero unchecked (`- [ ]`) items** (all done). So this was a bug hunt, not a backlog item.
+
+### STEP 1 — Baseline / regression guard (all GREEN before the fix)
+Clean `master` (up to date) + `npm ci` (`ELECTRON_SKIP_BINARY_DOWNLOAD=1`):
+- `npx tsc --noEmit` → PASS · `npm test` → PASS (572 tests, 100 files) · `npx electron-vite build` → PASS
+
+### STEP 2 — Area audited: (f) shows/competition + date/week logic
+Deep-read `utils/dates.ts` (`getShowCountdown` noon/midnight anchor + separate `isPast`; `weekStartMonday`/`addDays` DST-safe calendar arithmetic), `services/showDates.ts` (`weeksUntilShow`, `localToday`), `ipc/showHandlers.ts` (add/update/delete/cancel/setPrimary — all `user_id`-scoped, each regenerates diet for the new weeks-out; `setPrimaryShow` past-guard; Settings date input is `type="date"` so malformed dates aren't reachable), `data/competitionPrep.ts` (`buildPrepTimeline` current-week flagging, `PEAK_WEEK_PROTOCOL` daysOut 7→1), and the competition widgets (`PeakWeekWidget` daysOut=totalDays+1 + isPast self-hide, `QuickStatsWidget`, `PrepPaceWidget`, `WeeklyScorecardWidget`, `competitionLogs.ts` entry validators), plus `utils/{weeklyRate,weeksTracked,checkinSchedule,units,water,cardio,targetWeight,refeed}.ts`. All intact/hardened by prior runs. The one unfixed gap was the Progress show-day gate above.
+
+### STEP 3 — The fix
+`src/pages/Progress/index.tsx`:
+- Added `showActive` (≈ line 154): `!!user.show_date && !getShowCountdown(user.show_date).isPast`.
+- Gate the countdown/projection block on `showActive` instead of `weeksToShow !== null` (≈ line 269).
+- Render the weeks value as `{showWeeksOut ?? 0} wks` (was `showWeeksOut ?? Math.floor(weeksToShow)`, which would be a type error now that `weeksToShow` can be null in-branch; `showWeeksOut` is never null when `show_date` is set, so runtime is identical for every existing case).
+
+### Tests added
+`tests/unit/progressShowCountdown.test.tsx` — new case: with `user.show_date` = today and the faked clock at 15:30 (afternoon), the page renders the **"Show Countdown" / "0 wks"** tile and NOT the "Not set — add a show in Settings" empty state. Confirmed RED against pre-fix source (couldn't find "Show Countdown"), GREEN after. +1 test (572 → 573).
+
+### STEP 4 — Verification (all PASS)
+- `npx tsc --noEmit` → PASS (clean)
+- `npm test` → PASS (573 tests, 100 files; +1 new)
+- `npx electron-vite build` → PASS
+
+### Leads for future runs (NOT fixed — one fix per run)
+- **Education "Peak Week" carb-load calculator** (`src/pages/Education/index.tsx` ≈986-999): guard is `carbWeight && !isNaN(parseFloat(carbWeight))`, so a typed **negative** bodyweight (e.g. `-80`) is truthy + finite and renders negative carb targets ("-290–-435g"). `"0"` is already safely excluded (falsy). Fix idea: require `parseFloat(carbWeight) > 0`. (Area (f)-adjacent; low severity, user-input edge.)
+
+---
+
 ## Run: 2026-11-27 #2 ([FIX] — area (e) widgets + dashboard localStorage stores: fixed a real, reachable **orphaned-meal-count desync** in the Dashboard "N-day streak" badge (`src/pages/Dashboard/index.tsx`). The adherence-streak loop counted each past day's meal completions RAW — `mealCompletions.filter(c => c.date === dateStr).length` — the exact bug `countLoggedMeals` was created to close on the Diet "This Week" streak (11-19) and the Weekly Prep Scorecard (11-24). The dashboard streak was the last surface still counting raw. Completions are keyed by positional `meal_index`; a mid-week meal-count **reduction** (Settings / Regenerate / AI refine) leaves PAST-day completions at the now-removed indices in the DB because `clearOrphanedMealCompletions` purges only `date >= today`. So a past day that logged only 2 of the **current** 4 meals, plus 2 orphaned index-4/5 rows, has a raw count of 4 and was **miscredited as a fully-logged day**, inflating the dashboard 🔥 streak — while the Diet page's streak (which already uses `countLoggedMeals`) showed the correct, shorter streak: a cross-surface + value-shown-doesn't-match-stored desync. Extracted the streak into a pure, testable `computeAdherenceStreak` helper (mirroring the `countLoggedMeals`/`trainingBurn` extraction pattern) that routes the per-day meal check through `countLoggedMeals`; Dashboard now calls it. Rotated to (e) — the oldest-covered area (last touched ~6 runs back); (d) was last run.)
 
 ### STEP 0 — Requested changes

@@ -151,6 +151,16 @@ export default function Progress() {
   // prep metric.
   const weeksToShow = user.show_date ? weeksUntil(user.show_date) : null
   const showWeeksOut = user.show_date ? getShowCountdown(user.show_date).weeks : null
+  // Whether to render the countdown/projection block. Gate on the show EXISTING and
+  // not being past — NOT on `weeksToShow !== null`. `weeksUntil` returns null once
+  // show-noon ≤ now, i.e. from local noon onward on the show day itself, so the old
+  // `weeksToShow !== null` gate flipped the block to the "Show Date — Not set" empty
+  // state on the afternoon/evening of the athlete's actual show day even though
+  // `user.show_date` is set to today (syncPrimaryToNearest keeps a same-day show as
+  // primary) — a DB↔UI desync on the single most important day of prep. The canonical
+  // `getShowCountdown` reports isPast=false / totalDays=0 there, matching every sibling
+  // surface (QuickStats/PeakWeek/PrepPace), so reuse it for the gate.
+  const showActive = !!user.show_date && !getShowCountdown(user.show_date).isPast
   const currentWeightKg = checkinHistory[0]?.weight_kg ?? user.weight_kg
   const projectedWeightKg =
     weeklyRateKg !== null && weeksToShow !== null
@@ -258,11 +268,11 @@ export default function Progress() {
               </p>
               <p className="text-xs text-gray-600 mt-0.5">avg last {Math.min(checkinHistory.length, 4)} check-ins</p>
             </div>
-            {weeksToShow !== null ? (
+            {showActive ? (
               <>
                 <div className="bg-gray-800/60 rounded-xl p-3">
                   <p className="text-xs text-gray-500 mb-1">Show Countdown</p>
-                  <p className="text-lg font-bold text-brand-400">{showWeeksOut ?? Math.floor(weeksToShow)} wks</p>
+                  <p className="text-lg font-bold text-brand-400">{showWeeksOut ?? 0} wks</p>
                   <p className="text-xs text-gray-600 mt-0.5">until show day</p>
                 </div>
                 {projectedWeightKg !== null && (

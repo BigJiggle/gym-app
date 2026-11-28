@@ -94,4 +94,25 @@ describe('Progress "Show Countdown" tile uses the canonical floor-based weeks-ou
     render(<MemoryRouter><Progress /></MemoryRouter>)
     expect(screen.getByText('5 wks')).toBeTruthy()
   })
+
+  // Regression: on the athlete's actual show day, from local noon onward, the
+  // page-local weeksUntil() returns null (show-noon ≤ now), which used to flip the
+  // block to the "Show Date — Not set — add a show in Settings" empty state even
+  // though user.show_date is set to today. The faked clock is 15:30 (afternoon), so
+  // this reproduces the bug; the fix gates the block on getShowCountdown().isPast
+  // instead, keeping the countdown ("0 wks") visible on show day.
+  it('shows the countdown (not the "Not set" empty state) on show-day afternoon', () => {
+    const showDate = shiftDays(0) // show is TODAY
+    const cd = getShowCountdown(showDate)
+    expect(cd.isPast).toBe(false) // today is not past
+    expect(cd.totalDays).toBe(0)
+    seed(showDate)
+
+    render(<MemoryRouter><Progress /></MemoryRouter>)
+
+    // The countdown tile renders and reads "0 wks"; the misleading empty state is gone.
+    expect(screen.getByText('Show Countdown')).toBeTruthy()
+    expect(screen.getByText('0 wks')).toBeTruthy()
+    expect(screen.queryByText(/Not set — add a show in Settings/)).toBeNull()
+  })
 })
